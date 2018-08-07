@@ -75,9 +75,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmadMhXJLHMFjpRmh85XjpmVDkEtQpNYEZNRpWRvYVLrvb",
+      "hash": "QmcD7SqfyQyA91TZUQ7VPRYbGarxmY7EsQewVYMuN5LNSv",
       "name": "go-ipfs-blockstore",
-      "version": "0.0.11"
+      "version": "0.0.12"
     },
     {
       "author": "hector",
@@ -97,6 +97,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.2"
+  "version": "1.0.3"
 }
 
