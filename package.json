@@ -15,9 +15,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmYey7kzAAqmXXbr38qH4oGGkB5m5swJeJCQfHgt8nrDES",
+      "hash": "QmRr8DpNhQMzsoqAitUrw43D82pyPXZkyUqarhSAfkrdaQ",
       "name": "go-ipfs-routing",
-      "version": "0.0.19"
+      "version": "0.0.20"
     },
     {
       "author": "whyrusleeping",
@@ -33,9 +33,9 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "Qmdu2AYUV7yMoVBQPxXNfe7FJcdx16kYtsx6jAPKWQYF1y",
+      "hash": "QmYjnkEL7i731PirfVH1sis89evN7jt4otSHw5D2xXXwUV",
       "name": "go-cid",
-      "version": "0.7.24"
+      "version": "0.7.25"
     },
     {
       "author": "whyrusleeping",
@@ -45,9 +45,9 @@
     },
     {
       "author": "stebalien",
-      "hash": "QmZXvzTJTiN6p469osBUtEwm4WwhXXoWcHC8aTS1cAJkjy",
+      "hash": "QmR54CzE4UcdFAZDehj6HFyy3eSHhVsJUpjfnhCmscuStS",
       "name": "go-block-format",
-      "version": "0.1.9"
+      "version": "0.1.10"
     },
     {
       "author": "ipfs",
@@ -69,15 +69,15 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmdhiCdTZvbeAFvo9XGZfJKZTxwqJCxGwvcaNM5MbPSh15",
+      "hash": "QmULGpFvsz5K8PtpdHt88vRwQAQhSdEAUoKYQP6ntpyvTG",
       "name": "go-ipfs-blocksutil",
-      "version": "0.0.4"
+      "version": "0.0.5"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmeFZ47hGe5T8nSUjwd6zf6ikzFWYEzWsb1e4Q2r6n1w9z",
+      "hash": "QmYBEfMSquSGnuxBthUoBJNs3F6p4VAPPvAgxq6XXGvTPh",
       "name": "go-ipfs-blockstore",
-      "version": "0.0.16"
+      "version": "0.0.17"
     },
     {
       "author": "hector",
@@ -87,9 +87,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmP7gXvwCi5j8sCC3mcuUqvMU2PBMiw2jwQS22Cuxzgov5",
+      "hash": "QmY2oJagiH65QDZqW4wMHcQAvAF3kbz6WtXvB1k9r4jQvP",
       "name": "go-ipfs-exchange-interface",
-      "version": "0.0.4"
+      "version": "0.0.5"
     },
     {
       "author": "whyrusleeping",
@@ -175,9 +175,9 @@
       "version": "3.0.0"
     },
     {
-      "hash": "QmfGeECX7CxJAFXwGKx2cn7csnxAtwJw8e3XtoNVf6bqcv",
+      "hash": "QmSD6bSPcXaaR7LpQHjytLWQD7DrCsb415CWfpbd9Szemb",
       "name": "go-libp2p-routing",
-      "version": "2.4.7"
+      "version": "2.4.8"
     },
     {
       "author": "jbenet",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.8"
+  "version": "1.0.9"
 }
 
