@@ -135,9 +135,6 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 
 func (bs *Bitswap) provideCollector(ctx context.Context) {
 	defer close(bs.provideKeys)
-	var toProvide []*cid.Cid
-	var nextKey *cid.Cid
-	var keysOut chan *cid.Cid
 
 	for {
 		select {
@@ -146,20 +143,7 @@ func (bs *Bitswap) provideCollector(ctx context.Context) {
 				log.Debug("newBlocks channel closed")
 				return
 			}
-
-			if keysOut == nil {
-				nextKey = blkey
-				keysOut = bs.provideKeys
-			} else {
-				toProvide = append(toProvide, blkey)
-			}
-		case keysOut <- nextKey:
-			if len(toProvide) > 0 {
-				nextKey = toProvide[0]
-				toProvide = toProvide[1:]
-			} else {
-				keysOut = nil
-			}
+			bs.provideKeys <- blkey
 		case <-ctx.Done():
 			return
 		}
