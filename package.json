@@ -15,9 +15,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "Qmc8223drxJVSzPRmNnM9kfEzs1jNatNmJ1z22akx12eNS",
+      "hash": "QmYYXrfYh14XcN5jhmK31HhdAG85HjHAg5czk3Eb9cGML4",
       "name": "go-ipfs-routing",
-      "version": "0.0.22"
+      "version": "0.0.23"
     },
     {
       "author": "whyrusleeping",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.11"
+  "version": "1.0.12"
 }
 
