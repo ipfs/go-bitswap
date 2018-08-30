@@ -8,53 +8,67 @@ import (
 
 	tn "github.com/ipfs/go-bitswap/testnet"
 
+	"github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 )
 
+type fetchFunc func(t *testing.T, bs *Bitswap, ks []*cid.Cid)
+
+func oneAtATime(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	for _, c := range ks {
+		_, err := ses.GetBlock(context.Background(), c)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+type distFunc func(t *testing.T, provs []Instance, blocks []blocks.Block)
+
+func allToAll(t *testing.T, provs []Instance, blocks []blocks.Block) {
+	for _, p := range provs {
+		if err := p.Blockstore().PutMany(blocks); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // in this test, each of the data-having peers has all the data
-func TestDuplicateBlocksIssues(t *testing.T) {
-	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
-	sg := NewTestSessionGenerator(net)
-	defer sg.Close()
+func TestDups(t *testing.T) {
+	t.Run("AllToAll-OneAtATime", func(t *testing.T) {
+		subtestDistributeAndFetch(t, allToAll, oneAtATime)
+	})
+	t.Run("AllToAll-BigBatch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, allToAll, batchFetchAll)
+	})
 
-	bg := blocksutil.NewBlockGenerator()
+	t.Run("Overlap1-OneAtATime", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap1, oneAtATime)
+	})
 
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
+	t.Run("Overlap2-BatchBy10", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap2, batchFetchBy10)
+	})
 
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
-
-	if err := bill.Blockstore().PutMany(blocks); err != nil {
-		t.Fatal(err)
-	}
-	if err := jeff.Blockstore().PutMany(blocks); err != nil {
-		t.Fatal(err)
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
-	for _, blk := range blocks {
-		ses.GetBlock(context.Background(), blk.Cid())
-	}
-
-	st, err := steve.Exchange.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
-	}
+	t.Run("Overlap3-OneAtATime", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap3, oneAtATime)
+	})
+	t.Run("Overlap3-BatchBy10", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap3, batchFetchBy10)
+	})
+	t.Run("Overlap3-AllConcurrent", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap3, fetchAllConcurrent)
+	})
+	t.Run("Overlap3-BigBatch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, overlap3, batchFetchAll)
+	})
 }
 
-// in this test, each of the 'other peers' has 3/4 of the data. and a 1/2
-// overlap in blocks with the other data-having peer
-// interestingly, because of the way sessions currently work, this results in zero wasted data
-func TestDupBlocksOverlap1(t *testing.T) {
+func subtestDistributeAndFetch(t *testing.T, df distFunc, ff fetchFunc) {
 	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
 	sg := NewTestSessionGenerator(net)
 	defer sg.Close()
@@ -64,219 +78,92 @@ func TestDupBlocksOverlap1(t *testing.T) {
 	instances := sg.Instances(3)
 	blocks := bg.Blocks(100)
 
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
+	fetcher := instances[2]
 
-	if err := bill.Blockstore().PutMany(blocks[:75]); err != nil {
-		t.Fatal(err)
-	}
-	if err := jeff.Blockstore().PutMany(blocks[25:]); err != nil {
-		t.Fatal(err)
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
-	for _, blk := range blocks {
-		ses.GetBlock(context.Background(), blk.Cid())
-	}
-
-	st, err := steve.Exchange.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatal("got duplicate blocks!")
-	}
-}
-
-// in this test, each of the 'other peers' some of the data, with an overlap
-// different from the previous test, both peers have the 'first' block, which triggers sessions
-// into behaving poorly
-func TestDupBlocksOverlap2(t *testing.T) {
-	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
-	sg := NewTestSessionGenerator(net)
-	defer sg.Close()
-
-	bg := blocksutil.NewBlockGenerator()
-
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
-
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
-
-	bill.Blockstore().Put(blocks[0])
-	jeff.Blockstore().Put(blocks[0])
-	for i, blk := range blocks {
-		if i%3 == 0 {
-			bill.Blockstore().Put(blk)
-			jeff.Blockstore().Put(blk)
-		} else if i%2 == 1 {
-			bill.Blockstore().Put(blk)
-		} else {
-			jeff.Blockstore().Put(blk)
-		}
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
-	for _, blk := range blocks {
-		ses.GetBlock(context.Background(), blk.Cid())
-	}
-
-	st, err := steve.Exchange.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
-	}
-}
-
-// in this test, each of the 'other peers' some of the data, with an overlap
-// The data is fetched in bulk, with a single 'getBlocks' call
-func TestDupBlocksOverlapBatch1(t *testing.T) {
-	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
-	sg := NewTestSessionGenerator(net)
-	defer sg.Close()
-
-	bg := blocksutil.NewBlockGenerator()
-
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
-
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
-
-	bill.Blockstore().Put(blocks[0])
-	jeff.Blockstore().Put(blocks[0])
-	for i, blk := range blocks {
-		if i%3 == 0 {
-			bill.Blockstore().Put(blk)
-			jeff.Blockstore().Put(blk)
-		} else if i%2 == 1 {
-			bill.Blockstore().Put(blk)
-		} else {
-			jeff.Blockstore().Put(blk)
-		}
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
-
-	var ks []*cid.Cid
-	for _, blk := range blocks {
-		ks = append(ks, blk.Cid())
-	}
-	out, err := ses.GetBlocks(context.Background(), ks)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range out {
-	}
-
-	st, err := steve.Exchange.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
-	}
-}
-
-// in this test, each of the 'other peers' some of the data, with an overlap
-// The data is fetched in bulk, with N concurrent calls to 'getBlock'
-func TestDupBlocksOverlapBatch2(t *testing.T) {
-	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
-	sg := NewTestSessionGenerator(net)
-	defer sg.Close()
-
-	bg := blocksutil.NewBlockGenerator()
-
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
-
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
-
-	bill.Blockstore().Put(blocks[0])
-	jeff.Blockstore().Put(blocks[0])
-	for i, blk := range blocks {
-		if i%3 == 0 {
-			bill.Blockstore().Put(blk)
-			jeff.Blockstore().Put(blk)
-		} else if i%2 == 1 {
-			bill.Blockstore().Put(blk)
-		} else {
-			jeff.Blockstore().Put(blk)
-		}
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
-
-	var wg sync.WaitGroup
-	for _, blk := range blocks {
-		wg.Add(1)
-		go func(c *cid.Cid) {
-			defer wg.Done()
-			_, err := ses.GetBlock(context.Background(), c)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}(blk.Cid())
-	}
-	wg.Wait()
-
-	st, err := steve.Exchange.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
-	}
-}
-
-// in this test, each of the 'other peers' some of the data, with an overlap
-// The data is fetched in bulk, fetching ten blocks at a time with 'getBlocks'
-func TestDupBlocksOverlapBatch3(t *testing.T) {
-	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
-	sg := NewTestSessionGenerator(net)
-	defer sg.Close()
-
-	bg := blocksutil.NewBlockGenerator()
-
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
-
-	bill := instances[0]
-	jeff := instances[1]
-	steve := instances[2]
-
-	bill.Blockstore().Put(blocks[0])
-	jeff.Blockstore().Put(blocks[0])
-	for i, blk := range blocks {
-		if i%3 == 0 {
-			bill.Blockstore().Put(blk)
-			jeff.Blockstore().Put(blk)
-		} else if i%2 == 1 {
-			bill.Blockstore().Put(blk)
-		} else {
-			jeff.Blockstore().Put(blk)
-		}
-	}
-
-	ses := steve.Exchange.NewSession(context.Background())
+	df(t, instances[:2], blocks)
 
 	var ks []*cid.Cid
 	for _, blk := range blocks {
 		ks = append(ks, blk.Cid())
 	}
 
+	ff(t, fetcher.Exchange, ks)
+
+	st, err := fetcher.Exchange.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if st.DupBlksReceived != 0 {
+		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
+	}
+}
+
+// overlap1 gives the first 75 blocks to the first peer, and the last 75 blocks
+// to the second peer. This means both peers have the middle 50 blocks
+func overlap1(t *testing.T, provs []Instance, blks []blocks.Block) {
+	if len(provs) != 2 {
+		t.Fatal("overlap1 only works with 2 provs")
+	}
+	bill := provs[0]
+	jeff := provs[1]
+
+	if err := bill.Blockstore().PutMany(blks[:75]); err != nil {
+		t.Fatal(err)
+	}
+	if err := jeff.Blockstore().PutMany(blks[25:]); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// overlap2 gives every even numbered block to the first peer, odd numbered
+// blocks to the second.  it also gives every third block to both peers
+func overlap2(t *testing.T, provs []Instance, blks []blocks.Block) {
+	if len(provs) != 2 {
+		t.Fatal("overlap2 only works with 2 provs")
+	}
+	bill := provs[0]
+	jeff := provs[1]
+
+	bill.Blockstore().Put(blks[0])
+	jeff.Blockstore().Put(blks[0])
+	for i, blk := range blks {
+		if i%3 == 0 {
+			bill.Blockstore().Put(blk)
+			jeff.Blockstore().Put(blk)
+		} else if i%2 == 1 {
+			bill.Blockstore().Put(blk)
+		} else {
+			jeff.Blockstore().Put(blk)
+		}
+	}
+}
+
+func overlap3(t *testing.T, provs []Instance, blks []blocks.Block) {
+	if len(provs) != 2 {
+		t.Fatal("overlap3 only works with 2 provs")
+	}
+
+	bill := provs[0]
+	jeff := provs[1]
+
+	bill.Blockstore().Put(blks[0])
+	jeff.Blockstore().Put(blks[0])
+	for i, blk := range blks {
+		if i%3 == 0 {
+			bill.Blockstore().Put(blk)
+			jeff.Blockstore().Put(blk)
+		} else if i%2 == 1 {
+			bill.Blockstore().Put(blk)
+		} else {
+			jeff.Blockstore().Put(blk)
+		}
+	}
+}
+
+// fetch data in batches, 10 at a time
+func batchFetchBy10(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
 	for i := 0; i < len(ks); i += 10 {
 		out, err := ses.GetBlocks(context.Background(), ks[i:i+10])
 		if err != nil {
@@ -285,13 +172,32 @@ func TestDupBlocksOverlapBatch3(t *testing.T) {
 		for range out {
 		}
 	}
+}
 
-	st, err := steve.Exchange.Stat()
+// fetch each block at the same time concurrently
+func fetchAllConcurrent(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
+
+	var wg sync.WaitGroup
+	for _, c := range ks {
+		wg.Add(1)
+		go func(c *cid.Cid) {
+			defer wg.Done()
+			_, err := ses.GetBlock(context.Background(), c)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}(c)
+	}
+	wg.Wait()
+}
+
+func batchFetchAll(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	out, err := ses.GetBlocks(context.Background(), ks)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
+	for range out {
 	}
 }
