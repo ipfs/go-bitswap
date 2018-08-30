@@ -3,6 +3,7 @@ package bitswap
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	notifications "github.com/ipfs/go-bitswap/notifications"
@@ -280,7 +281,22 @@ func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
 	for _, c := range ks {
 		s.liveWants[c] = now
 	}
-	s.bs.wm.WantBlocks(ctx, ks, s.activePeersArr, s.id)
+	if len(s.activePeers) == 0 {
+		s.bs.wm.WantBlocks(ctx, ks, s.activePeersArr, s.id)
+	} else {
+		spl := divvy(ks, len(s.activePeersArr))
+		for ki, pi := range rand.Perm(len(s.activePeersArr)) {
+			s.bs.wm.WantBlocks(ctx, spl[ki], []peer.ID{s.activePeersArr[pi]}, s.id)
+		}
+	}
+}
+
+func divvy(ks []*cid.Cid, n int) [][]*cid.Cid {
+	out := make([][]*cid.Cid, n)
+	for i, c := range ks {
+		out[i%n] = append(out[i%n], c)
+	}
+	return out
 }
 
 func (s *Session) cancel(keys []cid.Cid) {
