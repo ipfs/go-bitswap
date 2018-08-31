@@ -9,15 +9,15 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmVM6VuGaWcAaYjxG2om6XxMmpP3Rt9rw4nbMXVNYAPLhS",
+      "hash": "Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP",
       "name": "go-libp2p",
-      "version": "6.0.10"
+      "version": "6.0.11"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmYYXrfYh14XcN5jhmK31HhdAG85HjHAg5czk3Eb9cGML4",
+      "hash": "QmZdn8S4FLTfDrmLZb7JoLkrRvTYnyuMWEG6ZGZ3YKwEiK",
       "name": "go-ipfs-routing",
-      "version": "0.0.23"
+      "version": "0.0.24"
     },
     {
       "author": "whyrusleeping",
@@ -99,9 +99,9 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmPMtD39NN63AEUNghk1LFQcTLcCmYL8MtRzdv8BRUsC4Z",
+      "hash": "QmfH9FKYv3Jp1xiyL8sPchGBUBg6JA6XviwajAo3qgnT3B",
       "name": "go-libp2p-host",
-      "version": "3.0.7"
+      "version": "3.0.8"
     },
     {
       "author": "hsanjuan",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.12"
+  "version": "1.0.13"
 }
 
