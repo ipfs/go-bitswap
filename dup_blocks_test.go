@@ -2,6 +2,7 @@ package bitswap
 
 import (
 	"context"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -37,50 +38,79 @@ func allToAll(t *testing.T, provs []Instance, blocks []blocks.Block) {
 	}
 }
 
-// in this test, each of the data-having peers has all the data
-func TestDups(t *testing.T) {
+func TestDups2Nodes(t *testing.T) {
 	t.Run("AllToAll-OneAtATime", func(t *testing.T) {
-		subtestDistributeAndFetch(t, allToAll, oneAtATime)
+		subtestDistributeAndFetch(t, 3, 100, allToAll, oneAtATime)
 	})
 	t.Run("AllToAll-BigBatch", func(t *testing.T) {
-		subtestDistributeAndFetch(t, allToAll, batchFetchAll)
+		subtestDistributeAndFetch(t, 3, 100, allToAll, batchFetchAll)
 	})
 
 	t.Run("Overlap1-OneAtATime", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap1, oneAtATime)
+		subtestDistributeAndFetch(t, 3, 100, overlap1, oneAtATime)
 	})
 
 	t.Run("Overlap2-BatchBy10", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap2, batchFetchBy10)
+		subtestDistributeAndFetch(t, 3, 100, overlap2, batchFetchBy10)
 	})
 
 	t.Run("Overlap3-OneAtATime", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap3, oneAtATime)
+		subtestDistributeAndFetch(t, 3, 100, overlap3, oneAtATime)
 	})
 	t.Run("Overlap3-BatchBy10", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap3, batchFetchBy10)
+		subtestDistributeAndFetch(t, 3, 100, overlap3, batchFetchBy10)
 	})
 	t.Run("Overlap3-AllConcurrent", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap3, fetchAllConcurrent)
+		subtestDistributeAndFetch(t, 3, 100, overlap3, fetchAllConcurrent)
 	})
 	t.Run("Overlap3-BigBatch", func(t *testing.T) {
-		subtestDistributeAndFetch(t, overlap3, batchFetchAll)
+		subtestDistributeAndFetch(t, 3, 100, overlap3, batchFetchAll)
+	})
+	t.Run("Overlap3-UnixfsFetch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 3, 100, overlap3, unixfsFileFetch)
 	})
 }
 
-func subtestDistributeAndFetch(t *testing.T, df distFunc, ff fetchFunc) {
+func TestDupsManyNodes(t *testing.T) {
+	t.Run("10Nodes-AllToAll-OneAtATime", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, allToAll, oneAtATime)
+	})
+	t.Run("10Nodes-AllToAll-BatchFetchBy10", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, allToAll, batchFetchBy10)
+	})
+	t.Run("10Nodes-AllToAll-BigBatch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, allToAll, batchFetchAll)
+	})
+	t.Run("10Nodes-AllToAll-AllConcurrent", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, allToAll, fetchAllConcurrent)
+	})
+	t.Run("10Nodes-AllToAll-UnixfsFetch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, allToAll, unixfsFileFetch)
+	})
+	t.Run("10Nodes-OnePeerPerBlock-OneAtATime", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, onePeerPerBlock, oneAtATime)
+	})
+	t.Run("10Nodes-OnePeerPerBlock-BigBatch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, onePeerPerBlock, batchFetchAll)
+	})
+	t.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 10, 100, onePeerPerBlock, unixfsFileFetch)
+	})
+}
+
+func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc, ff fetchFunc) {
 	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
 	sg := NewTestSessionGenerator(net)
 	defer sg.Close()
 
 	bg := blocksutil.NewBlockGenerator()
 
-	instances := sg.Instances(3)
-	blocks := bg.Blocks(100)
+	instances := sg.Instances(numnodes)
+	blocks := bg.Blocks(numblks)
 
-	fetcher := instances[2]
+	fetcher := instances[numnodes-1]
 
-	df(t, instances[:2], blocks)
+	df(t, instances[:numnodes-1], blocks)
 
 	var ks []*cid.Cid
 	for _, blk := range blocks {
@@ -161,6 +191,15 @@ func overlap3(t *testing.T, provs []Instance, blks []blocks.Block) {
 	}
 }
 
+// onePeerPerBlock picks a random peer to hold each block
+// with this layout, we shouldnt actually ever see any duplicate blocks
+// but we're mostly just testing performance of the sync algorithm
+func onePeerPerBlock(t *testing.T, provs []Instance, blks []blocks.Block) {
+	for _, blk := range blks {
+		provs[rand.Intn(len(provs))].Blockstore().Put(blk)
+	}
+}
+
 // fetch data in batches, 10 at a time
 func batchFetchBy10(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 	ses := bs.NewSession(context.Background())
@@ -195,6 +234,29 @@ func fetchAllConcurrent(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 func batchFetchAll(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 	ses := bs.NewSession(context.Background())
 	out, err := ses.GetBlocks(context.Background(), ks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range out {
+	}
+}
+
+// simulates the fetch pattern of trying to sync a unixfs file graph as fast as possible
+func unixfsFileFetch(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	_, err := ses.GetBlock(context.Background(), ks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := ses.GetBlocks(context.Background(), ks[1:11])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range out {
+	}
+
+	out, err = ses.GetBlocks(context.Background(), ks[11:])
 	if err != nil {
 		t.Fatal(err)
 	}
