@@ -106,6 +106,8 @@ func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc,
 		t.Fatal(err)
 	}
 
+	nst := fetcher.Exchange.network.Stats()
+	t.Logf("send/recv: %d / %d", nst.MessagesSent, nst.MessagesRecvd)
 	if st.DupBlksReceived != 0 {
 		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
 	}
