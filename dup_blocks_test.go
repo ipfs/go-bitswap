@@ -16,7 +16,7 @@ import (
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 )
 
-type fetchFunc func(t *testing.T, bs *Bitswap, ks []*cid.Cid)
+type fetchFunc func(t *testing.T, bs *Bitswap, ks []cid.Cid)
 
 type distFunc func(t *testing.T, provs []Instance, blocks []blocks.Block)
 
@@ -94,7 +94,7 @@ func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc,
 
 	df(t, instances[:numnodes-1], blocks)
 
-	var ks []*cid.Cid
+	var ks []cid.Cid
 	for _, blk := range blocks {
 		ks = append(ks, blk.Cid())
 	}
@@ -192,7 +192,7 @@ func onePeerPerBlock(t *testing.T, provs []Instance, blks []blocks.Block) {
 	}
 }
 
-func oneAtATime(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+func oneAtATime(t *testing.T, bs *Bitswap, ks []cid.Cid) {
 	ses := bs.NewSession(context.Background())
 	for _, c := range ks {
 		_, err := ses.GetBlock(context.Background(), c)
@@ -204,7 +204,7 @@ func oneAtATime(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 }
 
 // fetch data in batches, 10 at a time
-func batchFetchBy10(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+func batchFetchBy10(t *testing.T, bs *Bitswap, ks []cid.Cid) {
 	ses := bs.NewSession(context.Background())
 	for i := 0; i < len(ks); i += 10 {
 		out, err := ses.GetBlocks(context.Background(), ks[i:i+10])
@@ -217,13 +217,13 @@ func batchFetchBy10(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 }
 
 // fetch each block at the same time concurrently
-func fetchAllConcurrent(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+func fetchAllConcurrent(t *testing.T, bs *Bitswap, ks []cid.Cid) {
 	ses := bs.NewSession(context.Background())
 
 	var wg sync.WaitGroup
 	for _, c := range ks {
 		wg.Add(1)
-		go func(c *cid.Cid) {
+		go func(c cid.Cid) {
 			defer wg.Done()
 			_, err := ses.GetBlock(context.Background(), c)
 			if err != nil {
@@ -234,7 +234,7 @@ func fetchAllConcurrent(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 	wg.Wait()
 }
 
-func batchFetchAll(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+func batchFetchAll(t *testing.T, bs *Bitswap, ks []cid.Cid) {
 	ses := bs.NewSession(context.Background())
 	out, err := ses.GetBlocks(context.Background(), ks)
 	if err != nil {
@@ -245,7 +245,7 @@ func batchFetchAll(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
 }
 
 // simulates the fetch pattern of trying to sync a unixfs file graph as fast as possible
-func unixfsFileFetch(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+func unixfsFileFetch(t *testing.T, bs *Bitswap, ks []cid.Cid) {
 	ses := bs.NewSession(context.Background())
 	_, err := ses.GetBlock(context.Background(), ks[0])
 	if err != nil {

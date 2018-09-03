@@ -16,7 +16,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-const activeWantsLimit = 16
+const broadcastLiveWantsLimit = 4
+const targetedLiveWantsLimit = 32
 
 // Session holds state for an individual bitswap transfer operation.
 // This allows bitswap to make smarter decisions about who to send wantlist
@@ -33,14 +34,31 @@ type Session struct {
 	cancelKeys   chan []cid.Cid
 	interestReqs chan interestReq
 
-	interest  *lru.Cache
+	// interest is a cache of cids that are of interest to this session
+	// this may include blocks we've already received, but still might want
+	// to know about the peer that sent it
+	interest *lru.Cache
+
+	// liveWants keeps track of all the current requests we have out, and when
+	// they were last requested
 	liveWants map[cid.Cid]time.Time
+	// liveWantsLimit keeps track of how many live wants we should have out at
+	// a time this number should start out low, and grow as we gain more
+	// certainty on the sources of our data
+	liveWantsLimit int
 
 	tick          *time.Timer
 	baseTickDelay time.Duration
 
 	latTotal time.Duration
+	// fetchcnt is the number of blocks received
 	fetchcnt int
+	// broadcasts is the number of times we have broadcasted a set of wants
+	broadcasts int
+	// dupl is the number of peers to send each want to. In most situations
+	// this should be 1, but if the session falls back to broadcasting for
+	// blocks too often, this value will be increased to compensate
+	dupl int
 
 	notif notifications.PubSub
 
@@ -54,19 +72,21 @@ type Session struct {
 // given context
 func (bs *Bitswap) NewSession(ctx context.Context) *Session {
 	s := &Session{
-		activePeers:   make(map[peer.ID]struct{}),
-		liveWants:     make(map[cid.Cid]time.Time),
-		newReqs:       make(chan []cid.Cid),
-		cancelKeys:    make(chan []cid.Cid),
-		tofetch:       newCidQueue(),
-		interestReqs:  make(chan interestReq),
-		ctx:           ctx,
-		bs:            bs,
-		incoming:      make(chan blkRecv),
-		notif:         notifications.New(),
-		uuid:          loggables.Uuid("GetBlockRequest"),
-		baseTickDelay: time.Millisecond * 500,
-		id:            bs.getNextSessionID(),
+		activePeers:    make(map[peer.ID]struct{}),
+		liveWants:      make(map[cid.Cid]time.Time),
+		liveWantsLimit: broadcastLiveWantsLimit,
+		newReqs:        make(chan []cid.Cid),
+		cancelKeys:     make(chan []cid.Cid),
+		tofetch:        newCidQueue(),
+		interestReqs:   make(chan interestReq),
+		ctx:            ctx,
+		bs:             bs,
+		incoming:       make(chan blkRecv),
+		notif:          notifications.New(),
+		uuid:           loggables.Uuid("GetBlockRequest"),
+		baseTickDelay:  time.Millisecond * 500,
+		id:             bs.getNextSessionID(),
+		dupl:           1,
 	}
 
 	s.tag = fmt.Sprint("bs-ses-", s.id)
@@ -153,6 +173,10 @@ func (s *Session) interestedIn(c cid.Cid) bool {
 const provSearchDelay = time.Second * 10
 
 func (s *Session) addActivePeer(p peer.ID) {
+	if s.liveWantsLimit == broadcastLiveWantsLimit {
+		s.liveWantsLimit = targetedLiveWantsLimit
+	}
+
 	if _, ok := s.activePeers[p]; !ok {
 		s.activePeers[p] = struct{}{}
 		s.activePeersArr = append(s.activePeersArr, p)
@@ -190,8 +214,8 @@ func (s *Session) run(ctx context.Context) {
 			for _, k := range keys {
 				s.interest.Add(k, nil)
 			}
-			if len(s.liveWants) < activeWantsLimit {
-				toadd := activeWantsLimit - len(s.liveWants)
+			if len(s.liveWants) < s.liveWantsLimit {
+				toadd := s.liveWantsLimit - len(s.liveWants)
 				if toadd > len(keys) {
 					toadd = len(keys)
 				}
@@ -216,6 +240,8 @@ func (s *Session) run(ctx context.Context) {
 			}
 
 			// Broadcast these keys to everyone we're connected to
+			log.Error("broadcast!")
+			s.broadcasts++
 			s.bs.wm.WantBlocks(ctx, live, nil, s.id)
 
 			if len(live) > 0 {
@@ -282,19 +308,29 @@ func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
 		s.liveWants[c] = now
 	}
 	if len(s.activePeers) == 0 {
-		s.bs.wm.WantBlocks(ctx, ks, s.activePeersArr, s.id)
+		s.broadcasts++
+		s.bs.wm.WantBlocks(ctx, ks, nil, s.id)
 	} else {
-		spl := divvy(ks, len(s.activePeersArr))
+		if s.fetchcnt > 5 {
+			brcRat := float64(s.fetchcnt) / float64(s.broadcasts)
+			if brcRat < 2 {
+				s.dupl++
+			}
+		}
+		spl := divvy(ks, len(s.activePeersArr), s.dupl)
 		for ki, pi := range rand.Perm(len(s.activePeersArr)) {
 			s.bs.wm.WantBlocks(ctx, spl[ki], []peer.ID{s.activePeersArr[pi]}, s.id)
 		}
 	}
 }
 
-func divvy(ks []*cid.Cid, n int) [][]*cid.Cid {
-	out := make([][]*cid.Cid, n)
-	for i, c := range ks {
-		out[i%n] = append(out[i%n], c)
+func divvy(ks []cid.Cid, n, dupl int) [][]cid.Cid {
+	out := make([][]cid.Cid, n)
+	for l := 0; l < dupl; l++ {
+		for i, c := range ks {
+			pos := (i + (len(ks) * l)) % n
+			out[pos] = append(out[pos], c)
+		}
 	}
 	return out
 }
