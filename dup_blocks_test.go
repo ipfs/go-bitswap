@@ -18,25 +18,7 @@ import (
 
 type fetchFunc func(t *testing.T, bs *Bitswap, ks []*cid.Cid)
 
-func oneAtATime(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
-	ses := bs.NewSession(context.Background())
-	for _, c := range ks {
-		_, err := ses.GetBlock(context.Background(), c)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 type distFunc func(t *testing.T, provs []Instance, blocks []blocks.Block)
-
-func allToAll(t *testing.T, provs []Instance, blocks []blocks.Block) {
-	for _, p := range provs {
-		if err := p.Blockstore().PutMany(blocks); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
 
 func TestDups2Nodes(t *testing.T) {
 	t.Run("AllToAll-OneAtATime", func(t *testing.T) {
@@ -129,6 +111,14 @@ func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc,
 	}
 }
 
+func allToAll(t *testing.T, provs []Instance, blocks []blocks.Block) {
+	for _, p := range provs {
+		if err := p.Blockstore().PutMany(blocks); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // overlap1 gives the first 75 blocks to the first peer, and the last 75 blocks
 // to the second peer. This means both peers have the middle 50 blocks
 func overlap1(t *testing.T, provs []Instance, blks []blocks.Block) {
@@ -198,6 +188,17 @@ func onePeerPerBlock(t *testing.T, provs []Instance, blks []blocks.Block) {
 	for _, blk := range blks {
 		provs[rand.Intn(len(provs))].Blockstore().Put(blk)
 	}
+}
+
+func oneAtATime(t *testing.T, bs *Bitswap, ks []*cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	for _, c := range ks {
+		_, err := ses.GetBlock(context.Background(), c)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("Session fetch latency: %s", ses.latTotal/time.Duration(ses.fetchcnt))
 }
 
 // fetch data in batches, 10 at a time
