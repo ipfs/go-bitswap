@@ -9,15 +9,15 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "Qmf1u2efhjXYtuyP8SMHYtw4dCkbghnniex2PSp7baA7FP",
+      "hash": "QmUEqyXr97aUbNmQADHYNknjwjjdVpJXEt1UZXmSG81EV4",
       "name": "go-libp2p",
-      "version": "6.0.11"
+      "version": "6.0.12"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmZdn8S4FLTfDrmLZb7JoLkrRvTYnyuMWEG6ZGZ3YKwEiK",
+      "hash": "QmRuUsZEg2WLCuidJGHVmE1NreHDmXWKLS466PKyDpXMhN",
       "name": "go-ipfs-routing",
-      "version": "0.0.24"
+      "version": "0.0.25"
     },
     {
       "author": "whyrusleeping",
@@ -75,9 +75,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmS9Lc9eBeawP92xNzUfHaC8pxkZvhYi4gimTf9MwZuviE",
+      "hash": "Qmeg56ecxRnVv7VWViMrDeEMoBHaNFMs4vQnyQrJ79Zz7i",
       "name": "go-ipfs-blockstore",
-      "version": "0.0.19"
+      "version": "0.0.20"
     },
     {
       "author": "hector",
@@ -99,9 +99,9 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmfH9FKYv3Jp1xiyL8sPchGBUBg6JA6XviwajAo3qgnT3B",
+      "hash": "QmeMYW7Nj8jnnEfs9qhm7SxKkoDPUWXu3MsxX6BFwz34tf",
       "name": "go-libp2p-host",
-      "version": "3.0.8"
+      "version": "3.0.9"
     },
     {
       "author": "hsanjuan",
@@ -128,21 +128,21 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmXeofKUbQf6diwT12ZmpmAjW9c47aXT43t7qG1bGTRQTj",
+      "hash": "QmfDapjsRAfzVpjeEm2tSmX19QpCrkLDXRCDDWJcbbUsFn",
       "name": "go-libp2p-netutil",
-      "version": "0.4.6"
+      "version": "0.4.7"
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmQSbtGXCyNrj34LWL8EgXyNNYDZ8r3SwQcpW5pPxVhLnM",
+      "hash": "QmZNJyx9GGCX4GeuHnLB8fxaxMLs4MjTjHokxfQcCd6Nve",
       "name": "go-libp2p-net",
-      "version": "3.0.8"
+      "version": "3.0.9"
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmeKD8YT7887Xu6Z86iZmpYNxrLogJexqxEugSmaf14k64",
+      "hash": "Qmda4cPRvSRyox3SqgJN6DfSZGU5TtHufPTp9uXjFj71X6",
       "name": "go-libp2p-peerstore",
-      "version": "1.4.24"
+      "version": "2.0.0"
     },
     {
       "author": "multiformats",
@@ -164,20 +164,20 @@
     },
     {
       "author": "why",
-      "hash": "QmVz2p8ZVZ5GcWPNWGs2HZHiZyHumZcJpQdMRpxkMDhc2C",
+      "hash": "QmWGGN1nysi1qgqto31bENwESkmZBY4YGK4sZC3qhnqhSv",
       "name": "go-libp2p-interface-connmgr",
-      "version": "0.0.14"
+      "version": "0.0.15"
     },
     {
       "author": "jbenet",
-      "hash": "QmVG5gxteQNEMhrS8prJSmU2C9rebtFuTd3SYZ5kE3YZ5k",
+      "hash": "QmSpg1CvpXQQow5ernt1gNBXaXV6yxyNqi7XoeerWfzB5w",
       "name": "go-datastore",
-      "version": "3.0.0"
+      "version": "3.1.0"
     },
     {
-      "hash": "QmS4niovD1U6pRjUBXivr1zvvLBqiTKbERjFo994JU7oQS",
+      "hash": "QmY9JUvS8kbgao3XbPh6WAV3ChE2nxGKhcGTHiwMC4gmcU",
       "name": "go-libp2p-routing",
-      "version": "2.4.9"
+      "version": "2.4.10"
     },
     {
       "author": "jbenet",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.0.14"
+  "version": "1.0.15"
 }
 
