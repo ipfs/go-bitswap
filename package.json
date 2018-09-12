@@ -15,9 +15,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmSbZCrt5cSiCNcXFZKoGjukcEf4DRdTzexqzEWATZDdz6",
+      "hash": "QmSNe4MWVxZWk6UxxW2z2EKofFo4GdFzud1vfn1iVby3mj",
       "name": "go-ipfs-routing",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "author": "whyrusleeping",
@@ -75,9 +75,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmeMussyD8s3fQ3pM19ZsfbxvomEqPV9FvczLMWyBDYSnS",
+      "hash": "QmegPGspn3RpTMQ23Fd3GVVMopo1zsEMurudbFMZ5UXBLH",
       "name": "go-ipfs-blockstore",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "author": "hector",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.0"
+  "version": "1.1.1"
 }
 
