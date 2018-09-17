@@ -240,9 +240,15 @@ func (s *Session) run(ctx context.Context) {
 			}
 
 			// Broadcast these keys to everyone we're connected to
-			log.Error("broadcast!")
 			s.broadcasts++
 			s.bs.wm.WantBlocks(ctx, live, nil, s.id)
+
+			if s.fetchcnt > 5 {
+				brcRat := float64(s.fetchcnt) / float64(s.broadcasts)
+				if brcRat < 2 {
+					s.dupl++
+				}
+			}
 
 			if len(live) > 0 {
 				go func(k cid.Cid) {
@@ -307,16 +313,10 @@ func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
 	for _, c := range ks {
 		s.liveWants[c] = now
 	}
-	if len(s.activePeers) == 0 {
+	if len(s.activePeers) == 0 || s.dupl >= len(s.activePeers) {
 		s.broadcasts++
-		s.bs.wm.WantBlocks(ctx, ks, nil, s.id)
+		s.bs.wm.WantBlocks(ctx, ks, s.activePeersArr, s.id)
 	} else {
-		if s.fetchcnt > 5 {
-			brcRat := float64(s.fetchcnt) / float64(s.broadcasts)
-			if brcRat < 2 {
-				s.dupl++
-			}
-		}
 		spl := divvy(ks, len(s.activePeersArr), s.dupl)
 		for ki, pi := range rand.Perm(len(s.activePeersArr)) {
 			s.bs.wm.WantBlocks(ctx, spl[ki], []peer.ID{s.activePeersArr[pi]}, s.id)

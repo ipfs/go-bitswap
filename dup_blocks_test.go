@@ -2,6 +2,8 @@ package bitswap
 
 import (
 	"context"
+	"encoding/json"
+	"io/ioutil"
 	"math/rand"
 	"sync"
 	"testing"
@@ -19,6 +21,16 @@ import (
 type fetchFunc func(t *testing.T, bs *Bitswap, ks []cid.Cid)
 
 type distFunc func(t *testing.T, provs []Instance, blocks []blocks.Block)
+
+type runStats struct {
+	Dups    uint64
+	MsgSent uint64
+	MsgRecd uint64
+	Time    time.Duration
+	Name    string
+}
+
+var benchmarkLog []runStats
 
 func TestDups2Nodes(t *testing.T) {
 	t.Run("AllToAll-OneAtATime", func(t *testing.T) {
@@ -51,9 +63,6 @@ func TestDups2Nodes(t *testing.T) {
 	t.Run("Overlap3-UnixfsFetch", func(t *testing.T) {
 		subtestDistributeAndFetch(t, 3, 100, overlap3, unixfsFileFetch)
 	})
-}
-
-func TestDupsManyNodes(t *testing.T) {
 	t.Run("10Nodes-AllToAll-OneAtATime", func(t *testing.T) {
 		subtestDistributeAndFetch(t, 10, 100, allToAll, oneAtATime)
 	})
@@ -78,9 +87,13 @@ func TestDupsManyNodes(t *testing.T) {
 	t.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(t *testing.T) {
 		subtestDistributeAndFetch(t, 10, 100, onePeerPerBlock, unixfsFileFetch)
 	})
+
+	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
+	ioutil.WriteFile("benchmark.json", out, 0666)
 }
 
 func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc, ff fetchFunc) {
+	start := time.Now()
 	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(10*time.Millisecond))
 	sg := NewTestSessionGenerator(net)
 	defer sg.Close()
@@ -107,9 +120,17 @@ func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc,
 	}
 
 	nst := fetcher.Exchange.network.Stats()
+	stats := runStats{
+		Time:    time.Now().Sub(start),
+		MsgRecd: nst.MessagesRecvd,
+		MsgSent: nst.MessagesSent,
+		Dups:    st.DupBlksReceived,
+		Name:    t.Name(),
+	}
+	benchmarkLog = append(benchmarkLog, stats)
 	t.Logf("send/recv: %d / %d", nst.MessagesSent, nst.MessagesRecvd)
 	if st.DupBlksReceived != 0 {
-		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
+		//t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
 	}
 }
 
