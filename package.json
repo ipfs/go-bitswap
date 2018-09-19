@@ -87,9 +87,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmR1nncPsZR14A4hWr39mq8Lm7BGgS68bHVT9nop8NpWEM",
+      "hash": "QmUdh9184Bozfinyn5YDhgPRg33E3KR3btfZXcVoFgTxD4",
       "name": "go-ipfs-exchange-interface",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "author": "whyrusleeping",

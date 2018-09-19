@@ -87,6 +87,9 @@ func TestDups2Nodes(t *testing.T) {
 	t.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(t *testing.T) {
 		subtestDistributeAndFetch(t, 10, 100, onePeerPerBlock, unixfsFileFetch)
 	})
+	t.Run("200Nodes-AllToAll-BigBatch", func(t *testing.T) {
+		subtestDistributeAndFetch(t, 200, 20, allToAll, batchFetchAll)
+	})
 
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	ioutil.WriteFile("benchmark.json", out, 0666)
@@ -130,7 +133,7 @@ func subtestDistributeAndFetch(t *testing.T, numnodes, numblks int, df distFunc,
 	benchmarkLog = append(benchmarkLog, stats)
 	t.Logf("send/recv: %d / %d", nst.MessagesSent, nst.MessagesRecvd)
 	if st.DupBlksReceived != 0 {
-		//t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
+		t.Fatalf("got %d duplicate blocks!", st.DupBlksReceived)
 	}
 }
 
@@ -214,7 +217,7 @@ func onePeerPerBlock(t *testing.T, provs []Instance, blks []blocks.Block) {
 }
 
 func oneAtATime(t *testing.T, bs *Bitswap, ks []cid.Cid) {
-	ses := bs.NewSession(context.Background())
+	ses := bs.NewSession(context.Background()).(*Session)
 	for _, c := range ks {
 		_, err := ses.GetBlock(context.Background(), c)
 		if err != nil {
