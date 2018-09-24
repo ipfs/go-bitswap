@@ -9,27 +9,27 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmUEqyXr97aUbNmQADHYNknjwjjdVpJXEt1UZXmSG81EV4",
+      "hash": "QmVsVARb86uSe1qYouewFMNd2p2sp2NGWm1JGPReVDWchW",
       "name": "go-libp2p",
-      "version": "6.0.12"
+      "version": "6.0.13"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmPKLDMELt3Z1g4fHZoE8HEj3THpTnpynHUQDjW1gDMUdk",
+      "hash": "QmScZySgru9jaoDa12sSfvh21sWbqF5eXkieTmJzAHJXkQ",
       "name": "go-ipfs-routing",
-      "version": "0.1.2"
+      "version": "0.1.3"
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmRNhSdqzMcuRxX9A1egBeQ3BhDTguDV5HPwi8wRykkPU8",
+      "hash": "QmNfQbgBfARAtrYsBguChX6VJ5nbjeoYy1KdC36aaYWqG8",
       "name": "go-testutil",
-      "version": "1.2.7"
+      "version": "1.2.8"
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmQsErDt8Qgw1XrsXf2BpEzDgGWtB1YLsTAARBup5b6B9W",
+      "hash": "QmbNepETomvmXfz1X5pHNFD2QuPqnqi47dTd94QJWSorQ3",
       "name": "go-libp2p-peer",
-      "version": "2.3.7"
+      "version": "2.3.8"
     },
     {
       "author": "whyrusleeping",
@@ -75,9 +75,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmegPGspn3RpTMQ23Fd3GVVMopo1zsEMurudbFMZ5UXBLH",
+      "hash": "QmdriVJgKx4JADRgh3cYPXqXmsa1A45SvFki1nDWHhQNtC",
       "name": "go-ipfs-blockstore",
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "author": "hector",
@@ -99,9 +99,9 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmeMYW7Nj8jnnEfs9qhm7SxKkoDPUWXu3MsxX6BFwz34tf",
+      "hash": "QmeA5hsqgLryvkeyqeQdvGDqurLkYi3XEPLZP3pzuBJXh2",
       "name": "go-libp2p-host",
-      "version": "3.0.9"
+      "version": "3.0.10"
     },
     {
       "author": "hsanjuan",
@@ -110,9 +110,9 @@
       "version": "0.0.1"
     },
     {
-      "hash": "QmRREK2CAZ5Re2Bd9zZFG6FeYDppUWt5cMgsoUEp3ktgSr",
+      "hash": "QmZChCsSt8DctjceaL56Eibc29CVQq4dGKRXC5JRZ6Ppae",
       "name": "go-log",
-      "version": "1.5.5"
+      "version": "1.5.7"
     },
     {
       "author": "whyrusleeping",
@@ -128,21 +128,21 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmfDapjsRAfzVpjeEm2tSmX19QpCrkLDXRCDDWJcbbUsFn",
+      "hash": "QmQgzDvAmKDGGthTLcqzF7VrxtzFbmH7946TwjkX9ruB2Q",
       "name": "go-libp2p-netutil",
-      "version": "0.4.7"
+      "version": "0.4.8"
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmZNJyx9GGCX4GeuHnLB8fxaxMLs4MjTjHokxfQcCd6Nve",
+      "hash": "QmfDPh144WGBqRxZb1TGDHerbMnZATrHZggAPw7putNnBq",
       "name": "go-libp2p-net",
-      "version": "3.0.9"
+      "version": "3.0.10"
     },
     {
       "author": "whyrusleeping",
-      "hash": "Qmda4cPRvSRyox3SqgJN6DfSZGU5TtHufPTp9uXjFj71X6",
+      "hash": "QmfAQMFpgDU2U4BXG64qVr8HSiictfWvkSBz7Y2oDj65st",
       "name": "go-libp2p-peerstore",
-      "version": "2.0.0"
+      "version": "2.0.1"
     },
     {
       "author": "multiformats",
@@ -158,26 +158,26 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmZ4zF1mBrt8C2mSCM4ZYE4aAnv78f7GvrzufJC4G5tecK",
+      "hash": "QmNLzS18jsmwTxXewTm3YnZVLftWCeegNZEBFjMrnvnBrH",
       "name": "go-libp2p-loggables",
-      "version": "1.1.21"
+      "version": "1.1.22"
     },
     {
       "author": "why",
-      "hash": "QmWGGN1nysi1qgqto31bENwESkmZBY4YGK4sZC3qhnqhSv",
+      "hash": "QmV9T3rTezwJhMJQBzVrGj2tncJwv23dTKdxzXrUxAvWFi",
       "name": "go-libp2p-interface-connmgr",
-      "version": "0.0.15"
+      "version": "0.0.16"
     },
     {
       "author": "jbenet",
-      "hash": "QmSpg1CvpXQQow5ernt1gNBXaXV6yxyNqi7XoeerWfzB5w",
+      "hash": "QmUyz7JTJzgegC6tiJrfby3mPhzcdswVtG4x58TQ6pq8jV",
       "name": "go-datastore",
-      "version": "3.1.0"
+      "version": "3.2.0"
     },
     {
-      "hash": "QmaM261ArNTmKMybV4LKy68JTZrf5CkCbRGDxsZwYHgqDS",
+      "hash": "QmVBnJDKhtFXTRVjXKinqpwGu8t1DyNqPKan2iGX8PR8xG",
       "name": "go-libp2p-routing",
-      "version": "2.6.1"
+      "version": "2.6.2"
     },
     {
       "author": "jbenet",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.2"
+  "version": "1.1.3"
 }
 
