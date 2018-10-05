@@ -49,8 +49,8 @@ type Exportable interface {
 
 type impl struct {
 	full     bool
-	wantlist map[string]*Entry
-	blocks   map[string]blocks.Block
+	wantlist map[cid.Cid]*Entry
+	blocks   map[cid.Cid]blocks.Block
 }
 
 func New(full bool) BitSwapMessage {
@@ -59,8 +59,8 @@ func New(full bool) BitSwapMessage {
 
 func newMsg(full bool) *impl {
 	return &impl{
-		blocks:   make(map[string]blocks.Block),
-		wantlist: make(map[string]*Entry),
+		blocks:   make(map[cid.Cid]blocks.Block),
+		wantlist: make(map[cid.Cid]*Entry),
 		full:     full,
 	}
 }
@@ -71,17 +71,17 @@ type Entry struct {
 }
 
 func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
-	m := newMsg(pbm.GetWantlist().GetFull())
-	for _, e := range pbm.GetWantlist().GetEntries() {
-		c, err := cid.Cast([]byte(e.GetBlock()))
+	m := newMsg(pbm.Wantlist.Full)
+	for _, e := range pbm.Wantlist.Entries {
+		c, err := cid.Cast([]byte(e.Block))
 		if err != nil {
 			return nil, fmt.Errorf("incorrectly formatted cid in wantlist: %s", err)
 		}
-		m.addEntry(c, int(e.GetPriority()), e.GetCancel())
+		m.addEntry(c, int(e.Priority), e.Cancel)
 	}
 
 	// deprecated
-	for _, d := range pbm.GetBlocks() {
+	for _, d := range pbm.Blocks {
 		// CIDv0, sha256, protobuf only
 		b := blocks.NewBlock(d)
 		m.AddBlock(b)
@@ -135,7 +135,7 @@ func (m *impl) Blocks() []blocks.Block {
 }
 
 func (m *impl) Cancel(k cid.Cid) {
-	delete(m.wantlist, k.KeyString())
+	delete(m.wantlist, k)
 	m.addEntry(k, 0, true)
 }
 
@@ -144,13 +144,12 @@ func (m *impl) AddEntry(k cid.Cid, priority int) {
 }
 
 func (m *impl) addEntry(c cid.Cid, priority int, cancel bool) {
-	k := c.KeyString()
-	e, exists := m.wantlist[k]
+	e, exists := m.wantlist[c]
 	if exists {
 		e.Priority = priority
 		e.Cancel = cancel
 	} else {
-		m.wantlist[k] = &Entry{
+		m.wantlist[c] = &Entry{
 			Entry: &wantlist.Entry{
 				Cid:      c,
 				Priority: priority,
@@ -161,7 +160,7 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool) {
 }
 
 func (m *impl) AddBlock(b blocks.Block) {
-	m.blocks[b.Cid().KeyString()] = b
+	m.blocks[b.Cid()] = b
 }
 
 func FromNet(r io.Reader) (BitSwapMessage, error) {
@@ -180,10 +179,9 @@ func FromPBReader(pbr ggio.Reader) (BitSwapMessage, error) {
 
 func (m *impl) ToProtoV0() *pb.Message {
 	pbm := new(pb.Message)
-	pbm.Wantlist = new(pb.Message_Wantlist)
-	pbm.Wantlist.Entries = make([]*pb.Message_Wantlist_Entry, 0, len(m.wantlist))
+	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
-		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, &pb.Message_Wantlist_Entry{
+		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
 			Block:    e.Cid.Bytes(),
 			Priority: int32(e.Priority),
 			Cancel:   e.Cancel,
@@ -201,10 +199,9 @@ func (m *impl) ToProtoV0() *pb.Message {
 
 func (m *impl) ToProtoV1() *pb.Message {
 	pbm := new(pb.Message)
-	pbm.Wantlist = new(pb.Message_Wantlist)
-	pbm.Wantlist.Entries = make([]*pb.Message_Wantlist_Entry, 0, len(m.wantlist))
+	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
-		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, &pb.Message_Wantlist_Entry{
+		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
 			Block:    e.Cid.Bytes(),
 			Priority: int32(e.Priority),
 			Cancel:   e.Cancel,
@@ -213,13 +210,12 @@ func (m *impl) ToProtoV1() *pb.Message {
 	pbm.Wantlist.Full = m.full
 
 	blocks := m.Blocks()
-	pbm.Payload = make([]*pb.Message_Block, 0, len(blocks))
+	pbm.Payload = make([]pb.Message_Block, 0, len(blocks))
 	for _, b := range blocks {
-		blk := &pb.Message_Block{
+		pbm.Payload = append(pbm.Payload, pb.Message_Block{
 			Data:   b.RawData(),
 			Prefix: b.Cid().Prefix().Bytes(),
-		}
-		pbm.Payload = append(pbm.Payload, blk)
+		})
 	}
 	return pbm
 }
