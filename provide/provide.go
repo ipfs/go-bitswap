@@ -24,4 +24,3 @@ func Refs(refs ...cid.Cid) Option {
 func Root(op Op) {
 	op.IsRoot()
 }
-
