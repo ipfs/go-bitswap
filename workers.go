@@ -10,41 +10,31 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
-	process "github.com/jbenet/goprocess"
-	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 var TaskWorkerCount = 8
 
-func (bs *Bitswap) startWorkers(px process.Process, ctx context.Context) {
+func (bs *Bitswap) startWorkers(ctx context.Context) {
 	// Start up a worker to handle block requests this node is making
-	px.Go(func(px process.Process) {
-		bs.providerQueryManager(ctx)
-	})
+	go bs.providerQueryManager(ctx)
 
 	// Start up workers to handle requests from other nodes for the data on this node
 	for i := 0; i < TaskWorkerCount; i++ {
-		i := i
-		px.Go(func(px process.Process) {
-			bs.taskWorker(ctx, i)
-		})
+		go bs.taskWorker(ctx, i)
 	}
 
 	// Start up a worker to manage periodically resending our wantlist out to peers
-	px.Go(func(px process.Process) {
-		bs.rebroadcastWorker(ctx)
-	})
+	go bs.rebroadcastWorker(ctx)
 
 	// Start up a worker to manage sending out provides messages
-	px.Go(func(px process.Process) {
-		bs.provideCollector(ctx)
-	})
+	go bs.provideCollector(ctx)
 
 	// Spawn up multiple workers to handle incoming blocks
 	// consider increasing number if providing blocks bottlenecks
 	// file transfers
-	px.Go(bs.provideWorker)
+	// reads bs.provideKeys
+	go bs.provideWorker(ctx, provideWorkerMax)
 }
 
 func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
@@ -90,49 +80,38 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 	}
 }
 
-func (bs *Bitswap) provideWorker(px process.Process) {
+func (bs *Bitswap) provideWorker(ctx context.Context, maxWorkers int) func() {
+	var wg sync.WaitGroup
+	wg.Add(maxWorkers)
 
-	limit := make(chan struct{}, provideWorkerMax)
+	for i := 0; i < maxWorkers; i++ {
+		go func() {
+			defer wg.Done()
 
-	limitedGoProvide := func(k cid.Cid, wid int) {
-		defer func() {
-			// replace token when done
-			<-limit
+			select {
+			case <-ctx.Done():
+				return
+			case k, ok := <-bs.provideKeys:
+				if !ok {
+					log.Debug("provideKeys channel closed")
+					return
+				}
+
+				ev := logging.LoggableMap{"ID": i}
+				defer log.EventBegin(ctx, "Bitswap.ProvideWorker.Work", ev, k).Done()
+
+				ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
+				defer cancel()
+
+				if err := bs.network.Provide(ctx, k); err != nil {
+					log.Warning(err)
+				}
+			}
 		}()
-		ev := logging.LoggableMap{"ID": wid}
-
-		ctx := procctx.OnClosingContext(px) // derive ctx from px
-		defer log.EventBegin(ctx, "Bitswap.ProvideWorker.Work", ev, k).Done()
-
-		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
-		defer cancel()
-
-		if err := bs.network.Provide(ctx, k); err != nil {
-			log.Warning(err)
-		}
 	}
 
-	// worker spawner, reads from bs.provideKeys until it closes, spawning a
-	// _ratelimited_ number of workers to handle each key.
-	for wid := 2; ; wid++ {
-		ev := logging.LoggableMap{"ID": 1}
-		log.Event(procctx.OnClosingContext(px), "Bitswap.ProvideWorker.Loop", ev)
-
-		select {
-		case <-px.Closing():
-			return
-		case k, ok := <-bs.provideKeys:
-			if !ok {
-				log.Debug("provideKeys channel closed")
-				return
-			}
-			select {
-			case <-px.Closing():
-				return
-			case limit <- struct{}{}:
-				go limitedGoProvide(k, wid)
-			}
-		}
+	return func() {
+		wg.Wait()
 	}
 }
 

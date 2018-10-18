@@ -108,7 +108,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	network.SetDelegate(bs)
 
 	// Start up bitswaps async worker routines
-	bs.startWorkers(px, ctx)
+	bs.startWorkers(ctx)
 
 	// bind the context and process.
 	// do it over here to avoid closing before all setup is done.
