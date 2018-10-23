@@ -43,10 +43,6 @@ type Session struct {
 	// liveWants keeps track of all the current requests we have out, and when
 	// they were last requested
 	liveWants map[cid.Cid]time.Time
-	// liveWantsLimit keeps track of how many live wants we should have out at
-	// a time this number should start out low, and grow as we gain more
-	// certainty on the sources of our data
-	liveWantsLimit int
 
 	tick          *time.Timer
 	baseTickDelay time.Duration
@@ -73,21 +69,20 @@ type Session struct {
 // given context
 func (bs *Bitswap) NewSession(ctx context.Context) exchange.Fetcher {
 	s := &Session{
-		activePeers:    make(map[peer.ID]struct{}),
-		liveWants:      make(map[cid.Cid]time.Time),
-		liveWantsLimit: broadcastLiveWantsLimit,
-		newReqs:        make(chan []cid.Cid),
-		cancelKeys:     make(chan []cid.Cid),
-		tofetch:        newCidQueue(),
-		interestReqs:   make(chan interestReq),
-		ctx:            ctx,
-		bs:             bs,
-		incoming:       make(chan blkRecv),
-		notif:          notifications.New(),
-		uuid:           loggables.Uuid("GetBlockRequest"),
-		baseTickDelay:  time.Millisecond * 500,
-		id:             bs.getNextSessionID(),
-		dupl:           1,
+		activePeers:   make(map[peer.ID]struct{}),
+		liveWants:     make(map[cid.Cid]time.Time),
+		newReqs:       make(chan []cid.Cid),
+		cancelKeys:    make(chan []cid.Cid),
+		tofetch:       newCidQueue(),
+		interestReqs:  make(chan interestReq),
+		ctx:           ctx,
+		bs:            bs,
+		incoming:      make(chan blkRecv),
+		notif:         notifications.New(),
+		uuid:          loggables.Uuid("GetBlockRequest"),
+		baseTickDelay: time.Millisecond * 500,
+		id:            bs.getNextSessionID(),
+		dupl:          1,
 	}
 
 	s.tag = fmt.Sprint("bs-ses-", s.id)
@@ -173,11 +168,21 @@ func (s *Session) interestedIn(c cid.Cid) bool {
 
 const provSearchDelay = time.Second * 10
 
-func (s *Session) addActivePeer(p peer.ID) {
-	if s.liveWantsLimit == broadcastLiveWantsLimit {
-		s.liveWantsLimit = targetedLiveWantsLimit
+func (s *Session) wantBudget() int {
+	live := len(s.liveWants)
+	var budget int
+	if len(s.activePeers) > 0 {
+		budget = targetedLiveWantsLimit - live
+	} else {
+		budget = broadcastLiveWantsLimit - live
 	}
+	if budget < 0 {
+		budget = 0
+	}
+	return budget
+}
 
+func (s *Session) addActivePeer(p peer.ID) {
 	if _, ok := s.activePeers[p]; !ok {
 		s.activePeers[p] = struct{}{}
 		s.activePeersArr = append(s.activePeersArr, p)
@@ -215,8 +220,7 @@ func (s *Session) run(ctx context.Context) {
 			for _, k := range keys {
 				s.interest.Add(k, nil)
 			}
-			if len(s.liveWants) < s.liveWantsLimit {
-				toadd := s.liveWantsLimit - len(s.liveWants)
+			if toadd := s.wantBudget(); toadd > 0 {
 				if toadd > len(keys) {
 					toadd = len(keys)
 				}
