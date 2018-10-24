@@ -9,9 +9,9 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmRqtXHu5gsCLpf2s1R2jQuKJBowYKkg6FGQiGCbzttSd1",
+      "hash": "QmUDTcnDp2WssbmiDLC6aYurUeyt7QeRakHUQMxA2mZ5iB",
       "name": "go-libp2p",
-      "version": "6.0.22"
+      "version": "6.0.23"
     },
     {
       "author": "hsanjuan",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.12"
+  "version": "1.1.13"
 }
 
