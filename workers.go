@@ -104,7 +104,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
 		defer cancel()
 
-		if err := bs.network.Provide(ctx, k); err != nil {
+		if err := bs.network.Provide(ctx, k.Hash()); err != nil {
 			log.Warning(err)
 		}
 	}
@@ -228,7 +228,7 @@ func (bs *Bitswap) providerQueryManager(ctx context.Context) {
 			go func(e *blockRequest) {
 				child, cancel := context.WithTimeout(e.Ctx, providerRequestTimeout)
 				defer cancel()
-				providers := bs.network.FindProvidersAsync(child, e.Cid, maxProvidersPerRequest)
+				providers := bs.network.FindProvidersAsync(child, e.Cid.Hash(), maxProvidersPerRequest)
 				wg := &sync.WaitGroup{}
 				for p := range providers {
 					wg.Add(1)

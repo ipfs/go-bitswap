@@ -226,7 +226,7 @@ func (s *Session) run(ctx context.Context) {
 					// - manage timeouts
 					// - ensure two 'findprovs' calls for the same block don't run concurrently
 					// - share peers between sessions based on interest set
-					for p := range s.bs.network.FindProvidersAsync(ctx, k, 10) {
+					for p := range s.bs.network.FindProvidersAsync(ctx, k.Hash(), 10) {
 						newpeers <- p
 					}
 				}(live[0])

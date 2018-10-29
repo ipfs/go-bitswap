@@ -5,10 +5,10 @@ import (
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 
-	cid "github.com/ipfs/go-cid"
 	ifconnmgr "github.com/libp2p/go-libp2p-interface-connmgr"
 	peer "github.com/libp2p/go-libp2p-peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
+	mh "github.com/multiformats/go-multihash"
 )
 
 var (
@@ -63,8 +63,8 @@ type Receiver interface {
 
 type Routing interface {
 	// FindProvidersAsync returns a channel of providers for the given key
-	FindProvidersAsync(context.Context, cid.Cid, int) <-chan peer.ID
+	FindProvidersAsync(context.Context, mh.Multihash, int) <-chan peer.ID
 
 	// Provide provides the key to the network
-	Provide(context.Context, cid.Cid) error
+	Provide(context.Context, mh.Multihash) error
 }
