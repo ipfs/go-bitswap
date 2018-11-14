@@ -8,11 +8,10 @@ import (
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 
-	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
-	procctx "github.com/jbenet/goprocess/context"
-	peer "github.com/libp2p/go-libp2p-peer"
+	"github.com/libp2p/go-libp2p-peer"
 )
 
 var TaskWorkerCount = 8
@@ -35,16 +34,6 @@ func (bs *Bitswap) startWorkers(px process.Process, ctx context.Context) {
 	px.Go(func(px process.Process) {
 		bs.rebroadcastWorker(ctx)
 	})
-
-	// Start up a worker to manage sending out provides messages
-	px.Go(func(px process.Process) {
-		bs.provideCollector(ctx)
-	})
-
-	// Spawn up multiple workers to handle incoming blocks
-	// consider increasing number if providing blocks bottlenecks
-	// file transfers
-	px.Go(bs.provideWorker)
 }
 
 func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
@@ -83,85 +72,6 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 				bs.counterLk.Unlock()
 			case <-ctx.Done():
 				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func (bs *Bitswap) provideWorker(px process.Process) {
-
-	limit := make(chan struct{}, provideWorkerMax)
-
-	limitedGoProvide := func(k cid.Cid, wid int) {
-		defer func() {
-			// replace token when done
-			<-limit
-		}()
-		ev := logging.LoggableMap{"ID": wid}
-
-		ctx := procctx.OnClosingContext(px) // derive ctx from px
-		defer log.EventBegin(ctx, "Bitswap.ProvideWorker.Work", ev, k).Done()
-
-		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
-		defer cancel()
-
-		if err := bs.network.Provide(ctx, k); err != nil {
-			log.Warning(err)
-		}
-	}
-
-	// worker spawner, reads from bs.provideKeys until it closes, spawning a
-	// _ratelimited_ number of workers to handle each key.
-	for wid := 2; ; wid++ {
-		ev := logging.LoggableMap{"ID": 1}
-		log.Event(procctx.OnClosingContext(px), "Bitswap.ProvideWorker.Loop", ev)
-
-		select {
-		case <-px.Closing():
-			return
-		case k, ok := <-bs.provideKeys:
-			if !ok {
-				log.Debug("provideKeys channel closed")
-				return
-			}
-			select {
-			case <-px.Closing():
-				return
-			case limit <- struct{}{}:
-				go limitedGoProvide(k, wid)
-			}
-		}
-	}
-}
-
-func (bs *Bitswap) provideCollector(ctx context.Context) {
-	defer close(bs.provideKeys)
-	var toProvide []cid.Cid
-	var nextKey cid.Cid
-	var keysOut chan cid.Cid
-
-	for {
-		select {
-		case blkey, ok := <-bs.newBlocks:
-			if !ok {
-				log.Debug("newBlocks channel closed")
-				return
-			}
-
-			if keysOut == nil {
-				nextKey = blkey
-				keysOut = bs.provideKeys
-			} else {
-				toProvide = append(toProvide, blkey)
-			}
-		case keysOut <- nextKey:
-			if len(toProvide) > 0 {
-				nextKey = toProvide[0]
-				toProvide = toProvide[1:]
-			} else {
-				keysOut = nil
 			}
 		case <-ctx.Done():
 			return
