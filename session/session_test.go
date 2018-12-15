@@ -8,6 +8,7 @@ import (
 
 	"github.com/ipfs/go-block-format"
 
+	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 	"github.com/ipfs/go-bitswap/testutil"
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
@@ -57,6 +58,16 @@ func (fpm *fakePeerManager) RecordPeerResponse(p peer.ID, c cid.Cid) {
 	fpm.lk.Unlock()
 }
 
+type fakeRequestSplitter struct {
+}
+
+func (frs *fakeRequestSplitter) SplitRequest(peers []peer.ID, keys []cid.Cid) []*bssrs.PartialRequest {
+	return []*bssrs.PartialRequest{&bssrs.PartialRequest{Peers: peers, Keys: keys}}
+}
+
+func (frs *fakeRequestSplitter) RecordDuplicateBlock() {}
+func (frs *fakeRequestSplitter) RecordUniqueBlock()    {}
+
 func TestSessionGetBlocks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -64,8 +75,9 @@ func TestSessionGetBlocks(t *testing.T) {
 	cancelReqs := make(chan wantReq, 1)
 	fwm := &fakeWantManager{wantReqs, cancelReqs}
 	fpm := &fakePeerManager{}
+	frs := &fakeRequestSplitter{}
 	id := testutil.GenerateSessionID()
-	session := New(ctx, id, fwm, fpm)
+	session := New(ctx, id, fwm, fpm, frs)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
 	var cids []cid.Cid
@@ -165,8 +177,9 @@ func TestSessionFindMorePeers(t *testing.T) {
 	cancelReqs := make(chan wantReq, 1)
 	fwm := &fakeWantManager{wantReqs, cancelReqs}
 	fpm := &fakePeerManager{}
+	frs := &fakeRequestSplitter{}
 	id := testutil.GenerateSessionID()
-	session := New(ctx, id, fwm, fpm)
+	session := New(ctx, id, fwm, fpm, frs)
 	session.SetBaseTickDelay(200 * time.Microsecond)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
