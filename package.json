@@ -184,6 +184,12 @@
       "hash": "Qmf7HqcW7LtCi1W8y2bdx2eJpze74jkbKqpByxgXikdbLF",
       "name": "go-detect-race",
       "version": "1.0.1"
+    },
+    {
+      "author": "jbenet",
+      "hash": "QmSJ9n2s9NUoA9D849W5jj5SJ94nMcZpj1jCgQJieiNqSt",
+      "name": "go-random",
+      "version": "1.0.0"
     }
   ],
   "gxVersion": "0.12.1",
