@@ -7,13 +7,12 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
 	notifications "github.com/ipfs/go-bitswap/notifications"
+	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	loggables "github.com/libp2p/go-libp2p-loggables"
 	peer "github.com/libp2p/go-libp2p-peer"
-
-	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 )
 
 const (
@@ -32,7 +31,7 @@ type WantManager interface {
 // requesting more when neccesary.
 type PeerManager interface {
 	FindMorePeers(context.Context, cid.Cid)
-	GetOptimizedPeers() []peer.ID
+	GetOptimizedPeers() []bssd.OptimizedPeer
 	RecordPeerRequests([]peer.ID, []cid.Cid)
 	RecordPeerResponse(peer.ID, cid.Cid)
 }
@@ -40,7 +39,7 @@ type PeerManager interface {
 // RequestSplitter provides an interface for splitting
 // a request for Cids up among peers.
 type RequestSplitter interface {
-	SplitRequest([]peer.ID, []cid.Cid) []*bssrs.PartialRequest
+	SplitRequest([]bssd.OptimizedPeer, []cid.Cid) []bssd.PartialRequest
 	RecordDuplicateBlock()
 	RecordUniqueBlock()
 }

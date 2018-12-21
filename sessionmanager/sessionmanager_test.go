@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
-
 	bssession "github.com/ipfs/go-bitswap/session"
+	bssd "github.com/ipfs/go-bitswap/sessiondata"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -38,14 +37,14 @@ type fakePeerManager struct {
 }
 
 func (*fakePeerManager) FindMorePeers(context.Context, cid.Cid)  {}
-func (*fakePeerManager) GetOptimizedPeers() []peer.ID            { return nil }
+func (*fakePeerManager) GetOptimizedPeers() []bssd.OptimizedPeer { return nil }
 func (*fakePeerManager) RecordPeerRequests([]peer.ID, []cid.Cid) {}
 func (*fakePeerManager) RecordPeerResponse(peer.ID, cid.Cid)     {}
 
 type fakeRequestSplitter struct {
 }
 
-func (frs *fakeRequestSplitter) SplitRequest(peers []peer.ID, keys []cid.Cid) []*bssrs.PartialRequest {
+func (frs *fakeRequestSplitter) SplitRequest(optimizedPeers []bssd.OptimizedPeer, keys []cid.Cid) []bssd.PartialRequest {
 	return nil
 }
 func (frs *fakeRequestSplitter) RecordDuplicateBlock() {}
