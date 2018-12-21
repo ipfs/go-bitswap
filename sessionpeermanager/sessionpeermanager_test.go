@@ -2,8 +2,8 @@ package sessionpeermanager
 
 import (
 	"context"
-	"sync"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,6 +66,19 @@ func (*fakeConnManager) GetTagInfo(p peer.ID) *ifconnmgr.TagInfo { return nil }
 func (*fakeConnManager) TrimOpenConns(ctx context.Context)       {}
 func (*fakeConnManager) Notifee() inet.Notifiee                  { return nil }
 
+func collectPeers(sessionPeerManager *SessionPeerManager) []peer.ID {
+	keys := testutil.GenerateCids(maxOptimizedPeers)
+	requests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	var sessionPeers []peer.ID
+	for _, request := range requests {
+		for _, peer := range request.Peers {
+			if !testutil.ContainsPeer(sessionPeers, peer) {
+				sessionPeers = append(sessionPeers, peer)
+			}
+		}
+	}
+	return sessionPeers
+}
 func TestFindingMorePeers(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
@@ -82,7 +95,7 @@ func TestFindingMorePeers(t *testing.T) {
 	defer findCancel()
 	sessionPeerManager.FindMorePeers(ctx, c)
 	<-findCtx.Done()
-	sessionPeers := sessionPeerManager.GetOptimizedPeers()
+	sessionPeers := collectPeers(sessionPeerManager)
 	if len(sessionPeers) != len(peers) {
 		t.Fatal("incorrect number of peers found")
 	}
@@ -109,7 +122,7 @@ func TestRecordingReceivedBlocks(t *testing.T) {
 	sessionPeerManager := New(ctx, id, fpn)
 	sessionPeerManager.RecordPeerResponse(p, c)
 	time.Sleep(10 * time.Millisecond)
-	sessionPeers := sessionPeerManager.GetOptimizedPeers()
+	sessionPeers := collectPeers(sessionPeerManager)
 	if len(sessionPeers) != 1 {
 		t.Fatal("did not add peer on receive")
 	}
@@ -143,14 +156,19 @@ func TestOrderingPeers(t *testing.T) {
 	peer2 := peers[rand.Intn(100)]
 	peer3 := peers[rand.Intn(100)]
 	time.Sleep(1 * time.Millisecond)
-	sessionPeerManager.RecordPeerResponse(peer1, c[0])
+	// bring split down
+	for i := 0; i < 5+minReceivedToAdjustSplit; i++ {
+		sessionPeerManager.RecordPeerResponse(peer1, c[0])
+	}
 	time.Sleep(1 * time.Millisecond)
 	sessionPeerManager.RecordPeerResponse(peer2, c[0])
 	time.Sleep(1 * time.Millisecond)
 	sessionPeerManager.RecordPeerResponse(peer3, c[0])
 
-	sessionPeers := sessionPeerManager.GetOptimizedPeers()
-	if len(sessionPeers) != maxOptimizedPeers {
+	ks := testutil.GenerateCids(1)
+	requests := sessionPeerManager.SplitRequestAmongPeers(ks)
+	sessionPeers := requests[0].Peers
+	if len(requests[0].Peers) != maxOptimizedPeers {
 		t.Fatal("Should not return more than the max of optimized peers")
 	}
 
@@ -163,7 +181,8 @@ func TestOrderingPeers(t *testing.T) {
 	sessionPeerManager.RecordPeerResponse(peer3, c[0])
 
 	// call again
-	nextSessionPeers := sessionPeerManager.GetOptimizedPeers()
+	requests = sessionPeerManager.SplitRequestAmongPeers(ks)
+	nextSessionPeers := requests[0].Peers
 	if len(nextSessionPeers) != maxOptimizedPeers {
 		t.Fatal("Should not return more than the max of optimized peers")
 	}
@@ -206,5 +225,127 @@ func TestUntaggingPeers(t *testing.T) {
 
 	if len(fcm.taggedPeers) != 0 {
 		t.Fatal("Peers were not untagged!")
+	}
+}
+
+func TestSplittingRequests(t *testing.T) {
+	ctx := context.Background()
+	peers := testutil.GeneratePeers(10)
+	keys := testutil.GenerateCids(6)
+	id := testutil.GenerateSessionID()
+	fcm := &fakeConnManager{}
+	fpn := &fakePeerNetwork{peers, fcm}
+	c := testutil.GenerateCids(1)[0]
+
+	sessionPeerManager := New(ctx, id, fpn)
+
+	sessionPeerManager.FindMorePeers(ctx, c)
+	time.Sleep(5 * time.Millisecond)
+
+	partialRequests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	if len(partialRequests) != 2 {
+		t.Fatal("Did not generate right number of partial requests")
+	}
+	for _, partialRequest := range partialRequests {
+		if len(partialRequest.Peers) != 5 && len(partialRequest.Keys) != 3 {
+			t.Fatal("Did not split request into even partial requests")
+		}
+	}
+}
+
+func TestSplittingRequestsTooFewKeys(t *testing.T) {
+	ctx := context.Background()
+	peers := testutil.GeneratePeers(10)
+	keys := testutil.GenerateCids(1)
+	id := testutil.GenerateSessionID()
+	fcm := &fakeConnManager{}
+	fpn := &fakePeerNetwork{peers, fcm}
+	c := testutil.GenerateCids(1)[0]
+	sessionPeerManager := New(ctx, id, fpn)
+
+	sessionPeerManager.FindMorePeers(ctx, c)
+	time.Sleep(5 * time.Millisecond)
+
+	partialRequests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	if len(partialRequests) != 1 {
+		t.Fatal("Should only generate as many requests as keys")
+	}
+	for _, partialRequest := range partialRequests {
+		if len(partialRequest.Peers) != 5 && len(partialRequest.Keys) != 1 {
+			t.Fatal("Should still split peers up between keys")
+		}
+	}
+}
+
+func TestSplittingRequestsTooFewPeers(t *testing.T) {
+	ctx := context.Background()
+	peers := testutil.GeneratePeers(1)
+	keys := testutil.GenerateCids(6)
+	id := testutil.GenerateSessionID()
+	fcm := &fakeConnManager{}
+	fpn := &fakePeerNetwork{peers, fcm}
+	c := testutil.GenerateCids(1)[0]
+
+	sessionPeerManager := New(ctx, id, fpn)
+
+	sessionPeerManager.FindMorePeers(ctx, c)
+	time.Sleep(5 * time.Millisecond)
+
+	partialRequests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	if len(partialRequests) != 1 {
+		t.Fatal("Should only generate as many requests as peers")
+	}
+	for _, partialRequest := range partialRequests {
+		if len(partialRequest.Peers) != 1 && len(partialRequest.Keys) != 6 {
+			t.Fatal("Should not split keys if there are not enough peers")
+		}
+	}
+}
+
+func TestSplittingRequestsIncreasingSplitDueToDupes(t *testing.T) {
+	ctx := context.Background()
+	peers := testutil.GeneratePeers(maxSplit)
+	keys := testutil.GenerateCids(maxSplit)
+	id := testutil.GenerateSessionID()
+	fcm := &fakeConnManager{}
+	fpn := &fakePeerNetwork{peers, fcm}
+	c := testutil.GenerateCids(1)[0]
+
+	sessionPeerManager := New(ctx, id, fpn)
+
+	sessionPeerManager.FindMorePeers(ctx, c)
+	time.Sleep(5 * time.Millisecond)
+
+	for i := 0; i < maxSplit+minReceivedToAdjustSplit; i++ {
+		sessionPeerManager.RecordDuplicateBlock()
+	}
+
+	partialRequests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	if len(partialRequests) != maxSplit {
+		t.Fatal("Did not adjust split up as duplicates came in")
+	}
+}
+
+func TestSplittingRequestsDecreasingSplitDueToNoDupes(t *testing.T) {
+	ctx := context.Background()
+	peers := testutil.GeneratePeers(maxSplit)
+	keys := testutil.GenerateCids(maxSplit)
+	id := testutil.GenerateSessionID()
+	fcm := &fakeConnManager{}
+	fpn := &fakePeerNetwork{peers, fcm}
+	c := testutil.GenerateCids(1)[0]
+
+	sessionPeerManager := New(ctx, id, fpn)
+
+	sessionPeerManager.FindMorePeers(ctx, c)
+	time.Sleep(5 * time.Millisecond)
+
+	for i := 0; i < 5+minReceivedToAdjustSplit; i++ {
+		sessionPeerManager.RecordPeerResponse(peers[0], c)
+	}
+
+	partialRequests := sessionPeerManager.SplitRequestAmongPeers(keys)
+	if len(partialRequests) != 1 {
+		t.Fatal("Did not adjust split down as unique blocks came in")
 	}
 }

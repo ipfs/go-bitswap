@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
-
 	bssession "github.com/ipfs/go-bitswap/session"
+	bsspm "github.com/ipfs/go-bitswap/sessionpeermanager"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -20,7 +19,6 @@ type fakeSession struct {
 	updateReceiveCounters bool
 	id                    uint64
 	pm                    *fakePeerManager
-	srs                   *fakeRequestSplitter
 }
 
 func (*fakeSession) GetBlock(context.Context, cid.Cid) (blocks.Block, error) {
@@ -37,29 +35,21 @@ type fakePeerManager struct {
 	id uint64
 }
 
-func (*fakePeerManager) FindMorePeers(context.Context, cid.Cid)  {}
-func (*fakePeerManager) GetOptimizedPeers() []peer.ID            { return nil }
-func (*fakePeerManager) RecordPeerRequests([]peer.ID, []cid.Cid) {}
-func (*fakePeerManager) RecordPeerResponse(peer.ID, cid.Cid)     {}
-
-type fakeRequestSplitter struct {
-}
-
-func (frs *fakeRequestSplitter) SplitRequest(peers []peer.ID, keys []cid.Cid) []*bssrs.PartialRequest {
-	return nil
-}
-func (frs *fakeRequestSplitter) RecordDuplicateBlock() {}
-func (frs *fakeRequestSplitter) RecordUniqueBlock()    {}
+func (*fakePeerManager) FindMorePeers(context.Context, cid.Cid)                   {}
+func (*fakePeerManager) HasPeers() bool                                           { return false }
+func (*fakePeerManager) RecordDuplicateBlock()                                    {}
+func (*fakePeerManager) SplitRequestAmongPeers([]cid.Cid) []*bsspm.PartialRequest { return nil }
+func (*fakePeerManager) RecordPeerRequests([]peer.ID, []cid.Cid)                  {}
+func (*fakePeerManager) RecordPeerResponse(peer.ID, cid.Cid)                      {}
 
 var nextInterestedIn bool
 
-func sessionFactory(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter) Session {
+func sessionFactory(ctx context.Context, id uint64, pm bssession.PeerManager) Session {
 	return &fakeSession{
 		interested:    nextInterestedIn,
 		receivedBlock: false,
 		id:            id,
 		pm:            pm.(*fakePeerManager),
-		srs:           srs.(*fakeRequestSplitter),
 	}
 }
 
@@ -67,15 +57,11 @@ func peerManagerFactory(ctx context.Context, id uint64) bssession.PeerManager {
 	return &fakePeerManager{id}
 }
 
-func requestSplitterFactory(ctx context.Context) bssession.RequestSplitter {
-	return &fakeRequestSplitter{}
-}
-
 func TestAddingSessions(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sm := New(ctx, sessionFactory, peerManagerFactory, requestSplitterFactory)
+	sm := New(ctx, sessionFactory, peerManagerFactory)
 
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
@@ -111,7 +97,7 @@ func TestReceivingBlocksWhenNotInterested(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sm := New(ctx, sessionFactory, peerManagerFactory, requestSplitterFactory)
+	sm := New(ctx, sessionFactory, peerManagerFactory)
 
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
@@ -134,7 +120,7 @@ func TestReceivingBlocksWhenNotInterested(t *testing.T) {
 func TestRemovingPeersWhenManagerContextCancelled(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
-	sm := New(ctx, sessionFactory, peerManagerFactory, requestSplitterFactory)
+	sm := New(ctx, sessionFactory, peerManagerFactory)
 
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
@@ -159,7 +145,7 @@ func TestRemovingPeersWhenSessionContextCancelled(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	sm := New(ctx, sessionFactory, peerManagerFactory, requestSplitterFactory)
+	sm := New(ctx, sessionFactory, peerManagerFactory)
 
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))

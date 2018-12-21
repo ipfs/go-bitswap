@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
-
 	decision "github.com/ipfs/go-bitswap/decision"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -105,14 +103,11 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	wm := bswm.New(ctx)
-	sessionFactory := func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter) bssm.Session {
-		return bssession.New(ctx, id, wm, pm, srs)
+	sessionFactory := func(ctx context.Context, id uint64, pm bssession.PeerManager) bssm.Session {
+		return bssession.New(ctx, id, wm, pm)
 	}
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.PeerManager {
 		return bsspm.New(ctx, id, network)
-	}
-	sessionRequestSplitterFactory := func(ctx context.Context) bssession.RequestSplitter {
-		return bssrs.New(ctx)
 	}
 
 	bs := &Bitswap{
@@ -126,7 +121,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		provideKeys:   make(chan cid.Cid, provideKeysBufferSize),
 		wm:            wm,
 		pm:            bspm.New(ctx, peerQueueFactory),
-		sm:            bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, sessionRequestSplitterFactory),
+		sm:            bssm.New(ctx, sessionFactory, sessionPeerManagerFactory),
 		counters:      new(counters),
 		dupMetric:     dupHist,
 		allMetric:     allHist,

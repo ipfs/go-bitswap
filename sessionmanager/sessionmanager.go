@@ -23,14 +23,10 @@ type Session interface {
 type sesTrk struct {
 	session Session
 	pm      bssession.PeerManager
-	srs     bssession.RequestSplitter
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter) Session
-
-// RequestSplitterFactory generates a new request splitter for a session.
-type RequestSplitterFactory func(ctx context.Context) bssession.RequestSplitter
+type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager) Session
 
 // PeerManagerFactory generates a new peer manager for a session.
 type PeerManagerFactory func(ctx context.Context, id uint64) bssession.PeerManager
@@ -38,11 +34,9 @@ type PeerManagerFactory func(ctx context.Context, id uint64) bssession.PeerManag
 // SessionManager is responsible for creating, managing, and dispatching to
 // sessions.
 type SessionManager struct {
-	ctx                    context.Context
-	sessionFactory         SessionFactory
-	peerManagerFactory     PeerManagerFactory
-	requestSplitterFactory RequestSplitterFactory
-
+	ctx                context.Context
+	sessionFactory     SessionFactory
+	peerManagerFactory PeerManagerFactory
 	// Sessions
 	sessLk   sync.Mutex
 	sessions []sesTrk
@@ -53,12 +47,11 @@ type SessionManager struct {
 }
 
 // New creates a new SessionManager.
-func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory PeerManagerFactory, requestSplitterFactory RequestSplitterFactory) *SessionManager {
+func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory PeerManagerFactory) *SessionManager {
 	return &SessionManager{
-		ctx:                    ctx,
-		sessionFactory:         sessionFactory,
-		peerManagerFactory:     peerManagerFactory,
-		requestSplitterFactory: requestSplitterFactory,
+		ctx:                ctx,
+		sessionFactory:     sessionFactory,
+		peerManagerFactory: peerManagerFactory,
 	}
 }
 
@@ -69,9 +62,8 @@ func (sm *SessionManager) NewSession(ctx context.Context) exchange.Fetcher {
 	sessionctx, cancel := context.WithCancel(ctx)
 
 	pm := sm.peerManagerFactory(sessionctx, id)
-	srs := sm.requestSplitterFactory(sessionctx)
-	session := sm.sessionFactory(sessionctx, id, pm, srs)
-	tracked := sesTrk{session, pm, srs}
+	session := sm.sessionFactory(sessionctx, id, pm)
+	tracked := sesTrk{session, pm}
 	sm.sessLk.Lock()
 	sm.sessions = append(sm.sessions, tracked)
 	sm.sessLk.Unlock()
