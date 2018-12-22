@@ -2,6 +2,8 @@ package sessionrequestsplitter
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
 
@@ -96,6 +98,46 @@ func (srs *SessionRequestSplitter) duplicateRatio() float64 {
 	return float64(srs.duplicateReceivedCount) / float64(srs.receivedCount)
 }
 
+func (srs *SessionRequestSplitter) peersFromOptimizedPeers(optimizedPeers []bssd.OptimizedPeer) []peer.ID {
+	optimizationTotal := 0.0
+	skipMap := make([]int, len(optimizedPeers))
+	for i, optimizedPeer := range optimizedPeers {
+		optimizationTotal += optimizedPeer.OptimizationRating
+		skipMap[i] = i + 1
+	}
+	peers := make([]peer.ID, 0, len(optimizedPeers))
+	skipMapStart := 0
+	fmt.Printf("%d\n", len(optimizedPeers))
+	for range optimizedPeers {
+		randValue := rand.Float64()
+		randTarget := randValue * optimizationTotal
+		fmt.Printf("opt total %f, rand %f, randTarget %f\n", optimizationTotal, randValue, randTarget)
+		fmt.Printf("skipMapStart %d\n", skipMapStart)
+		targetSoFar := 0.0
+		currentIndex := skipMapStart
+		previousIndex := -1
+		for {
+			currentRating := optimizedPeers[currentIndex].OptimizationRating
+			targetSoFar += currentRating
+			fmt.Printf("targetSoFar %f, randTarget %f\n", targetSoFar, randTarget)
+			if targetSoFar+0.000001 >= randTarget {
+				fmt.Printf("%d\n", currentIndex)
+				peers = append(peers, optimizedPeers[currentIndex].Peer)
+				optimizationTotal -= currentRating
+				if currentIndex == skipMapStart {
+					skipMapStart = skipMap[currentIndex]
+				} else {
+					skipMap[previousIndex] = skipMap[currentIndex]
+				}
+				break
+			}
+			previousIndex = currentIndex
+			currentIndex = skipMap[currentIndex]
+		}
+	}
+	return peers
+}
+
 type splitRequestMessage struct {
 	optimizedPeers []bssd.OptimizedPeer
 	ks             []cid.Cid
@@ -105,10 +147,7 @@ type splitRequestMessage struct {
 func (s *splitRequestMessage) handle(srs *SessionRequestSplitter) {
 	split := srs.split
 	// first iteration ignore optimization ratings
-	peers := make([]peer.ID, len(s.optimizedPeers))
-	for i, optimizedPeer := range s.optimizedPeers {
-		peers[i] = optimizedPeer.Peer
-	}
+	peers := srs.peersFromOptimizedPeers(s.optimizedPeers)
 	ks := s.ks
 	if len(peers) < split {
 		split = len(peers)
