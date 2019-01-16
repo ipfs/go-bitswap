@@ -2,19 +2,23 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
+	logging "github.com/ipfs/go-log"
+	"go.opencensus.io/trace"
+
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
-	loggables "github.com/libp2p/go-libp2p-loggables"
 	peer "github.com/libp2p/go-libp2p-peer"
 
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 )
+
+var log = logging.Logger("bitswap")
 
 const (
 	broadcastLiveWantsLimit = 4
@@ -85,7 +89,6 @@ type Session struct {
 	fetchcnt      int
 	// identifiers
 	notif notifications.PubSub
-	uuid  logging.Loggable
 	id    uint64
 }
 
@@ -107,7 +110,6 @@ func New(ctx context.Context, id uint64, wm WantManager, pm PeerManager, srs Req
 		srs:           srs,
 		incoming:      make(chan blkRecv),
 		notif:         notifications.New(),
-		uuid:          loggables.Uuid("GetBlockRequest"),
 		baseTickDelay: time.Millisecond * 500,
 		id:            id,
 	}
@@ -179,8 +181,9 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 // returns a channel that found blocks will be returned on. No order is
 // guaranteed on the returned blocks.
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
-	ctx = logging.ContextWithLoggable(ctx, s.uuid)
-	return bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
+	ctx, span := trace.StartSpan(ctx, "Bitswap.Session.GetBlocks")
+	span.AddAttributes(trace.Int64Attribute("Bitswap.Session.Id", int64(s.id)))
+	resultsChan, err := bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
 			case s.newReqs <- keys:
@@ -195,6 +198,21 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 			}
 		},
 	)
+
+	if err != nil {
+		span.End()
+		return nil, err
+	}
+
+	returnChan := make(chan blocks.Block)
+	go func() {
+		defer span.End()
+		defer close(returnChan)
+		for outBlock := range resultsChan {
+			returnChan <- outBlock
+		}
+	}()
+	return returnChan, nil
 }
 
 // GetAverageLatency returns the average latency for block requests.
@@ -267,7 +285,7 @@ func (s *Session) handleIncomingBlock(ctx context.Context, blk blkRecv) {
 		s.pm.RecordPeerResponse(blk.from, blk.blk.Cid())
 	}
 
-	s.receiveBlock(ctx, blk.blk)
+	s.receiveBlock(ctx, blk.blk, blk.from)
 
 	s.resetTick()
 }
@@ -299,6 +317,13 @@ func (s *Session) handleCancel(keys []cid.Cid) {
 
 func (s *Session) handleTick(ctx context.Context) {
 
+	span := trace.FromContext(ctx)
+	if span != nil {
+		span.Annotate([]trace.Attribute{
+			trace.BoolAttribute("Bitswap.Session.TickOccurred", true),
+		}, "Bitswap.Session.Tick")
+	}
+
 	live := make([]cid.Cid, 0, len(s.liveWants))
 	now := time.Now()
 	for c := range s.liveWants {
@@ -307,8 +332,7 @@ func (s *Session) handleTick(ctx context.Context) {
 	}
 
 	// Broadcast these keys to everyone we're connected to
-	s.pm.RecordPeerRequests(nil, live)
-	s.wm.WantBlocks(ctx, live, nil, s.id)
+	s.enqueueWants(ctx, live, nil)
 
 	if len(live) > 0 {
 		s.pm.FindMorePeers(ctx, live[0])
@@ -335,9 +359,17 @@ func (s *Session) cidIsWanted(c cid.Cid) bool {
 	return ok
 }
 
-func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block) {
+func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block, from peer.ID) {
 	c := blk.Cid()
 	if s.cidIsWanted(c) {
+		span := trace.FromContext(ctx)
+		if span != nil {
+			span.Annotate([]trace.Attribute{
+				trace.StringAttribute("cid", blk.Cid().String()),
+				trace.StringAttribute("peer", from.String()),
+			},
+				"Bitswap.Session.ReceivedBlock")
+		}
 		s.srs.RecordUniqueBlock()
 		tval, ok := s.liveWants[c]
 		if ok {
@@ -368,8 +400,37 @@ func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block) {
 func (s *Session) updateReceiveCounters(ctx context.Context, blk blkRecv) {
 	ks := blk.blk.Cid()
 	if s.pastWants.Has(ks) {
+		span := trace.FromContext(ctx)
+		if span != nil {
+			span.Annotate([]trace.Attribute{
+				trace.StringAttribute("cid", blk.blk.Cid().String()),
+				trace.StringAttribute("peer", blk.from.String()),
+			},
+				"Bitswap.Session.ReceivedDuplicateBlock")
+		}
 		s.srs.RecordDuplicateBlock()
 	}
+}
+
+func (s *Session) enqueueWants(ctx context.Context, ks []cid.Cid, peers []peer.ID) {
+	span := trace.FromContext(ctx)
+	if span != nil {
+		var attributes []trace.Attribute
+		for i, key := range ks {
+			attributes = append(attributes, trace.StringAttribute(fmt.Sprintf("cid.%d", i+1), key.String()))
+		}
+		if peers == nil {
+			attributes = append(attributes, trace.BoolAttribute("isTargeted", false))
+		} else {
+			attributes = append(attributes, trace.BoolAttribute("isTargeted", true))
+			for i, p := range peers {
+				attributes = append(attributes, trace.StringAttribute(fmt.Sprintf("peer.%d", i+1), p.String()))
+			}
+		}
+		span.Annotate(attributes, "Bitswap.Session.WantBlocks")
+	}
+	s.pm.RecordPeerRequests(peers, ks)
+	s.wm.WantBlocks(ctx, ks, peers, s.id)
 }
 
 func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
@@ -381,12 +442,10 @@ func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
 	if len(peers) > 0 {
 		splitRequests := s.srs.SplitRequest(peers, ks)
 		for _, splitRequest := range splitRequests {
-			s.pm.RecordPeerRequests(splitRequest.Peers, splitRequest.Keys)
-			s.wm.WantBlocks(ctx, splitRequest.Keys, splitRequest.Peers, s.id)
+			s.enqueueWants(ctx, splitRequest.Keys, splitRequest.Peers)
 		}
 	} else {
-		s.pm.RecordPeerRequests(nil, ks)
-		s.wm.WantBlocks(ctx, ks, nil, s.id)
+		s.enqueueWants(ctx, ks, nil)
 	}
 }
 

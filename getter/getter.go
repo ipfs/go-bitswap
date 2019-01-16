@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 
-	notifications "github.com/ipfs/go-bitswap/notifications"
 	logging "github.com/ipfs/go-log"
+
+	notifications "github.com/ipfs/go-bitswap/notifications"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	"go.opencensus.io/trace"
 )
 
 var log = logging.Logger("bitswap")
@@ -70,10 +72,15 @@ func AsyncGetBlocks(ctx context.Context, keys []cid.Cid, notif notifications.Pub
 		return out, nil
 	}
 
+	span := trace.FromContext(ctx)
 	remaining := cid.NewSet()
 	promise := notif.Subscribe(ctx, keys...)
 	for _, k := range keys {
-		log.Event(ctx, "Bitswap.GetBlockRequest.Start", k)
+		if span != nil {
+			span.Annotate([]trace.Attribute{
+				trace.StringAttribute("cid", k.String()),
+			}, "Bitswap.GetBlockRequest.Start")
+		}
 		remaining.Add(k)
 	}
 
@@ -86,6 +93,7 @@ func AsyncGetBlocks(ctx context.Context, keys []cid.Cid, notif notifications.Pub
 
 func handleIncoming(ctx context.Context, remaining *cid.Set, in <-chan blocks.Block, out chan blocks.Block, cfun func([]cid.Cid)) {
 	ctx, cancel := context.WithCancel(ctx)
+	span := trace.FromContext(ctx)
 	defer func() {
 		cancel()
 		close(out)
@@ -100,6 +108,11 @@ func handleIncoming(ctx context.Context, remaining *cid.Set, in <-chan blocks.Bl
 			}
 
 			remaining.Remove(blk.Cid())
+			if span != nil {
+				span.Annotate([]trace.Attribute{
+					trace.StringAttribute("cid", blk.Cid().String()),
+				}, "Bitswap.GetBlockRequest.End")
+			}
 			select {
 			case out <- blk:
 			case <-ctx.Done():

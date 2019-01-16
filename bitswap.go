@@ -13,6 +13,8 @@ import (
 
 	decision "github.com/ipfs/go-bitswap/decision"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
+	logging "github.com/ipfs/go-log"
+
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsmq "github.com/ipfs/go-bitswap/messagequeue"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -28,11 +30,11 @@ import (
 	delay "github.com/ipfs/go-ipfs-delay"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	flags "github.com/ipfs/go-ipfs-flags"
-	logging "github.com/ipfs/go-log"
 	metrics "github.com/ipfs/go-metrics-interface"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-peer"
+	"go.opencensus.io/trace"
 )
 
 var log = logging.Logger("bitswap")
@@ -251,10 +253,15 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 		return nil, errors.New("bitswap is closed")
 	default:
 	}
+
+	ctx, span := trace.StartSpan(ctx, "Bitswap.Session.GetBlocks")
+
 	promise := bs.notifications.Subscribe(ctx, keys...)
 
 	for _, k := range keys {
-		log.Event(ctx, "Bitswap.GetBlockRequest.Start", k)
+		span.Annotate([]trace.Attribute{
+			trace.StringAttribute("cid", k.String()),
+		}, "Bitswap.GetBlockRequest.Start")
 	}
 
 	mses := bs.sm.GetNextSessionID()
@@ -268,6 +275,7 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 
 	out := make(chan blocks.Block)
 	go func() {
+		defer span.End()
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		defer close(out)
@@ -308,6 +316,9 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 
 				bs.CancelWants([]cid.Cid{blk.Cid()}, mses)
 				remaining.Remove(blk.Cid())
+				span.Annotate([]trace.Attribute{
+					trace.StringAttribute("cid", blk.Cid().String()),
+				}, "Bitswap.GetBlockRequest.End")
 				select {
 				case out <- blk:
 				case <-ctx.Done():
@@ -407,7 +418,6 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 			if err := bs.receiveBlockFrom(b, p); err != nil {
 				log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 			}
-			log.Event(ctx, "Bitswap.GetBlockRequest.End", b.Cid())
 		}(block)
 	}
 	wg.Wait()

@@ -190,6 +190,18 @@
       "hash": "QmSJ9n2s9NUoA9D849W5jj5SJ94nMcZpj1jCgQJieiNqSt",
       "name": "go-random",
       "version": "1.0.0"
+    },
+    {
+      "author": "whyrusleeping",
+      "hash": "QmcaSwFc5RBg8yCq54QURwEU4nwjfCpjbpmaAm4VbdGLKv",
+      "name": "go-logging",
+      "version": "0.0.0"
+    },
+    {
+      "author": "lanzafame",
+      "hash": "QmYRHQCRVSznLwaR8kXtVH4KSZU5fqFPPSkxv9xsJV2QCY",
+      "name": "opencensus-go",
+      "version": "0.0.1"
     }
   ],
   "gxVersion": "0.12.1",

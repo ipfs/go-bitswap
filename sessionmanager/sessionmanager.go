@@ -7,10 +7,15 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 
+	logging "github.com/ipfs/go-log"
+
 	bssession "github.com/ipfs/go-bitswap/session"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-peer"
+	"go.opencensus.io/trace"
 )
+
+var log = logging.Logger("bitswap")
 
 // Session is a session that is managed by the session manager
 type Session interface {
@@ -66,7 +71,9 @@ func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory 
 // session manager.
 func (sm *SessionManager) NewSession(ctx context.Context) exchange.Fetcher {
 	id := sm.GetNextSessionID()
-	sessionctx, cancel := context.WithCancel(ctx)
+	sessionctx, span := trace.StartSpan(ctx, "Bitswap.Session")
+	span.AddAttributes(trace.Int64Attribute("Bitswap.Session.Id", int64(id)))
+	sessionctx, cancel := context.WithCancel(sessionctx)
 
 	pm := sm.peerManagerFactory(sessionctx, id)
 	srs := sm.requestSplitterFactory(sessionctx)
@@ -76,6 +83,7 @@ func (sm *SessionManager) NewSession(ctx context.Context) exchange.Fetcher {
 	sm.sessions = append(sm.sessions, tracked)
 	sm.sessLk.Unlock()
 	go func() {
+		defer span.End()
 		defer cancel()
 		select {
 		case <-sm.ctx.Done():

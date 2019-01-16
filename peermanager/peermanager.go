@@ -3,9 +3,10 @@ package peermanager
 import (
 	"context"
 
+	logging "github.com/ipfs/go-log"
+
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
-	logging "github.com/ipfs/go-log"
 
 	peer "github.com/libp2p/go-libp2p-peer"
 )

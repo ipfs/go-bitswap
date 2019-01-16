@@ -10,6 +10,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ifconnmgr "github.com/libp2p/go-libp2p-interface-connmgr"
 	peer "github.com/libp2p/go-libp2p-peer"
+	"go.opencensus.io/trace"
 )
 
 var log = logging.Logger("bitswap")
@@ -100,25 +101,35 @@ func (spm *SessionPeerManager) GetOptimizedPeers() []peer.ID {
 // FindMorePeers attempts to find more peers for a session by searching for
 // providers for the given Cid
 func (spm *SessionPeerManager) FindMorePeers(ctx context.Context, c cid.Cid) {
+	ctx, span := trace.StartSpan(ctx, "Bitswap.SessionPeerManager.FindMorePeers")
 	go func(k cid.Cid) {
+		defer span.End()
 		// TODO: have a task queue setup for this to:
 		// - rate limit
 		// - manage timeouts
 		// - ensure two 'findprovs' calls for the same block don't run concurrently
 		// - share peers between sessions based on interest set
 		for p := range spm.network.FindProvidersAsync(ctx, k, 10) {
-			go func(p peer.ID) {
-				// TODO: Also use context from spm.
+			span.Annotate([]trace.Attribute{trace.StringAttribute("peer", p.String())},
+				"Bitswap.SessionPeerManager.FindMorePeers.PeerFound")
+			peerCtx, peerSpan := trace.StartSpan(ctx, "Bitswap.SessionPeerManager.FindMorePeers.PeerConnect")
+			peerSpan.AddAttributes(trace.StringAttribute("peer", p.String()))
+			go func(peerCtx context.Context, peerSpan *trace.Span, p peer.ID) {
+				defer peerSpan.End()
+				peerSpan.Annotate([]trace.Attribute{}, "ConnectionStart")
 				err := spm.network.ConnectTo(ctx, p)
 				if err != nil {
+					peerSpan.Annotate([]trace.Attribute{trace.BoolAttribute("success", false)}, "ConnectionEnd")
 					log.Debugf("failed to connect to provider %s: %s", p, err)
+					return
 				}
+				peerSpan.Annotate([]trace.Attribute{trace.BoolAttribute("success", true)}, "ConnectionEnd")
 				select {
 				case spm.peerMessages <- &peerFoundMessage{p}:
-				case <-ctx.Done():
+				case <-peerCtx.Done():
 				case <-spm.ctx.Done():
 				}
-			}(p)
+			}(peerCtx, peerSpan, p)
 		}
 	}(c)
 }
@@ -176,6 +187,11 @@ type peerFoundMessage struct {
 func (pfm *peerFoundMessage) handle(spm *SessionPeerManager) {
 	p := pfm.p
 	if _, ok := spm.activePeers[p]; !ok {
+		span := trace.FromContext(spm.ctx)
+		if span != nil {
+			span.Annotate([]trace.Attribute{trace.StringAttribute("peer", p.String())},
+				"Bitswap.SessionPeerManager.PeerAdded")
+		}
 		spm.activePeers[p] = false
 		spm.unoptimizedPeersArr = append(spm.unoptimizedPeersArr, p)
 		spm.tagPeer(p)
