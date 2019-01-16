@@ -1,0 +1,88 @@
+@startuml Bitswap Activity Diagram
+start
+:Bitswap initialized;
+fork
+  :WantManager initialized;
+  repeat
+    :Wait for incoming wants;
+    :Calculate wantlist changes;
+    :Send changes to PeerManager;
+    if (changes target to specific peers?) then (yes)
+      :Filter targets for those that are in the peer manager;
+    else (no)
+      :Use all peers in peermanager (broadcast);
+    endif
+    fork
+      :MessageQueue for peer queues up 
+       changes till last message done sending;
+      :MessageQueue initializes peer connection if not initialized;
+      repeat
+        :Attempt to send message;
+        if (message send failed?) then (yes)
+          :Attempt to reconnect peer;
+        else (no)
+        endif 
+      repeat while (send successful or failure to reconnect?) is (no)
+    fork again
+      :MessageQueue for peer queues up 
+       changes till last message done sending;
+      :MessageQueue initializes peer connection if not initialized;
+      repeat
+        :Attempt to send message;
+        if (message send failed?) then (yes)
+          :Attempt to reconnect peer;
+        else (no)
+        endif
+      repeat while (send successful or failure to reconnect?) is (no)
+    end fork
+  repeat while (bitswap is open?) is (yes)
+fork again
+  :Bitswap sets network's receiver to itself;
+  repeat
+    :Wait to receive new blocks from network;
+    :Notify global bitswap notifier blocks received;
+    :Send blocks to interested sessions;
+  repeat while (bitswap is open?) is (yes)
+fork again
+:Session created with NewSession;
+fork
+  while (session is open?) is (yes)
+    if (has block requests?) then (yes)
+      if (has session peers?) then (yes)
+        :Make targeted request for more blocks to WantManager;
+      else (no)
+        :Make broadcase request for more blocks to WantManager;
+      endif 
+      if (receives blocks before provSearchDelay or tick) then (yes)
+        :SessionPeerManager records peers that received;
+        :Notify GetBlocks that blocks were received;
+      else (no)
+        :Rebroadcast current blocks;
+        :Look for providers with FindProvidersAsync;
+        :Connect to providers with ConnectTo;
+        :Bitswap.PeerConnected called;
+        :PeerManager.Connected called;
+        :New MessageQueue created for peer;
+        :Broadcast Wantlist Sent To Peer;
+      endif;
+    else (no)
+    endif;
+  endwhile (no);
+fork again
+  :GetBlocks called for session;
+  :Send block requests to session;
+  fork
+    :Return incoming blocks channel;
+  fork again
+    while (all blocks received?) is (no)
+      :Wait to be notified of blocks received;
+      :Push received blocks to incoming blocks channel;
+    endwhile (yes)
+    :Close incoming blocks channel;
+  end fork
+  stop
+end fork
+stop
+end fork
+end
+@enduml
