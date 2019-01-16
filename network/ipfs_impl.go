@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 
 	ggio "github.com/gogo/protobuf/io"
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
 	host "github.com/libp2p/go-libp2p-host"
 	ifconnmgr "github.com/libp2p/go-libp2p-interface-connmgr"
 	inet "github.com/libp2p/go-libp2p-net"
@@ -22,7 +22,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 )
 
-var log = logging.Logger("bitswap_network")
+var log = bslog.Logger("bitswap_network")
 
 var sendMessageTimeout = time.Minute * 10
 

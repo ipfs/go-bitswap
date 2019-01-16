@@ -11,10 +11,10 @@ import (
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsnet "github.com/ipfs/go-bitswap/network"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
-	logging "github.com/ipfs/go-log"
 	ifconnmgr "github.com/libp2p/go-libp2p-interface-connmgr"
 	peer "github.com/libp2p/go-libp2p-peer"
 	routing "github.com/libp2p/go-libp2p-routing"
@@ -22,7 +22,7 @@ import (
 	testutil "github.com/libp2p/go-testutil"
 )
 
-var log = logging.Logger("bstestnet")
+var log = bslog.Logger("bstestnet")
 
 func VirtualNetwork(rs mockrouting.Server, d delay.D) Network {
 	return &network{

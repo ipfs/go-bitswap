@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 
 	blocks "github.com/ipfs/go-block-format"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
-	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
@@ -47,7 +47,7 @@ import (
 // whatever it sees fit to produce desired outcomes (get wanted keys
 // quickly, maintain good relationships with peers, etc).
 
-var log = logging.Logger("engine")
+var log = bslog.Logger("engine")
 
 const (
 	// outboxChanBuffer must be 0 to prevent stale messages from being sent

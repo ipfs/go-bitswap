@@ -7,10 +7,13 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bssession "github.com/ipfs/go-bitswap/session"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
+
+var log = bslog.Logger("bitswap")
 
 // Session is a session that is managed by the session manager
 type Session interface {

@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	notifications "github.com/ipfs/go-bitswap/notifications"
-	logging "github.com/ipfs/go-log"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 // GetBlocksFunc is any function that can take an array of CIDs and return a
 // channel of incoming blocks.
@@ -73,7 +73,7 @@ func AsyncGetBlocks(ctx context.Context, keys []cid.Cid, notif notifications.Pub
 	remaining := cid.NewSet()
 	promise := notif.Subscribe(ctx, keys...)
 	for _, k := range keys {
-		log.Event(ctx, "Bitswap.GetBlockRequest.Start", k)
+		log.LogKV(ctx, "Bitswap.GetBlockRequest.Start", k)
 		remaining.Add(k)
 	}
 
@@ -100,6 +100,7 @@ func handleIncoming(ctx context.Context, remaining *cid.Set, in <-chan blocks.Bl
 			}
 
 			remaining.Remove(blk.Cid())
+			log.LogKV(ctx, "Bitswap.GetBlockRequest.End", blk.Cid())
 			select {
 			case out <- blk:
 			case <-ctx.Done():

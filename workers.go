@@ -9,7 +9,6 @@ import (
 	engine "github.com/ipfs/go-bitswap/decision"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-peer"
@@ -48,10 +47,12 @@ func (bs *Bitswap) startWorkers(px process.Process, ctx context.Context) {
 }
 
 func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
-	idmap := logging.LoggableMap{"ID": id}
+	ctx = log.Start(ctx, "Bitswap.Taskworker")
+	defer log.Finish(ctx)
+	log.SetTag(ctx, "ID", id)
 	defer log.Debug("bitswap task worker shutting down...")
 	for {
-		log.Event(ctx, "Bitswap.TaskWorker.Loop", idmap)
+		log.LogKV(ctx, "Bitswap.TaskWorker.Loop", true)
 		select {
 		case nextEnvelope := <-bs.engine.Outbox():
 			select {
@@ -63,13 +64,11 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 				// TODO: Should only track *useful* messages in ledger
 				outgoing := bsmsg.New(false)
 				for _, block := range envelope.Message.Blocks() {
-					log.Event(ctx, "Bitswap.TaskWorker.Work", logging.LoggableF(func() map[string]interface{} {
-						return logging.LoggableMap{
-							"ID":     id,
-							"Target": envelope.Peer.Pretty(),
-							"Block":  block.Cid().String(),
-						}
-					}))
+					log.LogKV(ctx,
+						"Bitswap.TaskWorker.Work", true,
+						"Target", envelope.Peer.Pretty(),
+						"Block", block.Cid().String(),
+					)
 					outgoing.AddBlock(block)
 				}
 				bs.engine.MessageSent(envelope.Peer, outgoing)
@@ -119,11 +118,12 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 			// replace token when done
 			<-limit
 		}()
-		ev := logging.LoggableMap{"ID": wid}
 
 		ctx := procctx.OnClosingContext(px) // derive ctx from px
-		defer log.EventBegin(ctx, "Bitswap.ProvideWorker.Work", ev, k).Done()
-
+		ctx = log.Start(ctx, "Bitswap.ProvideWorker.Work")
+		log.SetTag(ctx, "ID", wid)
+		log.SetTag(ctx, "cid", k.String())
+		defer log.Finish(ctx)
 		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
 		defer cancel()
 
@@ -132,11 +132,14 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 		}
 	}
 
+	ctx := procctx.OnClosingContext(px)
+	ctx = log.Start(ctx, "Bitswap.ProvideWorker")
+	defer log.Finish(ctx)
+
 	// worker spawner, reads from bs.provideKeys until it closes, spawning a
 	// _ratelimited_ number of workers to handle each key.
 	for wid := 2; ; wid++ {
-		ev := logging.LoggableMap{"ID": 1}
-		log.Event(procctx.OnClosingContext(px), "Bitswap.ProvideWorker.Loop", ev)
+		log.LogKV(procctx.OnClosingContext(px), "Bitswap.ProvideWorker.Loop", true, "ID", 1)
 
 		select {
 		case <-px.Closing():
@@ -190,7 +193,10 @@ func (bs *Bitswap) provideCollector(ctx context.Context) {
 }
 
 func (bs *Bitswap) rebroadcastWorker(parent context.Context) {
-	ctx, cancel := context.WithCancel(parent)
+	ctx := log.Start(parent, "Bitswap.Rebroadcast")
+	defer log.Finish(ctx)
+
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	broadcastSignal := time.NewTicker(rebroadcastDelay.Get())
@@ -200,7 +206,7 @@ func (bs *Bitswap) rebroadcastWorker(parent context.Context) {
 	defer tick.Stop()
 
 	for {
-		log.Event(ctx, "Bitswap.Rebroadcast.idle")
+		log.LogKV(ctx, "Bitswap.Rebroadcast.idle", true)
 		select {
 		case <-tick.C:
 			n := bs.wm.WantCount()
@@ -208,7 +214,7 @@ func (bs *Bitswap) rebroadcastWorker(parent context.Context) {
 				log.Debugf("%d keys in bitswap wantlist", n)
 			}
 		case <-broadcastSignal.C: // resend unfulfilled wantlist keys
-			log.Event(ctx, "Bitswap.Rebroadcast.active")
+			log.LogKV(ctx, "Bitswap.Rebroadcast.active", true)
 			entries := bs.wm.CurrentWants()
 			if len(entries) == 0 {
 				continue

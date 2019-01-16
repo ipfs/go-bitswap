@@ -4,16 +4,15 @@ import (
 	"context"
 	"math"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
-	logging "github.com/ipfs/go-log"
-
 	cid "github.com/ipfs/go-cid"
 	metrics "github.com/ipfs/go-metrics-interface"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 const (
 	// maxPriority is the max priority as defined by the bitswap protocol

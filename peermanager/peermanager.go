@@ -3,14 +3,14 @@ package peermanager
 import (
 	"context"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
-	logging "github.com/ipfs/go-log"
 
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 var (
 	metricsBuckets = []float64{1 << 6, 1 << 10, 1 << 14, 1 << 18, 1<<18 + 15, 1 << 22}

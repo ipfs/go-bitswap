@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"math/rand"
 
-	logging "github.com/ipfs/go-log"
-
+	bslog "github.com/ipfs/go-bitswap/log"
 	cid "github.com/ipfs/go-cid"
 	ifconnmgr "github.com/libp2p/go-libp2p-interface-connmgr"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 const (
 	maxOptimizedPeers = 32

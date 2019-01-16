@@ -13,6 +13,7 @@ import (
 
 	decision "github.com/ipfs/go-bitswap/decision"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsmq "github.com/ipfs/go-bitswap/messagequeue"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -28,14 +29,13 @@ import (
 	delay "github.com/ipfs/go-ipfs-delay"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	flags "github.com/ipfs/go-ipfs-flags"
-	logging "github.com/ipfs/go-log"
 	metrics "github.com/ipfs/go-metrics-interface"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 var _ exchange.SessionExchange = (*Bitswap)(nil)
 
@@ -251,10 +251,13 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 		return nil, errors.New("bitswap is closed")
 	default:
 	}
+
+	ctx = log.Start(ctx, "Bitswap.Session.GetBlocks")
+
 	promise := bs.notifications.Subscribe(ctx, keys...)
 
 	for _, k := range keys {
-		log.Event(ctx, "Bitswap.GetBlockRequest.Start", k)
+		log.LogKV(ctx, "Bitswap.GetBlockRequest.Start", k)
 	}
 
 	mses := bs.sm.GetNextSessionID()
@@ -268,6 +271,7 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 
 	out := make(chan blocks.Block)
 	go func() {
+		defer log.Finish(ctx)
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		defer close(out)
@@ -308,6 +312,7 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 
 				bs.CancelWants([]cid.Cid{blk.Cid()}, mses)
 				remaining.Remove(blk.Cid())
+				log.LogKV(ctx, "Bitswap.GetBlockRequest.End", blk.Cid())
 				select {
 				case out <- blk:
 				case <-ctx.Done():
@@ -407,7 +412,6 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 			if err := bs.receiveBlockFrom(b, p); err != nil {
 				log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 			}
-			log.Event(ctx, "Bitswap.GetBlockRequest.End", b.Cid())
 		}(block)
 	}
 	wg.Wait()

@@ -6,15 +6,16 @@ import (
 
 	lru "github.com/hashicorp/golang-lru"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
+	bslog "github.com/ipfs/go-bitswap/log"
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
-	loggables "github.com/libp2p/go-libp2p-loggables"
 	peer "github.com/libp2p/go-libp2p-peer"
 
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 )
+
+var log = bslog.Logger("bitswap")
 
 const (
 	broadcastLiveWantsLimit = 4
@@ -85,7 +86,6 @@ type Session struct {
 	fetchcnt      int
 	// identifiers
 	notif notifications.PubSub
-	uuid  logging.Loggable
 	id    uint64
 }
 
@@ -107,7 +107,6 @@ func New(ctx context.Context, id uint64, wm WantManager, pm PeerManager, srs Req
 		srs:           srs,
 		incoming:      make(chan blkRecv),
 		notif:         notifications.New(),
-		uuid:          loggables.Uuid("GetBlockRequest"),
 		baseTickDelay: time.Millisecond * 500,
 		id:            id,
 	}
@@ -179,8 +178,9 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 // returns a channel that found blocks will be returned on. No order is
 // guaranteed on the returned blocks.
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
-	ctx = logging.ContextWithLoggable(ctx, s.uuid)
-	return bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
+	ctx = log.Start(ctx, "Bitswap.Session.GetBlocks")
+	log.SetTag(ctx, "bitswapSessionId", s.id)
+	resultsChan, err := bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
 			case s.newReqs <- keys:
@@ -195,6 +195,21 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 			}
 		},
 	)
+
+	if err != nil {
+		log.Finish(ctx)
+		return nil, err
+	}
+
+	returnChan := make(chan blocks.Block)
+	go func() {
+		defer log.Finish(ctx)
+		defer close(returnChan)
+		for outBlock := range resultsChan {
+			returnChan <- outBlock
+		}
+	}()
+	return returnChan, nil
 }
 
 // GetAverageLatency returns the average latency for block requests.

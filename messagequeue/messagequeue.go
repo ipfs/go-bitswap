@@ -5,14 +5,14 @@ import (
 	"sync"
 	"time"
 
+	bslog "github.com/ipfs/go-bitswap/log"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
-	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-var log = logging.Logger("bitswap")
+var log = bslog.Logger("bitswap")
 
 // MessageNetwork is any network that can connect peers and generate a message
 // sender.
