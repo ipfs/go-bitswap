@@ -139,7 +139,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 	// worker spawner, reads from bs.provideKeys until it closes, spawning a
 	// _ratelimited_ number of workers to handle each key.
 	for wid := 2; ; wid++ {
-		log.LogKV(procctx.OnClosingContext(px), "Bitswap.ProvideWorker.Loop", true, "ID", 1)
+		log.LogKV(ctx, "Bitswap.ProvideWorker.Loop", true, "ID", 1)
 
 		select {
 		case <-px.Closing():
