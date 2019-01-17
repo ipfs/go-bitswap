@@ -34,6 +34,9 @@ func Logger(name string) logging.EventLogger {
 	}
 	// this is a terrible hack to get at the underlying
 	// go-logging logger if present to set the call depth
+	// so file lines print correctly
+	// it uses way more of the reflect api that one should ever
+	// have access to!
 	elem := reflect.ValueOf(log).Elem()
 	typeOfT := elem.Type()
 FieldIteration:
@@ -136,6 +139,7 @@ func (lw *bsLogWrapper) LogKV(ctx context.Context, alternatingKeyValues ...inter
 		lw.internalLog.Errorf("LogKV with no Span in context called on %s:%d", path.Base(file), line)
 		return
 	}
+	metadata = logging.DeepMerge(logging.Metadata(make(map[string]interface{})), metadata)
 	for i := 0; i*2 < len(alternatingKeyValues); i++ {
 		key := alternatingKeyValues[i*2].(string)
 		metadata[key] = alternatingKeyValues[i*2+1]
