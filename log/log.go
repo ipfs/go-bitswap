@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"reflect"
 	"runtime"
 
 	logging "github.com/ipfs/go-log"
@@ -31,9 +32,20 @@ func Logger(name string) logging.EventLogger {
 	if os.Getenv(envLogTraces) == "" {
 		return log
 	}
-	goLoggingLogger, ok := log.(logging.StandardLogger).(*goLogging.Logger)
-	if ok {
-		goLoggingLogger.ExtraCalldepth = 1
+	// this is a terrible hack to get at the underlying
+	// go-logging logger if present to set the call depth
+	elem := reflect.ValueOf(log).Elem()
+	typeOfT := elem.Type()
+FieldIteration:
+	for i := 0; i < elem.NumField(); i++ {
+		if typeOfT.Field(i).Name == "StandardLogger" {
+			standardLogger := elem.Field(i).Interface()
+			goLogger, ok := standardLogger.(*goLogging.Logger)
+			if ok {
+				goLogger.ExtraCalldepth = 1
+			}
+			break FieldIteration
+		}
 	}
 	return &bsLogWrapper{
 		internalLog: log,
