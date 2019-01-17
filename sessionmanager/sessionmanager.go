@@ -69,7 +69,9 @@ func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory 
 // session manager.
 func (sm *SessionManager) NewSession(ctx context.Context) exchange.Fetcher {
 	id := sm.GetNextSessionID()
-	sessionctx, cancel := context.WithCancel(ctx)
+	sessionLogs := log.Start(ctx, "Bitswap.Session")
+	log.SetTag(sessionLogs, "Bitswap.Session.ID", id)
+	sessionctx, cancel := context.WithCancel(sessionLogs)
 
 	pm := sm.peerManagerFactory(sessionctx, id)
 	srs := sm.requestSplitterFactory(sessionctx)
@@ -79,6 +81,7 @@ func (sm *SessionManager) NewSession(ctx context.Context) exchange.Fetcher {
 	sm.sessions = append(sm.sessions, tracked)
 	sm.sessLk.Unlock()
 	go func() {
+		defer log.Finish(sessionLogs)
 		defer cancel()
 		select {
 		case <-sm.ctx.Done():

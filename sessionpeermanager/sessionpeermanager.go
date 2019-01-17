@@ -99,20 +99,32 @@ func (spm *SessionPeerManager) GetOptimizedPeers() []peer.ID {
 // FindMorePeers attempts to find more peers for a session by searching for
 // providers for the given Cid
 func (spm *SessionPeerManager) FindMorePeers(ctx context.Context, c cid.Cid) {
+	ctx = log.Start(ctx, "Bitswap.SessionPeerManager.FindMorePeers")
 	go func(k cid.Cid) {
+		defer log.Finish(ctx)
 		// TODO: have a task queue setup for this to:
 		// - rate limit
 		// - manage timeouts
 		// - ensure two 'findprovs' calls for the same block don't run concurrently
 		// - share peers between sessions based on interest set
 		for p := range spm.network.FindProvidersAsync(ctx, k, 10) {
-			go func(p peer.ID) {
+			log.LogKV(ctx,
+				"Bitswap.SessionPeerManager.FindMorePeers.PeerFound", true,
+				"peer", p.String())
+			peerConnect := log.Start(ctx, "Bitswap.SessionPeerManager.FindMorePeers.PeerConnect")
+			log.SetTag(peerConnect, "peer", p.String())
+			go func(ctx context.Context, p peer.ID) {
+				defer log.Finish(ctx)
+				log.LogKV(ctx, "ConnectionStart", true)
 				err := spm.network.ConnectTo(ctx, p)
 				if err != nil {
+					log.LogKV(ctx, "ConnectionSuccess", false)
 					log.Debugf("failed to connect to provider %s: %s", p, err)
+					return
 				}
+				log.LogKV(ctx, "ConnectionSuccess", true)
 				spm.peerMessages <- &peerFoundMessage{p}
-			}(p)
+			}(peerConnect, p)
 		}
 	}(c)
 }
@@ -170,6 +182,9 @@ type peerFoundMessage struct {
 func (pfm *peerFoundMessage) handle(spm *SessionPeerManager) {
 	p := pfm.p
 	if _, ok := spm.activePeers[p]; !ok {
+		log.LogKV(spm.ctx,
+			"Bitswap.SessionPeerManager.PeerAdded", true,
+			"peer", p.String())
 		spm.activePeers[p] = false
 		spm.unoptimizedPeersArr = append(spm.unoptimizedPeersArr, p)
 		spm.tagPeer(p)

@@ -179,7 +179,7 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 // guaranteed on the returned blocks.
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	ctx = log.Start(ctx, "Bitswap.Session.GetBlocks")
-	log.SetTag(ctx, "bitswapSessionId", s.id)
+	log.SetTag(ctx, "Bitswap.Session.Id", s.id)
 	resultsChan, err := bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
@@ -282,7 +282,7 @@ func (s *Session) handleIncomingBlock(ctx context.Context, blk blkRecv) {
 		s.pm.RecordPeerResponse(blk.from, blk.blk.Cid())
 	}
 
-	s.receiveBlock(ctx, blk.blk)
+	s.receiveBlock(ctx, blk.blk, blk.from)
 
 	s.resetTick()
 }
@@ -314,6 +314,8 @@ func (s *Session) handleCancel(keys []cid.Cid) {
 
 func (s *Session) handleTick(ctx context.Context) {
 
+	log.LogKV(s.ctx, "Bitswap.Session.TickOccurred", true)
+
 	live := make([]cid.Cid, 0, len(s.liveWants))
 	now := time.Now()
 	for c := range s.liveWants {
@@ -322,8 +324,7 @@ func (s *Session) handleTick(ctx context.Context) {
 	}
 
 	// Broadcast these keys to everyone we're connected to
-	s.pm.RecordPeerRequests(nil, live)
-	s.wm.WantBlocks(ctx, live, nil, s.id)
+	s.enqueueWants(ctx, live, nil)
 
 	if len(live) > 0 {
 		s.pm.FindMorePeers(ctx, live[0])
@@ -350,9 +351,14 @@ func (s *Session) cidIsWanted(c cid.Cid) bool {
 	return ok
 }
 
-func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block) {
+func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block, from peer.ID) {
 	c := blk.Cid()
 	if s.cidIsWanted(c) {
+		log.LogKV(s.ctx,
+			"Bitswap.Session.ReceivedBlock", true,
+			"cid", blk.Cid().String(),
+			"peer", from.String(),
+		)
 		s.srs.RecordUniqueBlock()
 		tval, ok := s.liveWants[c]
 		if ok {
@@ -383,8 +389,33 @@ func (s *Session) receiveBlock(ctx context.Context, blk blocks.Block) {
 func (s *Session) updateReceiveCounters(ctx context.Context, blk blkRecv) {
 	ks := blk.blk.Cid()
 	if s.pastWants.Has(ks) {
+		log.LogKV(s.ctx,
+			"Bitswap.Session.ReceivedDuplicateBlock", true,
+			"cid", blk.blk.Cid().String(),
+			"peer", blk.from.String(),
+		)
 		s.srs.RecordDuplicateBlock()
 	}
+}
+
+func (s *Session) enqueueWants(ctx context.Context, ks []cid.Cid, peers []peer.ID) {
+	if peers == nil {
+
+		log.LogKV(s.ctx,
+			"Bitswap.Session.WantBlocks", true,
+			"isTargeted", false,
+			"cids", ks,
+		)
+	} else {
+		log.LogKV(s.ctx,
+			"Bitswap.Session.WantBlocks", true,
+			"isTargeted", true,
+			"cids", ks,
+			"peers", peers,
+		)
+	}
+	s.pm.RecordPeerRequests(peers, ks)
+	s.wm.WantBlocks(ctx, ks, peers, s.id)
 }
 
 func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
@@ -396,12 +427,10 @@ func (s *Session) wantBlocks(ctx context.Context, ks []cid.Cid) {
 	if len(peers) > 0 {
 		splitRequests := s.srs.SplitRequest(peers, ks)
 		for _, splitRequest := range splitRequests {
-			s.pm.RecordPeerRequests(splitRequest.Peers, splitRequest.Keys)
-			s.wm.WantBlocks(ctx, splitRequest.Keys, splitRequest.Peers, s.id)
+			s.enqueueWants(ctx, splitRequest.Keys, splitRequest.Peers)
 		}
 	} else {
-		s.pm.RecordPeerRequests(nil, ks)
-		s.wm.WantBlocks(ctx, ks, nil, s.id)
+		s.enqueueWants(ctx, ks, nil)
 	}
 }
 
