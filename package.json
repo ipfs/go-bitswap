@@ -197,6 +197,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.20"
+  "version": "1.1.21"
 }
 
