@@ -196,12 +196,6 @@
       "hash": "QmcaSwFc5RBg8yCq54QURwEU4nwjfCpjbpmaAm4VbdGLKv",
       "name": "go-logging",
       "version": "0.0.0"
-    },
-    {
-      "author": "lanzafame",
-      "hash": "QmYRHQCRVSznLwaR8kXtVH4KSZU5fqFPPSkxv9xsJV2QCY",
-      "name": "opencensus-go",
-      "version": "0.0.1"
     }
   ],
   "gxVersion": "0.12.1",
