@@ -11,30 +11,30 @@ import (
 
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 
-	decision "github.com/ipfs/go-bitswap/decision"
+	"github.com/ipfs/go-bitswap/decision"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
 	logging "github.com/ipfs/go-log"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsmq "github.com/ipfs/go-bitswap/messagequeue"
 	bsnet "github.com/ipfs/go-bitswap/network"
-	notifications "github.com/ipfs/go-bitswap/notifications"
+	"github.com/ipfs/go-bitswap/notifications"
 	bspm "github.com/ipfs/go-bitswap/peermanager"
 	bssession "github.com/ipfs/go-bitswap/session"
 	bssm "github.com/ipfs/go-bitswap/sessionmanager"
 	bsspm "github.com/ipfs/go-bitswap/sessionpeermanager"
+	trace "github.com/ipfs/go-bitswap/trace"
 	bswm "github.com/ipfs/go-bitswap/wantmanager"
-	blocks "github.com/ipfs/go-block-format"
-	cid "github.com/ipfs/go-cid"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	delay "github.com/ipfs/go-ipfs-delay"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
-	flags "github.com/ipfs/go-ipfs-flags"
-	metrics "github.com/ipfs/go-metrics-interface"
+	"github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-ipfs-blockstore"
+	"github.com/ipfs/go-ipfs-delay"
+	"github.com/ipfs/go-ipfs-exchange-interface"
+	"github.com/ipfs/go-ipfs-flags"
+	"github.com/ipfs/go-metrics-interface"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
-	peer "github.com/libp2p/go-libp2p-peer"
-	"go.opencensus.io/trace"
+	"github.com/libp2p/go-libp2p-peer"
 )
 
 var log = logging.Logger("bitswap")
@@ -465,7 +465,7 @@ func (bs *Bitswap) PeerDisconnected(p peer.ID) {
 
 func (bs *Bitswap) ReceiveError(err error) {
 	log.Infof("Bitswap ReceiveError: %s", err)
-	// TODO log the network error
+	// TODO trace the network error
 	// TODO bubble the network error up to the parent context/error logger
 }
 

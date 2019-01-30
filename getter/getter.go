@@ -7,11 +7,11 @@ import (
 	logging "github.com/ipfs/go-log"
 
 	notifications "github.com/ipfs/go-bitswap/notifications"
+	trace "github.com/ipfs/go-bitswap/trace"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	"go.opencensus.io/trace"
 )
 
 var log = logging.Logger("bitswap")

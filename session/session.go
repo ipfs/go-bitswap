@@ -5,20 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru"
+	"github.com/hashicorp/golang-lru"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
-	logging "github.com/ipfs/go-log"
-	"go.opencensus.io/trace"
+	trace "github.com/ipfs/go-bitswap/trace"
 
-	notifications "github.com/ipfs/go-bitswap/notifications"
-	blocks "github.com/ipfs/go-block-format"
-	cid "github.com/ipfs/go-cid"
-	peer "github.com/libp2p/go-libp2p-peer"
+	"github.com/ipfs/go-bitswap/notifications"
+	"github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p-peer"
 
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 )
-
-var log = logging.Logger("bitswap")
 
 const (
 	broadcastLiveWantsLimit = 4
@@ -183,6 +180,7 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	ctx, span := trace.StartSpan(ctx, "Bitswap.Session.GetBlocks")
 	span.AddAttributes(trace.Int64Attribute("Bitswap.Session.Id", int64(s.id)))
+
 	resultsChan, err := bsgetter.AsyncGetBlocks(ctx, keys, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
