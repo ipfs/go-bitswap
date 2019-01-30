@@ -2,7 +2,6 @@ package sessionrequestsplitter
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
@@ -98,30 +97,34 @@ func (srs *SessionRequestSplitter) duplicateRatio() float64 {
 	return float64(srs.duplicateReceivedCount) / float64(srs.receivedCount)
 }
 
+func transformOptimization(optimizationRating float64) float64 {
+	return optimizationRating * optimizationRating * optimizationRating
+}
+
 func (srs *SessionRequestSplitter) peersFromOptimizedPeers(optimizedPeers []bssd.OptimizedPeer) []peer.ID {
 	optimizationTotal := 0.0
 	skipMap := make([]int, len(optimizedPeers))
 	for i, optimizedPeer := range optimizedPeers {
-		optimizationTotal += optimizedPeer.OptimizationRating
+		optimizationTotal += transformOptimization(optimizedPeer.OptimizationRating)
 		skipMap[i] = i + 1
 	}
 	peers := make([]peer.ID, 0, len(optimizedPeers))
 	skipMapStart := 0
-	fmt.Printf("%d\n", len(optimizedPeers))
+	//fmt.Printf("%d\n", len(optimizedPeers))
 	for range optimizedPeers {
 		randValue := rand.Float64()
 		randTarget := randValue * optimizationTotal
-		fmt.Printf("opt total %f, rand %f, randTarget %f\n", optimizationTotal, randValue, randTarget)
-		fmt.Printf("skipMapStart %d\n", skipMapStart)
+		//fmt.Printf("opt total %f, rand %f, randTarget %f\n", optimizationTotal, randValue, randTarget)
+		//fmt.Printf("skipMapStart %d\n", skipMapStart)
 		targetSoFar := 0.0
 		currentIndex := skipMapStart
 		previousIndex := -1
 		for {
-			currentRating := optimizedPeers[currentIndex].OptimizationRating
+			currentRating := transformOptimization(optimizedPeers[currentIndex].OptimizationRating)
 			targetSoFar += currentRating
-			fmt.Printf("targetSoFar %f, randTarget %f\n", targetSoFar, randTarget)
+			//fmt.Printf("targetSoFar %f, randTarget %f\n", targetSoFar, randTarget)
 			if targetSoFar+0.000001 >= randTarget {
-				fmt.Printf("%d\n", currentIndex)
+				//fmt.Printf("%d\n", currentIndex)
 				peers = append(peers, optimizedPeers[currentIndex].Peer)
 				optimizationTotal -= currentRating
 				if currentIndex == skipMapStart {

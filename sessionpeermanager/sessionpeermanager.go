@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"sort"
 
-	logging "github.com/ipfs/go-log"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
+	logging "github.com/ipfs/go-log"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-peer"
