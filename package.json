@@ -9,15 +9,15 @@
   "gxDependencies": [
     {
       "author": "whyrusleeping",
-      "hash": "QmcNGX5RaxPPCYwa6yGXM1EcUbrreTTinixLcYGmMwf1sx",
+      "hash": "QmcZUhA1xQo8meuYBFLcTHqQb2ogpDCTZUTfTrko7PUeHs",
       "name": "go-libp2p",
-      "version": "6.0.35"
+      "version": "6.0.36"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmcjqHcsk8E1Gd8RbuaUawWC7ogDtaVcdjLvZF8ysCCiPn",
+      "hash": "QmbRWQPxtwacR1M8phDY5Y2jJbS96HXZAsK5dKD7s12Wob",
       "name": "go-ipfs-routing",
-      "version": "0.1.16"
+      "version": "0.1.17"
     },
     {
       "author": "whyrusleeping",
@@ -33,9 +33,9 @@
     },
     {
       "author": "whyrusleeping",
-      "hash": "QmR8BauakNcBa3RbE4nbQu76PDiJgoQgz8AJdhJuiU4TAw",
+      "hash": "QmTbxNB1NwDesLmKTscr4udL2tVP7MaxvXnD1D9yX7g3PN",
       "name": "go-cid",
-      "version": "0.9.1"
+      "version": "0.9.3"
     },
     {
       "author": "whyrusleeping",
@@ -45,9 +45,9 @@
     },
     {
       "author": "stebalien",
-      "hash": "QmWoXtvgC8inqFkAATB7cp2Dax7XBi9VDvSg9RCCZufmRk",
+      "hash": "QmYYLnAzR28nAQ4U5MFniLprnktu6eTFKibeNt96V21EZK",
       "name": "go-block-format",
-      "version": "0.2.1"
+      "version": "0.2.2"
     },
     {
       "author": "ipfs",
@@ -69,15 +69,15 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmWTtpEozefF75GPw8pfsjdK12a6hZSW4CrzeecXbsVzek",
+      "hash": "QmcbQ44AgbtV1rnxZz5RsRVduxdgNYLANxnsuW5wvvu4ts",
       "name": "go-ipfs-blocksutil",
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "author": "hsanjuan",
-      "hash": "QmRu7tiRnFk9mMPpVECQTBQJqXtmG132jJxA1w9A7TtpBz",
+      "hash": "QmXjKkjMDTtXAiLBwstVexofB8LeruZmE2eBd85GwGFFLA",
       "name": "go-ipfs-blockstore",
-      "version": "0.1.7"
+      "version": "0.1.8"
     },
     {
       "author": "hector",
@@ -87,9 +87,9 @@
     },
     {
       "author": "hsanjuan",
-      "hash": "QmP2g3VxmC7g7fyRJDj1VJ72KHZbJ9UW24YjSWEj1XTb4H",
+      "hash": "QmWokDcQdSZCxrNxgaRzQDDBofALhActzNBaxRLtiRkUHg",
       "name": "go-ipfs-exchange-interface",
-      "version": "0.1.2"
+      "version": "0.1.3"
     },
     {
       "author": "whyrusleeping",
@@ -175,9 +175,9 @@
       "version": "3.6.1"
     },
     {
-      "hash": "QmWaDSNoSdSXU9b6udyaq9T8y6LkzMwqWxECznFqvtcTsk",
+      "hash": "QmcxZXMqFu4vjLQRfG2tAcg6DPQNurgZ2SQ5iQVk6dXQjn",
       "name": "go-libp2p-routing",
-      "version": "2.7.10"
+      "version": "2.7.11"
     },
     {
       "author": "jbenet",
@@ -191,6 +191,6 @@
   "license": "",
   "name": "go-bitswap",
   "releaseCmd": "git commit -a -m \"gx publish $VERSION\"",
-  "version": "1.1.26"
+  "version": "1.1.27"
 }
 
