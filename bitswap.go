@@ -306,7 +306,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 			defer wg.Done()
 
 			bs.updateReceiveCounters(b)
-			bs.sm.UpdateReceiveCounters(b)
+			bs.sm.UpdateReceiveCounters(p, b)
 			log.Debugf("got block %s from %s", b, p)
 
 			// skip received blocks that are not in the wantlist
