@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -298,7 +297,6 @@ func (s *Session) handleCancel(keys []cid.Cid) {
 }
 
 func (s *Session) handleTick(ctx context.Context) {
-	fmt.Println("Tick!")
 	live := make([]cid.Cid, 0, len(s.liveWants))
 	now := time.Now()
 	for c := range s.liveWants {

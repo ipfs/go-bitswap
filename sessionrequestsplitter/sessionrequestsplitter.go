@@ -2,8 +2,6 @@ package sessionrequestsplitter
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"math/rand"
 
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
@@ -154,21 +152,7 @@ func (s *splitRequestMessage) handle(srs *SessionRequestSplitter) {
 	// first iteration ignore optimization ratings
 	peers := srs.peersFromOptimizedPeers(s.optimizedPeers)
 	ks := s.ks
-	bytes, err := json.Marshal(s.optimizedPeers)
-	if err != nil {
-		fmt.Println("Unable to marshal!")
-	} else {
-		fmt.Printf("OptimizedPeers: %s\n", string(bytes))
-	}
-	bytes, err = json.Marshal(ks)
-	if err != nil {
-		fmt.Println("Unable to marshal!")
-	} else {
-		fmt.Printf("Keys Requested: %s\n", string(bytes))
-	}
-	fmt.Printf("Split factor: %d\n", split)
-	fmt.Printf("# Peers: %d\n", len(peers))
-	fmt.Printf("# Keys: %d\n\n", len(ks))
+
 	if len(peers) < split {
 		split = len(peers)
 	}

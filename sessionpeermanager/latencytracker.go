@@ -1,7 +1,6 @@
 package sessionpeermanager
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/ipfs/go-cid"
@@ -49,7 +48,6 @@ func (lt *latencyTracker) CheckDuration(key cid.Cid) (time.Duration, bool) {
 }
 
 func (lt *latencyTracker) RecordResponse(key cid.Cid) (time.Duration, bool) {
-	fmt.Printf("incoming cid: %s\n", key.String())
 	request, ok := lt.requests[key]
 
 	var latency time.Duration
