@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"math/rand"
+	"sync"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
@@ -12,6 +13,7 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
+var blockGeneratorLk sync.RWMutex
 var blockGenerator = blocksutil.NewBlockGenerator()
 var prioritySeq int
 
@@ -32,27 +34,32 @@ func GenerateBlocksOfSize(n int, size int64) []blocks.Block {
 // GenerateCids produces n content identifiers.
 func GenerateCids(n int) []cid.Cid {
 	cids := make([]cid.Cid, 0, n)
+	blockGeneratorLk.Lock()
 	for i := 0; i < n; i++ {
 		c := blockGenerator.Next().Cid()
 		cids = append(cids, c)
 	}
+	blockGeneratorLk.Unlock()
 	return cids
 }
 
 // GenerateWantlist makes a populated wantlist.
 func GenerateWantlist(n int, ses uint64) *wantlist.SessionTrackedWantlist {
 	wl := wantlist.NewSessionTrackedWantlist()
+	blockGeneratorLk.Lock()
 	for i := 0; i < n; i++ {
 		prioritySeq++
 		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq)
 		wl.AddEntry(entry, ses)
 	}
+	blockGeneratorLk.Unlock()
 	return wl
 }
 
 // GenerateMessageEntries makes fake bitswap message entries.
 func GenerateMessageEntries(n int, isCancel bool) []*bsmsg.Entry {
 	bsmsgs := make([]*bsmsg.Entry, 0, n)
+	blockGeneratorLk.Lock()
 	for i := 0; i < n; i++ {
 		prioritySeq++
 		msg := &bsmsg.Entry{
@@ -61,19 +68,23 @@ func GenerateMessageEntries(n int, isCancel bool) []*bsmsg.Entry {
 		}
 		bsmsgs = append(bsmsgs, msg)
 	}
+	blockGeneratorLk.Unlock()
 	return bsmsgs
 }
 
 var peerSeq int
+var peerSeqLk sync.RWMutex
 
 // GeneratePeers creates n peer ids.
 func GeneratePeers(n int) []peer.ID {
 	peerIds := make([]peer.ID, 0, n)
+	peerSeqLk.Lock()
 	for i := 0; i < n; i++ {
 		peerSeq++
 		p := peer.ID(peerSeq)
 		peerIds = append(peerIds, p)
 	}
+	peerSeqLk.Unlock()
 	return peerIds
 }
 
@@ -96,9 +107,12 @@ func GenerateOptimizedPeers(n int, optCount int, curveFunc func(float64) float64
 }
 
 var nextSession uint64
+var nextSessionLk sync.RWMutex
 
 // GenerateSessionID make a unit session identifier.
 func GenerateSessionID() uint64 {
+	nextSessionLk.Lock()
+	defer nextSessionLk.Unlock()
 	nextSession++
 	return uint64(nextSession)
 }

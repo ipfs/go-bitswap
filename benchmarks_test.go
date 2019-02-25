@@ -37,7 +37,7 @@ var benchmarkLog []runStats
 func BenchmarkDups2Nodes(b *testing.B) {
 	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
-	/*b.Run("AllToAll-OneAtATime", func(b *testing.B) {
+	b.Run("AllToAll-OneAtATime", func(b *testing.B) {
 		subtestDistributeAndFetch(b, 3, 100, fixedDelay, allToAll, oneAtATime)
 	})
 	b.Run("AllToAll-BigBatch", func(b *testing.B) {
@@ -81,19 +81,19 @@ func BenchmarkDups2Nodes(b *testing.B) {
 	})
 	b.Run("10Nodes-AllToAll-UnixfsFetch", func(b *testing.B) {
 		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, unixfsFileFetch)
-	})*/
+	})
 	b.Run("10Nodes-OnePeerPerBlock-OneAtATime", func(b *testing.B) {
 		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, oneAtATime)
-	}) /*
-		b.Run("10Nodes-OnePeerPerBlock-BigBatch", func(b *testing.B) {
-			subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, batchFetchAll)
-		})
-		b.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(b *testing.B) {
-			subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, unixfsFileFetch)
-		})
-		b.Run("200Nodes-AllToAll-BigBatch", func(b *testing.B) {
-			subtestDistributeAndFetch(b, 200, 20, fixedDelay, allToAll, batchFetchAll)
-		})*/
+	})
+	b.Run("10Nodes-OnePeerPerBlock-BigBatch", func(b *testing.B) {
+		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, batchFetchAll)
+	})
+	b.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(b *testing.B) {
+		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, unixfsFileFetch)
+	})
+	b.Run("200Nodes-AllToAll-BigBatch", func(b *testing.B) {
+		subtestDistributeAndFetch(b, 200, 20, fixedDelay, allToAll, batchFetchAll)
+	})
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	ioutil.WriteFile("tmp/benchmark.json", out, 0666)
 }
@@ -111,7 +111,6 @@ const slowBandwidth = 100000.0
 const slowBandwidthDeviation = 16500.0
 const stdBlockSize = 8000
 
-/*
 func BenchmarkDupsManyNodesRealWorldNetwork(b *testing.B) {
 	benchmarkLog = nil
 	fastNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
@@ -142,7 +141,7 @@ func BenchmarkDupsManyNodesRealWorldNetwork(b *testing.B) {
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
 }
-*/
+
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, df distFunc, ff fetchFunc) {
 	start := time.Now()
 	net := tn.VirtualNetwork(mockrouting.NewServer(), d)

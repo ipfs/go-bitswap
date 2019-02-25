@@ -160,6 +160,12 @@ func (s *splitRequestMessage) handle(srs *SessionRequestSplitter) {
 	} else {
 		fmt.Printf("OptimizedPeers: %s\n", string(bytes))
 	}
+	bytes, err = json.Marshal(ks)
+	if err != nil {
+		fmt.Println("Unable to marshal!")
+	} else {
+		fmt.Printf("Keys Requested: %s\n", string(bytes))
+	}
 	fmt.Printf("Split factor: %d\n", split)
 	fmt.Printf("# Peers: %d\n", len(peers))
 	fmt.Printf("# Keys: %d\n", len(ks))
