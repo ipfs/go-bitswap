@@ -100,7 +100,7 @@ func (srs *SessionRequestSplitter) duplicateRatio() float64 {
 }
 
 func transformOptimization(optimizationRating float64) float64 {
-	return optimizationRating * optimizationRating * optimizationRating
+	return optimizationRating * optimizationRating * optimizationRating * optimizationRating * optimizationRating
 }
 
 func (srs *SessionRequestSplitter) peersFromOptimizedPeers(optimizedPeers []bssd.OptimizedPeer) []peer.ID {
@@ -168,7 +168,7 @@ func (s *splitRequestMessage) handle(srs *SessionRequestSplitter) {
 	}
 	fmt.Printf("Split factor: %d\n", split)
 	fmt.Printf("# Peers: %d\n", len(peers))
-	fmt.Printf("# Keys: %d\n", len(ks))
+	fmt.Printf("# Keys: %d\n\n", len(ks))
 	if len(peers) < split {
 		split = len(peers)
 	}

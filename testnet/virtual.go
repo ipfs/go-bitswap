@@ -223,6 +223,7 @@ type messagePasser struct {
 }
 
 func (mp *messagePasser) SendMsg(ctx context.Context, m bsmsg.BitSwapMessage) error {
+	//fmt.Printf("Message send from: %s\n\n", mp.net.local.String())
 	return mp.net.SendMessage(ctx, mp.target, m)
 }
 
@@ -231,6 +232,7 @@ func (mp *messagePasser) Close() error {
 }
 
 func (mp *messagePasser) Reset() error {
+
 	return nil
 }
 

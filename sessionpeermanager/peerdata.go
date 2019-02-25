@@ -33,6 +33,8 @@ func (pd *peerData) AdjustLatency(k cid.Cid, hasFallbackLatency bool, fallbackLa
 			fmt.Printf("Fallback latency used: %f\n", fallbackLatency.Seconds())
 		}
 		latency, hasLatency = fallbackLatency, hasFallbackLatency
+	} else {
+		fmt.Println("Had local latency")
 	}
 	if hasLatency {
 		if pd.hasLatency {
