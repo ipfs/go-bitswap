@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	newLatencyWeight = 0.5
+	newLatencyWeight = 0.3
 )
 
 type peerData struct {

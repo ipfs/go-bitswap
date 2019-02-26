@@ -56,8 +56,8 @@ type SessionPeerManager struct {
 func New(ctx context.Context, id uint64, tagger PeerTagger, providerFinder PeerProviderFinder) *SessionPeerManager {
 	spm := &SessionPeerManager{
 		ctx:              ctx,
-		tagger:         tagger,
-		providerFinder: providerFinder,
+		tagger:           tagger,
+		providerFinder:   providerFinder,
 		peerMessages:     make(chan peerMessage, 16),
 		activePeers:      make(map[peer.ID]*peerData),
 		broadcastLatency: newLatencyTracker(),
@@ -72,7 +72,6 @@ func New(ctx context.Context, id uint64, tagger PeerTagger, providerFinder PeerP
 // RecordPeerResponse records that a peer received a block, and adds to it
 // the list of peers if it wasn't already added
 func (spm *SessionPeerManager) RecordPeerResponse(p peer.ID, k cid.Cid) {
-
 	// at the moment, we're just adding peers here
 	// in the future, we'll actually use this to record metrics
 	select {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -263,6 +264,7 @@ func (s *Session) handleIncomingBlock(ctx context.Context, blk blkRecv) {
 	s.tick.Stop()
 
 	if blk.from != "" {
+		fmt.Println(blk.from.Pretty())
 		s.pm.RecordPeerResponse(blk.from, blk.blk.Cid())
 	}
 

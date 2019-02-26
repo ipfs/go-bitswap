@@ -2,7 +2,9 @@ package sessionrequestsplitter
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
+	"time"
 
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
 
@@ -13,8 +15,9 @@ import (
 const (
 	minReceivedToAdjustSplit = 2
 	maxSplit                 = 16
+	minDuplesToTryLessSplits = 0.1
 	maxAcceptableDupes       = 0.4
-	minDuplesToTryLessSplits = 0.2
+	throughputSampleTime     = 10000 * time.Millisecond
 	initialSplit             = 2
 )
 
@@ -30,6 +33,9 @@ type SessionRequestSplitter struct {
 
 	// data, do not touch outside run loop
 	receivedCount          int
+	lastReceivedCount      int
+	lastThroughput         int
+	splitTestDirection     int
 	split                  int
 	duplicateReceivedCount int
 }
@@ -37,9 +43,10 @@ type SessionRequestSplitter struct {
 // New returns a new SessionRequestSplitter.
 func New(ctx context.Context) *SessionRequestSplitter {
 	srs := &SessionRequestSplitter{
-		ctx:      ctx,
-		messages: make(chan srsMessage, 10),
-		split:    initialSplit,
+		ctx:                ctx,
+		messages:           make(chan srsMessage, 10),
+		split:              initialSplit,
+		splitTestDirection: 1,
 	}
 	go srs.run()
 	return srs
@@ -83,14 +90,34 @@ func (srs *SessionRequestSplitter) RecordUniqueBlock() {
 }
 
 func (srs *SessionRequestSplitter) run() {
+	timer := time.NewTicker(throughputSampleTime)
 	for {
 		select {
+		case <-timer.C:
+			srs.handleThroughputSample()
 		case message := <-srs.messages:
 			message.handle(srs)
 		case <-srs.ctx.Done():
+			timer.Stop()
 			return
 		}
 	}
+}
+
+func (srs *SessionRequestSplitter) handleThroughputSample() {
+	throughput := srs.receivedCount - srs.lastReceivedCount
+	srs.lastReceivedCount = srs.receivedCount
+	if srs.lastThroughput != 0 {
+		if throughput < srs.lastThroughput {
+			srs.splitTestDirection = -1 * srs.splitTestDirection
+		}
+		nextSplit := srs.split + srs.splitTestDirection
+		if (nextSplit >= 1) && (nextSplit <= maxSplit) {
+			srs.split = nextSplit
+			fmt.Println(srs.split)
+		}
+	}
+	srs.lastThroughput = throughput
 }
 
 func (srs *SessionRequestSplitter) duplicateRatio() float64 {
@@ -185,7 +212,6 @@ func (r *recordUniqueMessage) handle(srs *SessionRequestSplitter) {
 	if (srs.split > 1) && (srs.duplicateRatio() < minDuplesToTryLessSplits) {
 		srs.split--
 	}
-
 }
 func splitKeys(ks []cid.Cid, split int) [][]cid.Cid {
 	splits := make([][]cid.Cid, split)
