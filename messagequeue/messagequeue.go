@@ -2,6 +2,7 @@ package messagequeue
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -43,7 +44,7 @@ type MessageQueue struct {
 }
 
 type messageRequest struct {
-	entries []*bsmsg.Entry
+	entries []bsmsg.Entry
 	ses     uint64
 }
 
@@ -65,9 +66,9 @@ func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
 }
 
 // AddMessage adds new entries to an outgoing message for a given session.
-func (mq *MessageQueue) AddMessage(entries []*bsmsg.Entry, ses uint64) {
+func (mq *MessageQueue) AddMessage(entries []bsmsg.Entry, ses uint64) {
 	select {
-	case mq.newRequests <- &messageRequest{entries, ses}:
+	case mq.newRequests <- newMessageRequest(entries, ses):
 	case <-mq.ctx.Done():
 	}
 }
@@ -123,8 +124,28 @@ func (mq *MessageQueue) runQueue() {
 	}
 }
 
+// We allocate a bunch of these so use a pool.
+var messageRequestPool = sync.Pool{
+	New: func() interface{} {
+		return new(messageRequest)
+	},
+}
+
+func newMessageRequest(entries []bsmsg.Entry, session uint64) *messageRequest {
+	mr := messageRequestPool.Get().(*messageRequest)
+	mr.entries = entries
+	mr.ses = session
+	return mr
+}
+
+func returnMessageRequest(mr *messageRequest) {
+	*mr = messageRequest{}
+	messageRequestPool.Put(mr)
+}
+
 func (mr *messageRequest) handle(mq *MessageQueue) {
 	mq.addEntries(mr.entries, mr.ses)
+	returnMessageRequest(mr)
 }
 
 func (wr *wantlistRequest) handle(mq *MessageQueue) {
@@ -140,7 +161,7 @@ func (wr *wantlistRequest) handle(mq *MessageQueue) {
 	}
 }
 
-func (mq *MessageQueue) addEntries(entries []*bsmsg.Entry, ses uint64) {
+func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) {
 	for _, e := range entries {
 		if e.Cancel {
 			if mq.wl.Remove(e.Cid, ses) {
