@@ -56,10 +56,10 @@
       "version": "0.2.0"
     },
     {
-      "author": "why",
-      "hash": "QmdbxjQWogRCHRaxhhGnYdT1oQJzL9GdqSKzCdqWr85AP2",
+      "author": "cskr",
+      "hash": "QmPKLamJq9Z2apKJVCVXZ5aYNrWiFk5HTKjmEbU16Qjdcd",
       "name": "pubsub",
-      "version": "1.0.0"
+      "version": "1.0.2"
     },
     {
       "author": "hsanjuan",
