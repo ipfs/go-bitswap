@@ -1,8 +1,8 @@
 module github.com/ipfs/go-bitswap
 
 require (
+	github.com/cskr/pubsub v1.0.2
 	github.com/gogo/protobuf v1.2.1
-	github.com/gxed/pubsub v0.0.0-20180201040156-26ebdf44f824
 	github.com/hashicorp/golang-lru v0.5.1
 	github.com/ipfs/go-block-format v0.0.2
 	github.com/ipfs/go-cid v0.0.1
