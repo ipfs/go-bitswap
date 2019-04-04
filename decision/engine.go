@@ -121,7 +121,7 @@ func (e *Engine) LedgerForPeer(p peer.ID) *Receipt {
 	defer ledger.lk.Unlock()
 
 	return &Receipt{
-		Peer:      ledger.Partner.String(),
+		Peer:      ledger.Partner.Pretty(),
 		Value:     ledger.Accounting.Value(),
 		Sent:      ledger.Accounting.BytesSent,
 		Recv:      ledger.Accounting.BytesRecv,
