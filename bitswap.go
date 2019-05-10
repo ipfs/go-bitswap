@@ -27,8 +27,6 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 	metrics "github.com/ipfs/go-metrics-interface"
-	process "github.com/jbenet/goprocess"
-	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
@@ -81,10 +79,6 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sentHistogram := metrics.NewCtx(ctx, "sent_all_blocks_bytes", "Histogram of blocks sent by"+
 		" this bitswap").Histogram(metricsBuckets)
 
-	px := process.WithTeardown(func() error {
-		return nil
-	})
-
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
 		return bsmq.New(ctx, p, network)
 	}
@@ -103,10 +97,11 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	bs := &Bitswap{
+		ctx:           ctx,
+		cancel:        cancelFunc,
 		blockstore:    bstore,
 		engine:        decision.NewEngine(ctx, bstore), // TODO close the engine with Close() method
 		network:       network,
-		process:       px,
 		newBlocks:     make(chan cid.Cid, HasBlockBufferSize),
 		provideKeys:   make(chan cid.Cid, provideKeysBufferSize),
 		wm:            wm,
@@ -123,21 +118,15 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	network.SetDelegate(bs)
 
 	// Start up bitswaps async worker routines
-	bs.startWorkers(ctx, px)
-
-	// bind the context and process.
-	// do it over here to avoid closing before all setup is done.
-	go func() {
-		<-px.Closing() // process closes first
-		cancelFunc()
-	}()
-	procctx.CloseAfterContext(px, ctx) // parent cancelled first
+	bs.startWorkers(ctx)
 
 	return bs
 }
 
 // Bitswap instances implement the bitswap protocol.
 type Bitswap struct {
+	ctx    context.Context
+	cancel context.CancelFunc
 	// the wantlist tracks global wants for bitswap
 	wm *bswm.WantManager
 
@@ -160,8 +149,6 @@ type Bitswap struct {
 	newBlocks chan cid.Cid
 	// provideKeys directly feeds provide workers
 	provideKeys chan cid.Cid
-
-	process process.Process
 
 	// Counters for various statistics
 	counterLk sync.Mutex
@@ -232,7 +219,7 @@ func (bs *Bitswap) HasBlock(blk blocks.Block) error {
 // @whyrusleeping, I don't know the answers you seek.
 func (bs *Bitswap) receiveBlockFrom(blk blocks.Block, from peer.ID) error {
 	select {
-	case <-bs.process.Closing():
+	case <-bs.ctx.Done():
 		return errors.New("bitswap is closed")
 	default:
 	}
@@ -257,8 +244,8 @@ func (bs *Bitswap) receiveBlockFrom(blk blocks.Block, from peer.ID) error {
 		select {
 		case bs.newBlocks <- blk.Cid():
 			// send block off to be reprovided
-		case <-bs.process.Closing():
-			return bs.process.Close()
+		case <-bs.ctx.Done():
+			return bs.ctx.Err()
 		}
 	}
 	return nil
@@ -357,7 +344,8 @@ func (bs *Bitswap) ReceiveError(err error) {
 
 // Close is called to shutdown Bitswap
 func (bs *Bitswap) Close() error {
-	return bs.process.Close()
+	bs.cancel()
+	return nil
 }
 
 // GetWantlist returns the current local wantlist.

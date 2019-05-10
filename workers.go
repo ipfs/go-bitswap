@@ -7,34 +7,39 @@ import (
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
-	process "github.com/jbenet/goprocess"
-	procctx "github.com/jbenet/goprocess/context"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending
 // outgoing messages
 var TaskWorkerCount = 8
 
-func (bs *Bitswap) startWorkers(ctx context.Context, px process.Process) {
+func (bs *Bitswap) startWorkers(ctx context.Context) {
 
 	// Start up workers to handle requests from other nodes for the data on this node
 	for i := 0; i < TaskWorkerCount; i++ {
-		i := i
-		px.Go(func(px process.Process) {
-			bs.taskWorker(ctx, i)
-		})
+		subCtx, cancel := context.WithCancel(ctx)
+		go func(i int) {
+			defer cancel()
+			bs.taskWorker(subCtx, i)
+		}(i)
 	}
 
 	if ProvideEnabled {
 		// Start up a worker to manage sending out provides messages
-		px.Go(func(px process.Process) {
-			bs.provideCollector(ctx)
-		})
+		collectorCtx, collectorCancel := context.WithCancel(ctx)
+		go func() {
+			defer collectorCancel()
+			bs.provideCollector(collectorCtx)
+		}()
 
 		// Spawn up multiple workers to handle incoming blocks
 		// consider increasing number if providing blocks bottlenecks
 		// file transfers
-		px.Go(bs.provideWorker)
+		workerCtx, workerCancel := context.WithCancel(ctx)
+		go func() {
+			defer workerCancel()
+			bs.provideWorker(workerCtx)
+		}()
 	}
 }
 
@@ -101,16 +106,13 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	}
 }
 
-func (bs *Bitswap) provideWorker(px process.Process) {
+func (bs *Bitswap) provideWorker(ctx context.Context) {
 	// FIXME: OnClosingContext returns a _custom_ context type.
 	// Unfortunately, deriving a new cancelable context from this custom
 	// type fires off a goroutine. To work around this, we create a single
 	// cancelable context up-front and derive all sub-contexts from that.
 	//
 	// See: https://github.com/ipfs/go-ipfs/issues/5810
-	ctx := procctx.OnClosingContext(px)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 
 	limit := make(chan struct{}, provideWorkerMax)
 
@@ -138,7 +140,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 		log.Event(ctx, "Bitswap.ProvideWorker.Loop", ev)
 
 		select {
-		case <-px.Closing():
+		case <-ctx.Done():
 			return
 		case k, ok := <-bs.provideKeys:
 			if !ok {
@@ -146,7 +148,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 				return
 			}
 			select {
-			case <-px.Closing():
+			case <-ctx.Done():
 				return
 			case limit <- struct{}{}:
 				go limitedGoProvide(k, wid)
