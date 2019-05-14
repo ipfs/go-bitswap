@@ -16,30 +16,21 @@ var TaskWorkerCount = 8
 func (bs *Bitswap) startWorkers(ctx context.Context) {
 
 	// Start up workers to handle requests from other nodes for the data on this node
+	startTaskWorker := func(i int) func(context.Context) {
+		return func(ctx context.Context) { bs.taskWorker(ctx, i) }
+	}
 	for i := 0; i < TaskWorkerCount; i++ {
-		subCtx, cancel := context.WithCancel(ctx)
-		go func(i int) {
-			defer cancel()
-			bs.taskWorker(subCtx, i)
-		}(i)
+		bs.monitor.AddCancellable(ctx, startTaskWorker(i))
 	}
 
 	if ProvideEnabled {
 		// Start up a worker to manage sending out provides messages
-		collectorCtx, collectorCancel := context.WithCancel(ctx)
-		go func() {
-			defer collectorCancel()
-			bs.provideCollector(collectorCtx)
-		}()
+		bs.monitor.AddCancellable(ctx, bs.provideCollector)
 
 		// Spawn up multiple workers to handle incoming blocks
 		// consider increasing number if providing blocks bottlenecks
 		// file transfers
-		workerCtx, workerCancel := context.WithCancel(ctx)
-		go func() {
-			defer workerCancel()
-			bs.provideWorker(workerCtx)
-		}()
+		bs.monitor.AddCancellable(ctx, bs.provideWorker)
 	}
 }
 

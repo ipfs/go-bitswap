@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	bsmonitor "github.com/ipfs/go-bitswap/monitor"
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 
 	decision "github.com/ipfs/go-bitswap/decision"
@@ -51,6 +52,8 @@ var (
 	HasBlockBufferSize    = 256
 	provideKeysBufferSize = 2048
 	provideWorkerMax      = 6
+
+	shutdownTimeout = time.Duration(0)
 
 	// the 1<<18+15 is to observe old file chunks that are 1<<18 + 14 in size
 	metricsBuckets = []float64{1 << 6, 1 << 10, 1 << 14, 1 << 18, 1<<18 + 15, 1 << 22}
@@ -96,9 +99,9 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		return bssrs.New(ctx)
 	}
 
+	monitor := bsmonitor.New(shutdownTimeout)
 	bs := &Bitswap{
-		ctx:           ctx,
-		cancel:        cancelFunc,
+		monitor:       monitor,
 		blockstore:    bstore,
 		engine:        decision.NewEngine(ctx, bstore), // TODO close the engine with Close() method
 		network:       network,
@@ -120,13 +123,14 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	// Start up bitswaps async worker routines
 	bs.startWorkers(ctx)
 
+	bs.monitor.LinkContextCancellation(ctx, cancelFunc)
+	bs.monitor.Start()
 	return bs
 }
 
 // Bitswap instances implement the bitswap protocol.
 type Bitswap struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	monitor *bsmonitor.Monitor
 	// the wantlist tracks global wants for bitswap
 	wm *bswm.WantManager
 
@@ -219,7 +223,7 @@ func (bs *Bitswap) HasBlock(blk blocks.Block) error {
 // @whyrusleeping, I don't know the answers you seek.
 func (bs *Bitswap) receiveBlockFrom(blk blocks.Block, from peer.ID) error {
 	select {
-	case <-bs.ctx.Done():
+	case <-bs.monitor.Closed():
 		return errors.New("bitswap is closed")
 	default:
 	}
@@ -244,8 +248,8 @@ func (bs *Bitswap) receiveBlockFrom(blk blocks.Block, from peer.ID) error {
 		select {
 		case bs.newBlocks <- blk.Cid():
 			// send block off to be reprovided
-		case <-bs.ctx.Done():
-			return bs.ctx.Err()
+		case <-bs.monitor.Closed():
+			return bs.monitor.Err()
 		}
 	}
 	return nil
@@ -344,7 +348,7 @@ func (bs *Bitswap) ReceiveError(err error) {
 
 // Close is called to shutdown Bitswap
 func (bs *Bitswap) Close() error {
-	bs.cancel()
+	bs.monitor.Shutdown()
 	return nil
 }
 
