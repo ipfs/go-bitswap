@@ -17,6 +17,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
+	github.com/ipfs/go-peertaskqueue v0.0.3
 	github.com/jbenet/goprocess v0.0.0-20160826012719-b497e2f366b8
 	github.com/libp2p/go-libp2p v0.0.2
 	github.com/libp2p/go-libp2p-host v0.0.1
@@ -24,7 +25,7 @@ require (
 	github.com/libp2p/go-libp2p-loggables v0.0.1
 	github.com/libp2p/go-libp2p-net v0.0.1
 	github.com/libp2p/go-libp2p-netutil v0.0.1
-	github.com/libp2p/go-libp2p-peer v0.0.1
+	github.com/libp2p/go-libp2p-peer v0.1.1
 	github.com/libp2p/go-libp2p-peerstore v0.0.1
 	github.com/libp2p/go-libp2p-protocol v0.0.1
 	github.com/libp2p/go-libp2p-routing v0.0.1
