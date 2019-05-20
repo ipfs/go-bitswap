@@ -118,9 +118,9 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		sentHistogram: sentHistogram,
 	}
 
+	network.SetDelegate(bs)
 	bs.wm.Startup()
 	bs.pqm.Startup()
-	network.SetDelegate(bs)
 
 	// Start up bitswaps async worker routines
 	bs.startWorkers(ctx, px)
