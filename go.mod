@@ -32,7 +32,6 @@ require (
 	github.com/libp2p/go-libp2p-peerstore v0.1.0
 	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/libp2p/go-libp2p-routing v0.0.1
-	github.com/libp2p/go-libp2p-transport v0.1.0 // indirect
 	github.com/libp2p/go-libp2p-yamux v0.1.3 // indirect
 	github.com/libp2p/go-mplex v0.0.4 // indirect
 	github.com/libp2p/go-stream-muxer v0.1.0 // indirect
