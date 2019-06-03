@@ -13,6 +13,7 @@ import (
 
 	"github.com/ipfs/go-bitswap/testutil"
 	blocks "github.com/ipfs/go-block-format"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 
 	bitswap "github.com/ipfs/go-bitswap"
 	bssession "github.com/ipfs/go-bitswap/session"
@@ -152,6 +153,37 @@ func BenchmarkDupsManyNodesRealWorldNetwork(b *testing.B) {
 	ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
 }
 
+func BenchmarkDupsManyNodesRealWorldNetworkWithRealDHT(b *testing.B) {
+	benchmarkLog = nil
+	fastNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
+		mediumSpeed-fastSpeed, slowSpeed-fastSpeed,
+		0.0, 0.0, distribution, nil)
+	fastNetworkDelay := delay.Delay(fastSpeed, fastNetworkDelayGenerator)
+	fastBandwidthGenerator := tn.VariableRateLimitGenerator(fastBandwidth, fastBandwidthDeviation, nil)
+	averageNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
+		mediumSpeed-fastSpeed, slowSpeed-fastSpeed,
+		0.3, 0.3, distribution, nil)
+	averageNetworkDelay := delay.Delay(fastSpeed, averageNetworkDelayGenerator)
+	averageBandwidthGenerator := tn.VariableRateLimitGenerator(mediumBandwidth, mediumBandwidthDeviation, nil)
+	slowNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
+		mediumSpeed-fastSpeed, superSlowSpeed-fastSpeed,
+		0.3, 0.3, distribution, nil)
+	slowNetworkDelay := delay.Delay(fastSpeed, slowNetworkDelayGenerator)
+	slowBandwidthGenerator := tn.VariableRateLimitGenerator(slowBandwidth, slowBandwidthDeviation, nil)
+
+	b.Run("10Nodes-AllToAll-BigBatch-FastNetwork", func(b *testing.B) {
+		subtestDistributeAndFetchWithRealDHT(b, 20, 10, fastNetworkDelay, fastBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+	})
+	b.Run("10Nodes-AllToAll-BigBatch-AverageVariableSpeedNetwork", func(b *testing.B) {
+		subtestDistributeAndFetchWithRealDHT(b, 20, 10, averageNetworkDelay, averageBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+	})
+	b.Run("10Nodes-AllToAll-BigBatch-SlowVariableSpeedNetwork", func(b *testing.B) {
+		subtestDistributeAndFetchWithRealDHT(b, 20, 10, slowNetworkDelay, slowBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+	})
+	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
+	ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
+}
+
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
@@ -182,6 +214,43 @@ func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d
 
 		runDistribution(b, instances, blocks, df, ff, start)
 	}
+}
+
+func subtestDistributeAndFetchWithRealDHT(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, df distFunc, ff fetchFunc) {
+	start := time.Now()
+	ctx := context.Background()
+	mn := mocknet.New(ctx)
+	routing := tn.NewDHTServer()
+	net, err := tn.StreamNet(ctx, mn, routing)
+	if err != nil {
+		b.Fatal("Unable to initialize mocknet")
+	}
+
+	ig := testinstance.NewTestInstanceGenerator(net)
+	defer ig.Close()
+
+	var instances []testinstance.Instance
+	for j := 0; j < numnodes; j++ {
+		inst := ig.Next()
+		instances = append(instances, inst)
+	}
+	mn.LinkAll()
+	for i, inst := range instances {
+		// Connect in a star pattern to first node only (like a bootstrap)
+		inst.Adapter.ConnectTo(context.Background(), instances[0].Peer)
+		// rate limit and delate connections
+		for j := i + 1; j < len(instances); j++ {
+			oinst := instances[j]
+			links := mn.LinksBetweenPeers(inst.Peer, oinst.Peer)
+			for _, link := range links {
+				link.SetOptions(mocknet.LinkOptions{Latency: d.NextWaitTime(), Bandwidth: rateLimitGenerator.NextRateLimit()})
+			}
+		}
+	}
+
+	blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
+
+	runDistribution(b, instances, blocks, df, ff, start)
 }
 
 func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, df distFunc, ff fetchFunc, start time.Time) {

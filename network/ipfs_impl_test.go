@@ -8,7 +8,6 @@ import (
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-testing/net"
@@ -58,7 +57,7 @@ func TestMessageSendAndReceive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	mn := mocknet.New(ctx)
-	mr := mockrouting.NewServer()
+	mr := tn.NewMockServer()
 	streamNet, err := tn.StreamNet(ctx, mn, mr)
 	if err != nil {
 		t.Fatal("Unable to setup network")
@@ -149,5 +148,98 @@ func TestMessageSendAndReceive(t *testing.T) {
 	receivedBlock := receivedBlocks[0]
 	if receivedBlock.Cid() != sentBlock.Cid() {
 		t.Fatal("Sent message blocks did not match received message blocks")
+	}
+}
+
+func TestRealProviding(t *testing.T) {
+	// create network
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	mn := mocknet.New(ctx)
+	routing := tn.NewDHTServer()
+	streamNet, err := tn.StreamNet(ctx, mn, routing)
+	if err != nil {
+		t.Fatal("Unable to setup network")
+	}
+	p1 := tnet.RandIdentityOrFatal(t)
+	p2 := tnet.RandIdentityOrFatal(t)
+	p3 := tnet.RandIdentityOrFatal(t)
+
+	bsnet1 := streamNet.Adapter(p1)
+	bsnet2 := streamNet.Adapter(p2)
+	bsnet3 := streamNet.Adapter(p3)
+
+	r1 := &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
+	}
+	r2 := &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
+	}
+	r3 := &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
+	}
+	bsnet1.SetDelegate(r1)
+	bsnet2.SetDelegate(r2)
+	bsnet3.SetDelegate(r3)
+
+	mn.LinkAll()
+	bsnet1.ConnectTo(ctx, p2.ID())
+	select {
+	case <-ctx.Done():
+		t.Fatal("did not connect peer")
+	case <-r1.connectionEvent:
+	}
+	bsnet2.ConnectTo(ctx, p1.ID())
+	select {
+	case <-ctx.Done():
+		t.Fatal("did not connect peer")
+	case <-r2.connectionEvent:
+	}
+	bsnet2.ConnectTo(ctx, p3.ID())
+	select {
+	case <-ctx.Done():
+		t.Fatal("did not connect peer")
+	case <-r2.connectionEvent:
+	}
+	bsnet3.ConnectTo(ctx, p2.ID())
+	select {
+	case <-ctx.Done():
+		t.Fatal("did not connect peer")
+	case <-r3.connectionEvent:
+	}
+	if _, ok := r1.peers[p2.ID()]; !ok {
+		t.Fatal("did to connect to correct peer")
+	}
+	if _, ok := r2.peers[p1.ID()]; !ok {
+		t.Fatal("did to connect to correct peer")
+	}
+	if _, ok := r2.peers[p3.ID()]; !ok {
+		t.Fatal("did to connect to correct peer")
+	}
+	if _, ok := r3.peers[p2.ID()]; !ok {
+		t.Fatal("did to connect to correct peer")
+	}
+	blockGenerator := blocksutil.NewBlockGenerator()
+	block1 := blockGenerator.Next()
+	// provide on node 3
+	err = bsnet3.Provide(ctx, block1.Cid())
+	if err != nil {
+		t.Fatal("Unable to provide node")
+	}
+	incomingProvders := bsnet1.FindProvidersAsync(ctx, block1.Cid(), 1)
+	select {
+	case <-ctx.Done():
+		t.Fatal("Unable to find provided block")
+	case prov := <-incomingProvders:
+		if prov != p3.ID() {
+			t.Fatal("Found incorrect provider")
+		}
 	}
 }
