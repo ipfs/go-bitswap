@@ -243,7 +243,7 @@ func TestPeersWithConnectionErrorsNotAddedToPeerList(t *testing.T) {
 
 }
 
-func TestRateLimitingRequests(t *testing.T) {
+/*func TestRateLimitingRequests(t *testing.T) {
 	peers := testutil.GeneratePeers(10)
 	fpn := &fakeProviderNetwork{
 		peersFound: peers,
@@ -279,7 +279,7 @@ func TestRateLimitingRequests(t *testing.T) {
 	if fpn.queriesMade != maxInProcessRequests+1 {
 		t.Fatal("Did not make all seperate requests")
 	}
-}
+}*/
 
 func TestFindProviderTimeout(t *testing.T) {
 	peers := testutil.GeneratePeers(10)
