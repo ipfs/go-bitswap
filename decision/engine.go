@@ -3,19 +3,15 @@ package decision
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	wl "github.com/ipfs/go-bitswap/wantlist"
+
 	blocks "github.com/ipfs/go-block-format"
-	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
-	"github.com/ipfs/go-peertaskqueue"
-	"github.com/ipfs/go-peertaskqueue/peertask"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -58,11 +54,6 @@ const (
 	outboxChanBuffer = 0
 	// maxMessageSize is the maximum size of the batched payload
 	maxMessageSize = 512 * 1024
-	// tagPrefix is the tag given to peers associated an engine
-	tagPrefix = "bs-engine-%s"
-
-	// tagWeight is the default weight for peers associated with an engine
-	tagWeight = 5
 )
 
 // Envelope contains a message for a Peer.
@@ -77,19 +68,12 @@ type Envelope struct {
 	Sent func()
 }
 
-// PeerTagger covers the methods on the connection manager used by the decision
-// engine to tag peers
-type PeerTagger interface {
-	TagPeer(peer.ID, string, int)
-	UntagPeer(p peer.ID, tag string)
-}
-
 // Engine manages sending requested blocks to peers.
 type Engine struct {
 	// peerRequestQueue is a priority queue of requests received from peers.
 	// Requests are popped from the queue, packaged up, and placed in the
 	// outbox.
-	peerRequestQueue *peertaskqueue.PeerTaskQueue
+	peerRequestQueue *prq
 
 	// FIXME it's a bit odd for the client and the worker to both share memory
 	// (both modify the peerRequestQueue) and also to communicate over the
@@ -104,9 +88,6 @@ type Engine struct {
 
 	bs bstore.Blockstore
 
-	peerTagger PeerTagger
-
-	tag  string
 	lock sync.Mutex // protects the fields immediatly below
 	// ledgerMap lists Ledgers by their Partner key.
 	ledgerMap map[peer.ID]*ledger
@@ -115,27 +96,17 @@ type Engine struct {
 }
 
 // NewEngine creates a new block sending engine for the given block store
-func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
+func NewEngine(ctx context.Context, bs bstore.Blockstore) *Engine {
 	e := &Engine{
-		ledgerMap:  make(map[peer.ID]*ledger),
-		bs:         bs,
-		peerTagger: peerTagger,
-		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
-		workSignal: make(chan struct{}, 1),
-		ticker:     time.NewTicker(time.Millisecond * 100),
+		ledgerMap:        make(map[peer.ID]*ledger),
+		bs:               bs,
+		peerRequestQueue: newPRQ(),
+		outbox:           make(chan (<-chan *Envelope), outboxChanBuffer),
+		workSignal:       make(chan struct{}, 1),
+		ticker:           time.NewTicker(time.Millisecond * 100),
 	}
-	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
-	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
 	go e.taskWorker(ctx)
 	return e
-}
-
-func (e *Engine) onPeerAdded(p peer.ID) {
-	e.peerTagger.TagPeer(p, e.tag, tagWeight)
-}
-
-func (e *Engine) onPeerRemoved(p peer.ID) {
-	e.peerTagger.UntagPeer(p, e.tag)
 }
 
 // WantlistForPeer returns the currently understood want list for a given peer
@@ -188,23 +159,23 @@ func (e *Engine) taskWorker(ctx context.Context) {
 // context is cancelled before the next Envelope can be created.
 func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 	for {
-		nextTask := e.peerRequestQueue.PopBlock()
+		nextTask := e.peerRequestQueue.Pop()
 		for nextTask == nil {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-e.workSignal:
-				nextTask = e.peerRequestQueue.PopBlock()
+				nextTask = e.peerRequestQueue.Pop()
 			case <-e.ticker.C:
-				e.peerRequestQueue.ThawRound()
-				nextTask = e.peerRequestQueue.PopBlock()
+				e.peerRequestQueue.thawRound()
+				nextTask = e.peerRequestQueue.Pop()
 			}
 		}
 
 		// with a task in hand, we're ready to prepare the envelope...
 		msg := bsmsg.New(true)
-		for _, entry := range nextTask.Tasks {
-			block, err := e.bs.Get(entry.Identifier.(cid.Cid))
+		for _, entry := range nextTask.Entries {
+			block, err := e.bs.Get(entry.Cid)
 			if err != nil {
 				log.Errorf("tried to execute a task and errored fetching block: %s", err)
 				continue
@@ -215,7 +186,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		if msg.Empty() {
 			// If we don't have the block, don't hold that against the peer
 			// make sure to update that the task has been 'completed'
-			nextTask.Done(nextTask.Tasks)
+			nextTask.Done(nextTask.Entries)
 			continue
 		}
 
@@ -223,7 +194,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			Peer:    nextTask.Target,
 			Message: msg,
 			Sent: func() {
-				nextTask.Done(nextTask.Tasks)
+				nextTask.Done(nextTask.Entries)
 				select {
 				case e.workSignal <- struct{}{}:
 					// work completing may mean that our queue will provide new
@@ -275,7 +246,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	}
 
 	var msgSize int
-	var activeEntries []peertask.Task
+	var activeEntries []wl.Entry
 	for _, entry := range m.Wantlist() {
 		if entry.Cancel {
 			log.Debugf("%s cancel %s", p, entry.Cid)
@@ -294,17 +265,17 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				// we have the block
 				newWorkExists = true
 				if msgSize+blockSize > maxMessageSize {
-					e.peerRequestQueue.PushBlock(p, activeEntries...)
-					activeEntries = []peertask.Task{}
+					e.peerRequestQueue.Push(p, activeEntries...)
+					activeEntries = []wl.Entry{}
 					msgSize = 0
 				}
-				activeEntries = append(activeEntries, peertask.Task{Identifier: entry.Cid, Priority: entry.Priority})
+				activeEntries = append(activeEntries, entry.Entry)
 				msgSize += blockSize
 			}
 		}
 	}
 	if len(activeEntries) > 0 {
-		e.peerRequestQueue.PushBlock(p, activeEntries...)
+		e.peerRequestQueue.Push(p, activeEntries...)
 	}
 	for _, block := range m.Blocks() {
 		log.Debugf("got block %s %d bytes", block, len(block.RawData()))
@@ -318,10 +289,7 @@ func (e *Engine) addBlock(block blocks.Block) {
 	for _, l := range e.ledgerMap {
 		l.lk.Lock()
 		if entry, ok := l.WantListContains(block.Cid()); ok {
-			e.peerRequestQueue.PushBlock(l.Partner, peertask.Task{
-				Identifier: entry.Cid,
-				Priority:   entry.Priority,
-			})
+			e.peerRequestQueue.Push(l.Partner, entry)
 			work = true
 		}
 		l.lk.Unlock()
