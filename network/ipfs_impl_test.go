@@ -10,7 +10,7 @@ import (
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-testing/net"
+	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
@@ -196,7 +196,6 @@ func TestRealProviding(t *testing.T) {
 		t.Fatal("did not connect peer")
 	case <-r1.connectionEvent:
 	}
-	bsnet2.ConnectTo(ctx, p1.ID())
 	select {
 	case <-ctx.Done():
 		t.Fatal("did not connect peer")
@@ -208,7 +207,6 @@ func TestRealProviding(t *testing.T) {
 		t.Fatal("did not connect peer")
 	case <-r2.connectionEvent:
 	}
-	bsnet3.ConnectTo(ctx, p2.ID())
 	select {
 	case <-ctx.Done():
 		t.Fatal("did not connect peer")
@@ -229,9 +227,19 @@ func TestRealProviding(t *testing.T) {
 	blockGenerator := blocksutil.NewBlockGenerator()
 	block1 := blockGenerator.Next()
 	// provide on node 3
-	err = bsnet3.Provide(ctx, block1.Cid())
+	// DHT can setup routing table in seperate thread,
+	// meaning it's not finished even bitswap peers are connected
+	// so attempt a few times with delay
+provideLoop:
+	for i := 0; i < 5; i++ {
+		err = bsnet3.Provide(ctx, block1.Cid())
+		if err == nil {
+			break provideLoop
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err != nil {
-		t.Fatal("Unable to provide node")
+		t.Fatalf("Unable to provide node: %s", err)
 	}
 	incomingProvders := bsnet1.FindProvidersAsync(ctx, block1.Cid(), 1)
 	select {
