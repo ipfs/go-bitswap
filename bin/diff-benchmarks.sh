@@ -7,10 +7,10 @@ parse() {
     sed -n \
         -e 's/ *\t */\t/g' \
         -e '/^Benchmark/p' |
-        column -s'	' --json \
-               --table-columns name,count,time,rate \
-               --table-name "results" |
-        jq '.results[] | {name: .name, time: (.time | rtrimstr(" ns/op") | tonumber)}'
+        awk 'BEGIN{print "{\"results\": ["} {print "  {\"name\": \"",$1,"\", \"time\": ",$3," },"} END{print "]}"}' OFS="" ORS=" "|
+        sed -e 's/, ]/ ]/g' |
+        jq '.results[] | {name: .name, time: .time }'
+
 }
 
 benchcmp "$1" "$2"
@@ -21,7 +21,7 @@ echo "Result:"
 {
     parse < "$1"
     parse < "$2"
-} | jq -e -r -s 'group_by(.name)[] | {name: .[0].name, speedup: (.[1].time / .[0].time)} | select(.speedup < 0.90) | "\(.name)\t\(.speedup)x"'
+} | jq -e -r -s 'group_by(.name)[] | {name: .[0].name, speedup: (.[0].time / .[1].time)} | select(.speedup < 0.75) | "\(.name)\t\(.speedup)x"'
 
 if [[ $? -ne 4 ]]; then
     echo ""

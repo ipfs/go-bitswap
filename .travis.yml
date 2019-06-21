@@ -9,17 +9,17 @@ go:
 env:
   global:
     - GOTFLAGS="-race"
-  matrix:
     - BUILD_DEPTYPE=gomod
-
+  matrix:
+    - TEST_PHASE=test
+    - TEST_PHASE=benchmark
 
 # disable travis install
 install:
   - true
 
 script:
-  - bash <(curl -s https://raw.githubusercontent.com/ipfs/ci-helpers/master/travis-ci/run-standard-tests.sh)
-
+  - ./bin/test-exec.sh
 
 cache:
   directories:
