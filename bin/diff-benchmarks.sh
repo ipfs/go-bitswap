@@ -1,8 +1,5 @@
 #!/bin/bash
 
-before="$1"
-after="$2"
-
 parse() {
     sed -n \
         -e 's/ *\t */\t/g' \

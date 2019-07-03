@@ -1,6 +1,4 @@
 #!/bin/bash
-output="$1"
-branch="$2"
 
 git checkout "$2"
 
