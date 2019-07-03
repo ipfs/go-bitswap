@@ -4,7 +4,7 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-testing/net"
+	tnet "github.com/libp2p/go-libp2p-testing/net"
 )
 
 // Network is an interface for generating bitswap network interfaces
