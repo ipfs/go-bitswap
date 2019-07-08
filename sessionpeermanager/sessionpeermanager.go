@@ -15,7 +15,6 @@ import (
 
 const (
 	defaultTimeoutDuration = 5 * time.Second
-	maxOptimizedPeers      = 32
 	unoptimizedTagValue    = 5  // tag value for "unoptimized" session peers.
 	optimizedTagValue      = 10 // tag value for "optimized" session peers.
 )
@@ -279,8 +278,8 @@ type getPeersMessage struct {
 func (prm *getPeersMessage) handle(spm *SessionPeerManager) {
 	randomOrder := rand.Perm(len(spm.unoptimizedPeersArr))
 	maxPeers := len(spm.unoptimizedPeersArr) + len(spm.optimizedPeersArr)
-	if maxPeers > maxOptimizedPeers {
-		maxPeers = maxOptimizedPeers
+	if maxPeers > bssd.MaxOptimizedPeers {
+		maxPeers = bssd.MaxOptimizedPeers
 	}
 	var bestPeerLatency float64
 	if len(spm.optimizedPeersArr) > 0 {

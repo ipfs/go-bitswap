@@ -5,6 +5,10 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// MaxOptimizedPeers is the maximum number of peers that the session peer
+// manager will send to the splitter
+const MaxOptimizedPeers = 32
+
 // OptimizedPeer describes a peer and its level of optimization from 0 to 1.
 type OptimizedPeer struct {
 	Peer               peer.ID

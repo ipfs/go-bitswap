@@ -13,7 +13,7 @@ const (
 	minReceivedToAdjustSplit = 2
 	maxSplit                 = 16
 	maxAcceptableDupes       = 0.4
-	minDuplesToTryLessSplits = 0.2
+	minDuplesToTryLessSplits = 0.1
 	initialSplit             = 2
 )
 
@@ -105,10 +105,7 @@ type splitRequestMessage struct {
 func (s *splitRequestMessage) handle(srs *SessionRequestSplitter) {
 	split := srs.split
 	// first iteration ignore optimization ratings
-	peers := make([]peer.ID, len(s.optimizedPeers))
-	for i, optimizedPeer := range s.optimizedPeers {
-		peers[i] = optimizedPeer.Peer
-	}
+	peers := peersFromOptimizedPeers(s.optimizedPeers)
 	ks := s.ks
 	if len(peers) < split {
 		split = len(peers)

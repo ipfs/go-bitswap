@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	"github.com/ipfs/go-bitswap/testutil"
 
 	cid "github.com/ipfs/go-cid"
@@ -182,7 +183,7 @@ func TestOrderingPeers(t *testing.T) {
 	sessionPeerManager.RecordPeerResponse(peer3, c[0])
 
 	sessionPeers := sessionPeerManager.GetOptimizedPeers()
-	if len(sessionPeers) != maxOptimizedPeers {
+	if len(sessionPeers) != bssd.MaxOptimizedPeers {
 		t.Fatal("Should not return more than the max of optimized peers")
 	}
 
@@ -203,7 +204,7 @@ func TestOrderingPeers(t *testing.T) {
 	}
 
 	// should other peers rating of zero
-	for i := 3; i < maxOptimizedPeers; i++ {
+	for i := 3; i < bssd.MaxOptimizedPeers; i++ {
 		if sessionPeers[i].OptimizationRating != 0.0 {
 			t.Fatal("Did not assign rating to unoptimized peer correctly")
 		}
@@ -219,7 +220,7 @@ func TestOrderingPeers(t *testing.T) {
 
 	// call again
 	nextSessionPeers := sessionPeerManager.GetOptimizedPeers()
-	if len(nextSessionPeers) != maxOptimizedPeers {
+	if len(nextSessionPeers) != bssd.MaxOptimizedPeers {
 		t.Fatal("Should not return more than the max of optimized peers")
 	}
 
@@ -231,12 +232,12 @@ func TestOrderingPeers(t *testing.T) {
 
 	// should randomize other peers
 	totalSame := 0
-	for i := 3; i < maxOptimizedPeers; i++ {
+	for i := 3; i < bssd.MaxOptimizedPeers; i++ {
 		if sessionPeers[i].Peer == nextSessionPeers[i].Peer {
 			totalSame++
 		}
 	}
-	if totalSame >= maxOptimizedPeers-3 {
+	if totalSame >= bssd.MaxOptimizedPeers-3 {
 		t.Fatal("should not return the same random peers each time")
 	}
 }
