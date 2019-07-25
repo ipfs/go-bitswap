@@ -187,3 +187,24 @@ func TestRemovingPeersWhenSessionContextCancelled(t *testing.T) {
 		t.Fatal("received blocks for sessions that are canceled")
 	}
 }
+
+func TestGettingPeerManager(t *testing.T) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sm := New(ctx, sessionFactory, peerManagerFactory, requestSplitterFactory)
+
+	for i := 0; i < 10; i++ {
+		sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute))
+	}
+	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute))
+
+	peerManager := sm.PeerManagerForSession(firstSession).(*fakePeerManager)
+	if firstSession.(*fakeSession).id != peerManager.id {
+		t.Fatal("did not identify session peer manager correctly")
+	}
+	missingPeerManager := sm.PeerManagerForSession(&fakeSession{id: 1})
+	if missingPeerManager != nil {
+		t.Fatal("identified session peer manager when that should not have been possible")
+	}
+}

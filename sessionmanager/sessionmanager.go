@@ -136,3 +136,17 @@ func (sm *SessionManager) UpdateReceiveCounters(from peer.ID, blk blocks.Block) 
 		s.session.UpdateReceiveCounters(from, blk)
 	}
 }
+
+// PeerManagerForSession provides access to the PeerManager for a given Bitswap session.
+func (sm *SessionManager) PeerManagerForSession(fetcher exchange.Fetcher) bssession.PeerManager {
+	session, ok := fetcher.(Session)
+	if !ok {
+		return nil
+	}
+	for _, sesTrk := range sm.sessions {
+		if sesTrk.session == session {
+			return sesTrk.pm
+		}
+	}
+	return nil
+}

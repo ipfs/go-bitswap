@@ -426,3 +426,10 @@ func (bs *Bitswap) IsOnline() bool {
 func (bs *Bitswap) NewSession(ctx context.Context) exchange.Fetcher {
 	return bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 }
+
+// PeerManagerForSession is a way to get access to a peer manager for a given session
+// which in turn provides a way to get further information about peers discovered
+// during a session
+func (bs *Bitswap) PeerManagerForSession(fetcher exchange.Fetcher) bssession.PeerManager {
+	return bs.sm.PeerManagerForSession(fetcher)
+}
