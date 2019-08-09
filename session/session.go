@@ -413,35 +413,25 @@ func (s *Session) receiveBlocks(ctx context.Context, blocks []blocks.Block) {
 }
 
 func (s *Session) updateReceiveCounters(ctx context.Context, rcv blksRecv) {
-	// Inform the request splitter of unique / duplicate blocks
+	ks := make([]cid.Cid, len(rcv.blks)+len(rcv.dups))
+
 	for _, blk := range append(rcv.blks, rcv.dups...) {
+		// Inform the request splitter of unique / duplicate blocks
 		if s.cidIsWanted(blk.Cid()) {
 			s.srs.RecordUniqueBlock()
 		} else if s.pastWants.Has(blk.Cid()) {
 			s.srs.RecordDuplicateBlock()
 		}
+
+		// If this is a response to a targeted request (ie not a broadcast request)
+		// then record the peer response
+		if rcv.from != "" {
+			ks = append(ks, blk.Cid())
+		}
 	}
 
-	// If this is a response to a targeted request (ie not a broadcast request)
-	// then record the peer response
-	if rcv.from != "" {
-		ksm := make(map[cid.Cid]struct{}, len(rcv.blks)+len(rcv.dups))
-		for _, b := range rcv.blks {
-			ksm[b.Cid()] = struct{}{}
-		}
-		for _, b := range rcv.dups {
-			if s.pastWants.Has(b.Cid()) {
-				ksm[b.Cid()] = struct{}{}
-			}
-		}
-
-		if len(ksm) > 0 {
-			ks := make([]cid.Cid, len(ksm))
-			for c, _ := range ksm {
-				ks = append(ks, c)
-			}
-			s.pm.RecordPeerResponse(rcv.from, ks)
-		}
+	if len(ks) > 0 {
+		s.pm.RecordPeerResponse(rcv.from, ks)
 	}
 }
 
