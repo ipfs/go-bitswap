@@ -18,7 +18,7 @@ import (
 type Session interface {
 	exchange.Fetcher
 	InterestedIn(cid.Cid) bool
-	ReceiveBlocksFrom(peer.ID, []blocks.Block, []blocks.Block, bool)
+	ReceiveBlocksFrom(peer.ID, []blocks.Block)
 }
 
 type sesTrk struct {
@@ -113,24 +113,18 @@ func (sm *SessionManager) GetNextSessionID() uint64 {
 
 // ReceiveBlocksFrom receives blocks from a peer and dispatches to interested
 // sessions.
-func (sm *SessionManager) ReceiveBlocksFrom(from peer.ID, blks []blocks.Block, dups []blocks.Block, fromNetwork bool) {
+func (sm *SessionManager) ReceiveBlocksFrom(from peer.ID, blks []blocks.Block) {
 	sm.sessLk.Lock()
 	defer sm.sessLk.Unlock()
 
 	// Only give each session the blocks / dups that it is interested in
 	for _, s := range sm.sessions {
 		sessBlks := make([]blocks.Block, 0, len(blks))
-		var sessDups []blocks.Block
 		for _, b := range blks {
 			if s.session.InterestedIn(b.Cid()) {
 				sessBlks = append(sessBlks, b)
 			}
 		}
-		for _, d := range dups {
-			if s.session.InterestedIn(d.Cid()) {
-				sessDups = append(sessDups, d)
-			}
-		}
-		s.session.ReceiveBlocksFrom(from, sessBlks, sessDups, fromNetwork)
+		s.session.ReceiveBlocksFrom(from, sessBlks)
 	}
 }

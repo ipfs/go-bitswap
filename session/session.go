@@ -53,10 +53,8 @@ type interestReq struct {
 }
 
 type blksRecv struct {
-	from        peer.ID
-	blks        []blocks.Block
-	dups        []blocks.Block
-	fromNetwork bool
+	from peer.ID
+	blks []blocks.Block
 }
 
 // Session holds state for an individual bitswap transfer operation.
@@ -136,19 +134,11 @@ func New(ctx context.Context,
 }
 
 // ReceiveBlocksFrom receives incoming blocks from the given peer.
-func (s *Session) ReceiveBlocksFrom(from peer.ID, blocks []blocks.Block, dups []blocks.Block, fromNetwork bool) {
+func (s *Session) ReceiveBlocksFrom(from peer.ID, blocks []blocks.Block) {
 	select {
-	case s.incoming <- blksRecv{from: from, blks: blocks, dups: dups, fromNetwork: fromNetwork}:
+	case s.incoming <- blksRecv{from: from, blks: blocks}:
 	case <-s.ctx.Done():
 	}
-
-	// We've received the blocks so we can cancel any outstanding wants for them
-	ks := make([]cid.Cid, 0, len(blocks))
-	for _, b := range blocks {
-		ks = append(ks, b.Cid())
-	}
-	s.pm.RecordCancels(ks)
-	s.wm.CancelWants(s.ctx, ks, nil, s.id)
 }
 
 // InterestedIn returns true if this session is interested in the given Cid.
@@ -241,7 +231,10 @@ func (s *Session) run(ctx context.Context) {
 	for {
 		select {
 		case rcv := <-s.incoming:
-			if rcv.fromNetwork {
+			s.cancelIncomingBlocks(ctx, rcv)
+			// Record statistics only if the blocks came from the network
+			// (blocks can also be received from the local node)
+			if rcv.from != "" {
 				s.updateReceiveCounters(ctx, rcv)
 			}
 			s.handleIncomingBlocks(ctx, rcv)
@@ -264,6 +257,18 @@ func (s *Session) run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (s *Session) cancelIncomingBlocks(ctx context.Context, rcv blksRecv) {
+	// We've received the blocks so we can cancel any outstanding wants for them
+	ks := make([]cid.Cid, 0, len(rcv.blks))
+	for _, b := range rcv.blks {
+		if s.cidIsWanted(b.Cid()) {
+			ks = append(ks, b.Cid())
+		}
+	}
+	s.pm.RecordCancels(ks)
+	s.wm.CancelWants(s.ctx, ks, nil, s.id)
 }
 
 func (s *Session) handleIncomingBlocks(ctx context.Context, rcv blksRecv) {
@@ -413,9 +418,9 @@ func (s *Session) receiveBlocks(ctx context.Context, blocks []blocks.Block) {
 }
 
 func (s *Session) updateReceiveCounters(ctx context.Context, rcv blksRecv) {
-	ks := make([]cid.Cid, len(rcv.blks)+len(rcv.dups))
+	ks := make([]cid.Cid, len(rcv.blks))
 
-	for _, blk := range append(rcv.blks, rcv.dups...) {
+	for _, blk := range rcv.blks {
 		// Inform the request splitter of unique / duplicate blocks
 		if s.cidIsWanted(blk.Cid()) {
 			s.srs.RecordUniqueBlock()
@@ -423,13 +428,10 @@ func (s *Session) updateReceiveCounters(ctx context.Context, rcv blksRecv) {
 			s.srs.RecordDuplicateBlock()
 		}
 
-		// If this is a response to a targeted request (ie not a broadcast request)
-		// then record the peer response
-		if rcv.from != "" {
-			ks = append(ks, blk.Cid())
-		}
+		ks = append(ks, blk.Cid())
 	}
 
+	// Record response (to be able to time latency)
 	if len(ks) > 0 {
 		s.pm.RecordPeerResponse(rcv.from, ks)
 	}

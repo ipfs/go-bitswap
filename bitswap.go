@@ -265,24 +265,39 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 // HasBlock announces the existence of a block to this bitswap service. The
 // service will potentially notify its peers.
 func (bs *Bitswap) HasBlock(blk blocks.Block) error {
-	return bs.receiveBlocksFrom("", []blocks.Block{blk}, []blocks.Block{}, false)
+	return bs.receiveBlocksFrom("", []blocks.Block{blk})
 }
 
 // TODO: Some of this stuff really only needs to be done when adding a block
 // from the user, not when receiving it from the network.
 // In case you run `git blame` on this comment, I'll save you some time: ask
 // @whyrusleeping, I don't know the answers you seek.
-func (bs *Bitswap) receiveBlocksFrom(from peer.ID, blks []blocks.Block, dups []blocks.Block, fromNetwork bool) error {
+func (bs *Bitswap) receiveBlocksFrom(from peer.ID, blks []blocks.Block) error {
 	select {
 	case <-bs.process.Closing():
 		return errors.New("bitswap is closed")
 	default:
 	}
 
-	// Put blocks into blockstore
-	err := bs.blockstore.PutMany(blks)
+	wanted := blks
+
+	// If blocks came from the network
+	if from != "" {
+		// Split blocks into wanted blocks vs duplicates
+		wanted = make([]blocks.Block, 0, len(blks))
+		for _, b := range blks {
+			if bs.wm.IsWanted(b.Cid()) {
+				wanted = append(wanted, b)
+			} else {
+				log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
+			}
+		}
+	}
+
+	// Put wanted blocks into blockstore
+	err := bs.blockstore.PutMany(wanted)
 	if err != nil {
-		log.Errorf("Error writing %d blocks to datastore: %s", len(blks), err)
+		log.Errorf("Error writing %d blocks to datastore: %s", len(wanted), err)
 		return err
 	}
 
@@ -292,15 +307,16 @@ func (bs *Bitswap) receiveBlocksFrom(from peer.ID, blks []blocks.Block, dups []b
 	// to the same node. We should address this soon, but i'm not going to do
 	// it now as it requires more thought and isnt causing immediate problems.
 
-	// Send blocks to any sessions that want them
-	bs.sm.ReceiveBlocksFrom(from, blks, dups, fromNetwork)
+	// Send all blocks (including duplicates) to any sessions that want them.
+	// (The duplicates are needed by sessions for accounting purposes)
+	bs.sm.ReceiveBlocksFrom(from, blks)
 
-	// Send blocks to decision engine
-	bs.engine.AddBlocks(blks)
+	// Send wanted blocks to decision engine
+	bs.engine.AddBlocks(wanted)
 
-	// If the reprovider is enabled, send blocks to reprovider
+	// If the reprovider is enabled, send wanted blocks to reprovider
 	if bs.provideEnabled {
-		for _, b := range blks {
+		for _, b := range wanted {
 			select {
 			case bs.newBlocks <- b.Cid():
 				// send block off to be reprovided
@@ -337,27 +353,17 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
 	}
 
-	// Split blocks into wanted blocks vs duplicates
-	wanted := make([]blocks.Block, 0, len(iblocks))
-	var dups []blocks.Block
-	for _, b := range iblocks {
-		if bs.wm.IsWanted(b.Cid()) {
-			wanted = append(wanted, b)
-		} else {
-			dups = append(dups, b)
-			log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), p)
-		}
-	}
-
 	// Process blocks
-	err := bs.receiveBlocksFrom(p, wanted, dups, true)
+	err := bs.receiveBlocksFrom(p, iblocks)
 	if err != nil {
 		log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 		return
 	}
 
-	for _, b := range wanted {
-		log.Event(ctx, "Bitswap.GetBlockRequest.End", b.Cid())
+	for _, b := range iblocks {
+		if bs.wm.IsWanted(b.Cid()) {
+			log.Event(ctx, "Bitswap.GetBlockRequest.End", b.Cid())
+		}
 	}
 }
 
