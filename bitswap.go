@@ -369,6 +369,8 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 
 func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 	// Check which blocks are in the datastore
+	// (Note: any errors from the blockstore are simply logged out in
+	// blockstoreHas())
 	blocksHas := bs.blockstoreHas(blocks)
 
 	bs.counterLk.Lock()
@@ -377,15 +379,10 @@ func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 	// Do some accounting for each block
 	for i, b := range blocks {
 		has := blocksHas[i]
-		if has == nil {
-			// If there was an error checking the datastore for a block CID,
-			// the error was logged and the CID was not added to the map
-			return
-		}
 
 		blkLen := len(b.RawData())
 		bs.allMetric.Observe(float64(blkLen))
-		if *has {
+		if has {
 			bs.dupMetric.Observe(float64(blkLen))
 		}
 
@@ -393,15 +390,15 @@ func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 
 		c.blocksRecvd++
 		c.dataRecvd += uint64(blkLen)
-		if *has {
+		if has {
 			c.dupBlocksRecvd++
 			c.dupDataRecvd += uint64(blkLen)
 		}
 	}
 }
 
-func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []*bool {
-	res := make([]*bool, len(blks))
+func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
+	res := make([]bool, len(blks))
 
 	wg := sync.WaitGroup{}
 	for i, block := range blks {
@@ -412,10 +409,10 @@ func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []*bool {
 			has, err := bs.blockstore.Has(b.Cid())
 			if err != nil {
 				log.Infof("blockstore.Has error: %s", err)
-				return
+				has = false
 			}
 
-			res[i] = &has
+			res[i] = has
 		}(i, block)
 	}
 	wg.Wait()
