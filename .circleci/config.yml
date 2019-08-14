@@ -22,6 +22,7 @@ commands:
         default: 1.12.7
     steps:
       - run:
+          name: "Installing go"
           command: |
             case "$(uname -m)" in
               x86_64) ARCH=amd64 ;;
@@ -29,6 +30,11 @@ commands:
               *) exit 1 ;;
             esac
             curl -sSL "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz" | sudo tar -xz -C /usr/local/
+      - run:
+          name: "Making the go workspace"
+          command: |
+            sudo mkdir /go
+            sudo chmod 1755 /go
 
 workflows:
   version: 2
