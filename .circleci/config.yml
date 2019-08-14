@@ -35,6 +35,9 @@ commands:
           command: |
             sudo mkdir /go
             sudo chmod 1777 /go
+      - run:
+          command: |
+            go get gotest.tools/gotestsum@latest
 
 workflows:
   version: 2
