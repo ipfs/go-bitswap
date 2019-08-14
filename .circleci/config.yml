@@ -2,6 +2,34 @@ version: 2.1
 orbs:
   ci-go: ipfs/ci-go@0.1.9
 
+executors:
+  macos:
+    macos:
+      xcode: "10.0.0"
+    environment:
+      GIT_PAGER: cat
+      GO111MODULE: "on"
+      GOPATH: /go
+      GOCACHE: /go/cache
+      PATH: /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/local/go/bin:/go/bin
+      IPFS_DISTS: https://dist.ipfs.io
+
+commands:
+  configure-macos:
+    parameters:
+      version:
+        type: string
+        default: 1.12.7
+    steps:
+      - run:
+          command: |
+            case "$(uname -m)" in
+              x86_64) ARCH=amd64 ;;
+              i386) ARCH=386 ;;
+              *) exit 1 ;;
+            esac
+            curl -sSL "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz" | sudo tar -xz -C /usr/local/
+
 workflows:
   version: 2
   test:
@@ -9,6 +37,11 @@ workflows:
       - ci-go/build
       - ci-go/lint
       - ci-go/test
+      - ci-go/test:
+          name: ci-go/test/macos
+          executor: macos
+          pre-steps:
+            - configure-macos
       - ci-go/benchmark:
           tolerance: 50
           requires:
