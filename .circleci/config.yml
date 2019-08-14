@@ -20,24 +20,52 @@ commands:
       version:
         type: string
         default: 1.12.7
+      testsum-version:
+        type: string
+        default: v0.3.5
     steps:
-      - run:
-          name: "Installing go"
-          command: |
-            case "$(uname -m)" in
-              x86_64) ARCH=amd64 ;;
-              i386) ARCH=386 ;;
-              *) exit 1 ;;
-            esac
-            curl -sSL "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz" | sudo tar -xz -C /usr/local/
       - run:
           name: "Making the go workspace"
           command: |
             sudo mkdir /go
             sudo chmod 1777 /go
+      - restore_cache:
+          name: "Restoring Go Compiler"
+          keys:
+            - v1-gocc-<< parameters.version>>-{{ arch }}
       - run:
+          name: "Installing go"
           command: |
-            go get gotest.tools/gotestsum@latest
+            if [ ! -e /tmp/gocc-cache/gocc.tar.gz ]; then
+              case "$(uname -m)" in
+                x86_64) ARCH=amd64 ;;
+                i386) ARCH=386 ;;
+                *) exit 1 ;;
+              esac
+              mkdir /tmp/gocc-cache/
+              curl -sSL -o /tmp/gocc-cache/gocc.tar.gz "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz"
+            fi
+            sudo tar -xz -f /tmp/gocc-cache/gocc.tar.gz -C /usr/local/
+      - save_cache:
+          name: "Caching Go Compiler"
+          key: v1-gocc-<< parameters.version>>-{{ arch }}
+          paths:
+            - /tmp/gocc-cache
+      - restore_cache:
+          name: "Restoring Tools"
+          keys:
+            - v1-gotools-{{ arch }}-testsum@<< parameters.testsum-version >>:go@<< parameters.version >>
+      - run:
+          name: "Installing Tools"
+          command: |
+            which gotestsum >/dev/null 2>&1 || go get gotest.tools/gotestsum@v0.3.5
+            # Finally, clean out the gopath so we don't sully the cache.
+            sudo rm -rf /go/cache /go/pkg /go/src
+      - save_cache:
+          name: "Caching Tools"
+          key: v1-gotools-{{ arch }}-testsum@<< parameters.testsum-version >>:go@<< parameters.version >>
+          paths:
+            /go/bin
 
 workflows:
   version: 2
