@@ -32,25 +32,25 @@ commands:
       - restore_cache:
           name: "Restoring Go Compiler"
           keys:
-            - v1-gocc-<< parameters.version>>-{{ arch }}
+            - v2-gocc-<< parameters.version>>-{{ arch }}
       - run:
           name: "Installing go"
           command: |
-            if [ ! -e /tmp/gocc-cache/gocc.tar.gz ]; then
+            if [ ! -e /private/tmp/gocc-cache/gocc.tar.gz ]; then
               case "$(uname -m)" in
                 x86_64) ARCH=amd64 ;;
                 i386) ARCH=386 ;;
                 *) exit 1 ;;
               esac
-              mkdir /tmp/gocc-cache/
-              curl -sSL -o /tmp/gocc-cache/gocc.tar.gz "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz"
+              mkdir /private/tmp/gocc-cache/
+              curl -sSL -o /private/tmp/gocc-cache/gocc.tar.gz "https://dl.google.com/go/go<< parameters.version >>.darwin-$ARCH.tar.gz"
             fi
-            sudo tar -xz -f /tmp/gocc-cache/gocc.tar.gz -C /usr/local/
+            sudo tar -xz -f /private/tmp/gocc-cache/gocc.tar.gz -C /usr/local/
       - save_cache:
           name: "Caching Go Compiler"
-          key: v1-gocc-<< parameters.version>>-{{ arch }}
+          key: v2-gocc-<< parameters.version>>-{{ arch }}
           paths:
-            - /tmp/gocc-cache
+            - /private/tmp/gocc-cache
       - restore_cache:
           name: "Restoring Tools"
           keys:
