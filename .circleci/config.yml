@@ -34,7 +34,7 @@ commands:
           name: "Making the go workspace"
           command: |
             sudo mkdir /go
-            sudo chmod 1755 /go
+            sudo chmod 1777 /go
 
 workflows:
   version: 2
