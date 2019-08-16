@@ -33,7 +33,7 @@ func (sw *sessionWants) Stats() string {
 	return fmt.Sprintf("%d past / %d pending / %d live", sw.pastWants.Len(), sw.toFetch.Len(), len(sw.liveWants))
 }
 
-func (sw *sessionWants) BlocksReceived(cids []cid.Cid) (*cid.Set, time.Duration) {
+func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
 	sw.liveWantsLk.Lock()
 	defer sw.liveWantsLk.Unlock()
 	sw.toFetchLk.Lock()
@@ -42,9 +42,11 @@ func (sw *sessionWants) BlocksReceived(cids []cid.Cid) (*cid.Set, time.Duration)
 	defer sw.pastWantsLk.Unlock()
 
 	totalLatency := time.Duration(0)
-	wanted := sw.unlockedGetWanted(cids)
+	wanted := make([]cid.Cid, 0, len(cids))
 	for _, c := range cids {
-		if wanted.Has(c) {
+		if sw.unlockedIsWanted(c) {
+			wanted = append(wanted, c)
+
 			// If the block CID was in the live wants queue, remove it
 			tval, ok := sw.liveWants[c]
 			if ok {
@@ -61,16 +63,6 @@ func (sw *sessionWants) BlocksReceived(cids []cid.Cid) (*cid.Set, time.Duration)
 	}
 
 	return wanted, totalLatency
-}
-
-func (sw *sessionWants) unlockedGetWanted(cids []cid.Cid) *cid.Set {
-	cset := cid.NewSet()
-	for _, c := range cids {
-		if sw.unlockedIsWanted(c) {
-			cset.Add(c)
-		}
-	}
-	return cset
 }
 
 func (sw *sessionWants) GetNextWants(limit int, newWants []cid.Cid) []cid.Cid {
@@ -118,7 +110,7 @@ func (sw *sessionWants) SplitIsWasWanted(cids []cid.Cid) ([]cid.Cid, []cid.Cid) 
 	return isWanted, wasWanted
 }
 
-func (sw *sessionWants) IsInterested(c cid.Cid) bool {
+func (sw *sessionWants) InterestedIn(c cid.Cid) bool {
 	sw.liveWantsLk.RLock()
 	defer sw.liveWantsLk.RUnlock()
 	sw.toFetchLk.RLock()
@@ -144,13 +136,6 @@ func (sw *sessionWants) unlockedIsWanted(c cid.Cid) bool {
 		ok = sw.toFetch.Has(c)
 	}
 	return ok
-}
-
-func (sw *sessionWants) WasWanted(c cid.Cid) bool {
-	sw.pastWantsLk.RLock()
-	defer sw.pastWantsLk.RUnlock()
-
-	return sw.pastWants.Has(c)
 }
 
 func (sw *sessionWants) PrepareBroadcast() []cid.Cid {

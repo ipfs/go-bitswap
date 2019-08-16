@@ -132,7 +132,7 @@ func (s *Session) IsWanted(c cid.Cid) bool {
 
 // InterestedIn returns true if this session has ever requested the given Cid.
 func (s *Session) InterestedIn(c cid.Cid) bool {
-	return s.sw.IsInterested(c)
+	return s.sw.InterestedIn(c)
 }
 
 // GetBlock fetches a single block.
@@ -196,12 +196,6 @@ func (s *Session) run(ctx context.Context) {
 	for {
 		select {
 		case rcv := <-s.incoming:
-			s.cancelIncoming(ctx, rcv)
-			// Record statistics only if the blocks came from the network
-			// (blocks can also be received from the local node)
-			if rcv.from != "" {
-				s.updateReceiveCounters(ctx, rcv)
-			}
 			s.handleIncoming(ctx, rcv)
 		case keys := <-s.newReqs:
 			s.wantBlocks(ctx, keys)
@@ -220,27 +214,6 @@ func (s *Session) run(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *Session) cancelIncoming(ctx context.Context, rcv rcvFrom) {
-	// We've received the blocks so we can cancel any outstanding wants for them
-	wanted := make([]cid.Cid, 0, len(rcv.ks))
-	for _, k := range rcv.ks {
-		if s.sw.IsWanted(b.Cid()) {
-			wanted = append(wanted, k)
-		}
-	}
-	s.pm.RecordCancels(wanted)
-	s.wm.CancelWants(s.ctx, wanted, nil, s.id)
-}
-
-func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
-	s.idleTick.Stop()
-
-	// Process the received blocks
-	s.processIncoming(ctx, rcv.ks)
-
-	s.resetIdleTick()
 }
 
 func (s *Session) handleIdleTick(ctx context.Context) {
@@ -283,21 +256,28 @@ func (s *Session) handleShutdown() {
 	s.wm.CancelWants(s.ctx, live, nil, s.id)
 }
 
-func (s *Session) processIncoming(ctx context.Context, ks []cid.Cid) {
-	wanted, totalLatency := s.sw.BlocksReceived(ks)
-	if wanted.Len() == 0 {
+func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
+	// Record statistics only if the blocks came from the network
+	// (blocks can also be received from the local node)
+	if rcv.from != "" {
+		s.updateReceiveCounters(ctx, rcv)
+	}
+
+	// Update the want list
+	wanted, totalLatency := s.sw.BlocksReceived(rcv.ks)
+	if len(wanted) == 0 {
 		return
 	}
 
-	// Keep track of the total number of blocks received and total latency
-	s.fetchcnt += wanted.Len()
-	s.latTotal += totalLatency
+	// We've received the blocks so we can cancel any outstanding wants for them
+	s.cancelIncoming(ctx, wanted)
 
-	// We've received new wanted blocks, so reset the number of ticks
-	// that have occurred since the last new block
-	s.consecutiveTicks = 0
+	s.idleTick.Stop()
 
-	s.wantBlocks(ctx, nil)
+	// Process the received blocks
+	s.processIncoming(ctx, wanted, totalLatency)
+
+	s.resetIdleTick()
 }
 
 func (s *Session) updateReceiveCounters(ctx context.Context, rcv rcvFrom) {
@@ -313,6 +293,23 @@ func (s *Session) updateReceiveCounters(ctx context.Context, rcv rcvFrom) {
 	if len(rcv.ks) > 0 {
 		s.pm.RecordPeerResponse(rcv.from, rcv.ks)
 	}
+}
+
+func (s *Session) cancelIncoming(ctx context.Context, ks []cid.Cid) {
+	s.pm.RecordCancels(ks)
+	s.wm.CancelWants(s.ctx, ks, nil, s.id)
+}
+
+func (s *Session) processIncoming(ctx context.Context, ks []cid.Cid, totalLatency time.Duration) {
+	// Keep track of the total number of blocks received and total latency
+	s.fetchcnt += len(ks)
+	s.latTotal += totalLatency
+
+	// We've received new wanted blocks, so reset the number of ticks
+	// that have occurred since the last new block
+	s.consecutiveTicks = 0
+
+	s.wantBlocks(ctx, nil)
 }
 
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
