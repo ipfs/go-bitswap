@@ -7,18 +7,13 @@ import (
 	"time"
 
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
 )
 
-var log = logging.Logger("bitswap:sw")
-
 type sessionWants struct {
-	toFetchLk   sync.RWMutex
-	toFetch     *cidQueue
-	pastWantsLk sync.RWMutex
-	pastWants   *cidQueue
-	liveWantsLk sync.RWMutex
-	liveWants   map[cid.Cid]time.Time
+	lk        sync.RWMutex
+	toFetch   *cidQueue
+	pastWants *cidQueue
+	liveWants map[cid.Cid]time.Time
 }
 
 func newSessionWants() *sessionWants {
@@ -34,12 +29,8 @@ func (sw *sessionWants) Stats() string {
 }
 
 func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
-	sw.liveWantsLk.Lock()
-	defer sw.liveWantsLk.Unlock()
-	sw.toFetchLk.Lock()
-	defer sw.toFetchLk.Unlock()
-	sw.pastWantsLk.Lock()
-	defer sw.pastWantsLk.Unlock()
+	sw.lk.Lock()
+	defer sw.lk.Unlock()
 
 	totalLatency := time.Duration(0)
 	wanted := make([]cid.Cid, 0, len(cids))
@@ -66,10 +57,8 @@ func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration
 }
 
 func (sw *sessionWants) GetNextWants(limit int, newWants []cid.Cid) []cid.Cid {
-	sw.liveWantsLk.Lock()
-	defer sw.liveWantsLk.Unlock()
-	sw.toFetchLk.Lock()
-	defer sw.toFetchLk.Unlock()
+	sw.lk.Lock()
+	defer sw.lk.Unlock()
 
 	now := time.Now()
 
@@ -91,12 +80,8 @@ func (sw *sessionWants) GetNextWants(limit int, newWants []cid.Cid) []cid.Cid {
 }
 
 func (sw *sessionWants) SplitIsWasWanted(cids []cid.Cid) ([]cid.Cid, []cid.Cid) {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
-	sw.toFetchLk.RLock()
-	defer sw.toFetchLk.RUnlock()
-	sw.pastWantsLk.RLock()
-	defer sw.pastWantsLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	isWanted := make([]cid.Cid, 0, len(cids))
 	wasWanted := make([]cid.Cid, 0, len(cids))
@@ -111,21 +96,15 @@ func (sw *sessionWants) SplitIsWasWanted(cids []cid.Cid) ([]cid.Cid, []cid.Cid) 
 }
 
 func (sw *sessionWants) InterestedIn(c cid.Cid) bool {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
-	sw.toFetchLk.RLock()
-	defer sw.toFetchLk.RUnlock()
-	sw.pastWantsLk.RLock()
-	defer sw.pastWantsLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	return sw.unlockedIsWanted(c) || sw.pastWants.Has(c)
 }
 
 func (sw *sessionWants) IsWanted(c cid.Cid) bool {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
-	sw.toFetchLk.RLock()
-	defer sw.toFetchLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	return sw.unlockedIsWanted(c)
 }
@@ -139,8 +118,8 @@ func (sw *sessionWants) unlockedIsWanted(c cid.Cid) bool {
 }
 
 func (sw *sessionWants) PrepareBroadcast() []cid.Cid {
-	sw.liveWantsLk.Lock()
-	defer sw.liveWantsLk.Unlock()
+	sw.lk.Lock()
+	defer sw.lk.Unlock()
 
 	live := make([]cid.Cid, 0, len(sw.liveWants))
 	now := time.Now()
@@ -152,8 +131,8 @@ func (sw *sessionWants) PrepareBroadcast() []cid.Cid {
 }
 
 func (sw *sessionWants) LiveWants() []cid.Cid {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	live := make([]cid.Cid, 0, len(sw.liveWants))
 	for c := range sw.liveWants {
@@ -163,15 +142,15 @@ func (sw *sessionWants) LiveWants() []cid.Cid {
 }
 
 func (sw *sessionWants) LiveWantsCount() int {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	return len(sw.liveWants)
 }
 
 func (sw *sessionWants) RandomLiveWant() cid.Cid {
-	sw.liveWantsLk.RLock()
-	defer sw.liveWantsLk.RUnlock()
+	sw.lk.RLock()
+	defer sw.lk.RUnlock()
 
 	if len(sw.liveWants) == 0 {
 		return cid.Cid{}
@@ -188,8 +167,8 @@ func (sw *sessionWants) RandomLiveWant() cid.Cid {
 }
 
 func (sw *sessionWants) CancelPending(keys []cid.Cid) {
-	sw.toFetchLk.Lock()
-	defer sw.toFetchLk.Unlock()
+	sw.lk.Lock()
+	defer sw.lk.Unlock()
 
 	for _, k := range keys {
 		sw.toFetch.Remove(k)
