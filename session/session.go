@@ -55,8 +55,8 @@ type rcvFrom struct {
 type sessionWants struct {
 	sync.RWMutex
 	toFetch   *cidQueue
-	pastWants *cidQueue
 	liveWants map[cid.Cid]time.Time
+	pastWants *cid.Set
 }
 
 // Session holds state for an individual bitswap transfer operation.
@@ -105,9 +105,9 @@ func New(ctx context.Context,
 	periodicSearchDelay delay.D) *Session {
 	s := &Session{
 		sw: sessionWants{
-			liveWants: make(map[cid.Cid]time.Time),
 			toFetch:   newCidQueue(),
-			pastWants: newCidQueue(),
+			liveWants: make(map[cid.Cid]time.Time),
+			pastWants: cid.NewSet(),
 		},
 		newReqs:             make(chan []cid.Cid),
 		cancelKeys:          make(chan []cid.Cid),
@@ -405,7 +405,7 @@ func (s *Session) blocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
 			}
 
 			// Keep track of CIDs we've successfully fetched
-			s.sw.pastWants.Push(c)
+			s.sw.pastWants.Add(c)
 		}
 	}
 
