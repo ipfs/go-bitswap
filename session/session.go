@@ -236,6 +236,15 @@ func (s *Session) run(ctx context.Context) {
 	}
 }
 
+func (s *Session) handleCancel(keys []cid.Cid) {
+	s.sw.Lock()
+	defer s.sw.Unlock()
+
+	for _, k := range keys {
+		s.sw.toFetch.Remove(k)
+	}
+}
+
 func (s *Session) handleIdleTick(ctx context.Context) {
 	live := s.prepareBroadcast()
 
@@ -354,34 +363,22 @@ func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
 }
 
 func (s *Session) updateReceiveCounters(ctx context.Context, rcv rcvFrom) {
-	isWanted, wasWanted := s.splitIsWasWanted(rcv.ks)
-	for range isWanted {
-		s.srs.RecordUniqueBlock()
+	s.sw.RLock()
+
+	for _, c := range rcv.ks {
+		if s.unlockedIsWanted(c) {
+			s.srs.RecordUniqueBlock()
+		} else if s.sw.pastWants.Has(c) {
+			s.srs.RecordDuplicateBlock()
+		}
 	}
-	for range wasWanted {
-		s.srs.RecordDuplicateBlock()
-	}
+
+	s.sw.RUnlock()
 
 	// Record response (to be able to time latency)
 	if len(rcv.ks) > 0 {
 		s.pm.RecordPeerResponse(rcv.from, rcv.ks)
 	}
-}
-
-func (s *Session) splitIsWasWanted(cids []cid.Cid) ([]cid.Cid, []cid.Cid) {
-	s.sw.RLock()
-	defer s.sw.RUnlock()
-
-	isWanted := make([]cid.Cid, 0, len(cids))
-	wasWanted := make([]cid.Cid, 0, len(cids))
-	for _, c := range cids {
-		if s.unlockedIsWanted(c) {
-			isWanted = append(isWanted, c)
-		} else if s.sw.pastWants.Has(c) {
-			wasWanted = append(wasWanted, c)
-		}
-	}
-	return isWanted, wasWanted
 }
 
 func (s *Session) blocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
@@ -469,15 +466,6 @@ func (s *Session) getNextWants(limit int, newWants []cid.Cid) []cid.Cid {
 	}
 
 	return live
-}
-
-func (s *Session) handleCancel(keys []cid.Cid) {
-	s.sw.Lock()
-	defer s.sw.Unlock()
-
-	for _, k := range keys {
-		s.sw.toFetch.Remove(k)
-	}
 }
 
 func (s *Session) averageLatency() time.Duration {
