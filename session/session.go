@@ -141,12 +141,18 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid) {
 
 // IsWanted returns true if this session is waiting to receive the given Cid.
 func (s *Session) IsWanted(c cid.Cid) bool {
-	return s.isWanted(c)
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	return s.unlockedIsWanted(c)
 }
 
 // InterestedIn returns true if this session has ever requested the given Cid.
 func (s *Session) InterestedIn(c cid.Cid) bool {
-	return s.interestedIn(c)
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	return s.unlockedIsWanted(c) || s.sw.pastWants.Has(c)
 }
 
 // GetBlock fetches a single block.
@@ -495,18 +501,4 @@ func (s *Session) wantLimit() int {
 		return targetedLiveWantsLimit
 	}
 	return broadcastLiveWantsLimit
-}
-
-func (s *Session) interestedIn(c cid.Cid) bool {
-	s.sw.RLock()
-	defer s.sw.RUnlock()
-
-	return s.unlockedIsWanted(c) || s.sw.pastWants.Has(c)
-}
-
-func (s *Session) isWanted(c cid.Cid) bool {
-	s.sw.RLock()
-	defer s.sw.RUnlock()
-
-	return s.unlockedIsWanted(c)
 }
