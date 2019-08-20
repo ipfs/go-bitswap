@@ -214,7 +214,7 @@ func (s *Session) run(ctx context.Context) {
 		case keys := <-s.newReqs:
 			s.wantBlocks(ctx, keys)
 		case keys := <-s.cancelKeys:
-			s.cancelPending(keys)
+			s.handleCancel(keys)
 		case <-s.idleTick.C:
 			s.handleIdleTick(ctx)
 		case <-s.periodicSearchTimer.C:
@@ -313,6 +313,14 @@ func (s *Session) liveWants() []cid.Cid {
 		live = append(live, c)
 	}
 	return live
+}
+
+func (s *Session) unlockedIsWanted(c cid.Cid) bool {
+	_, ok := s.sw.liveWants[c]
+	if !ok {
+		ok = s.sw.toFetch.Has(c)
+	}
+	return ok
 }
 
 func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
@@ -457,7 +465,7 @@ func (s *Session) getNextWants(limit int, newWants []cid.Cid) []cid.Cid {
 	return live
 }
 
-func (s *Session) cancelPending(keys []cid.Cid) {
+func (s *Session) handleCancel(keys []cid.Cid) {
 	s.sw.Lock()
 	defer s.sw.Unlock()
 
@@ -501,12 +509,4 @@ func (s *Session) isWanted(c cid.Cid) bool {
 	defer s.sw.RUnlock()
 
 	return s.unlockedIsWanted(c)
-}
-
-func (s *Session) unlockedIsWanted(c cid.Cid) bool {
-	_, ok := s.sw.liveWants[c]
-	if !ok {
-		ok = s.sw.toFetch.Has(c)
-	}
-	return ok
 }
