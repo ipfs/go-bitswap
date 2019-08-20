@@ -2,6 +2,8 @@ package session
 
 import (
 	"context"
+	"math/rand"
+	"sync"
 	"time"
 
 	bsgetter "github.com/ipfs/go-bitswap/getter"
@@ -50,6 +52,13 @@ type rcvFrom struct {
 	ks   []cid.Cid
 }
 
+type sessionWants struct {
+	sync.RWMutex
+	toFetch   *cidQueue
+	pastWants *cidQueue
+	liveWants map[cid.Cid]time.Time
+}
+
 // Session holds state for an individual bitswap transfer operation.
 // This allows bitswap to make smarter decisions about who to send wantlist
 // info to, and who to request blocks from.
@@ -59,7 +68,8 @@ type Session struct {
 	wm  WantManager
 	pm  PeerManager
 	srs RequestSplitter
-	sw  *sessionWants
+
+	sw sessionWants
 
 	// channels
 	incoming      chan rcvFrom
@@ -94,9 +104,13 @@ func New(ctx context.Context,
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D) *Session {
 	s := &Session{
+		sw: sessionWants{
+			liveWants: make(map[cid.Cid]time.Time),
+			toFetch:   newCidQueue(),
+			pastWants: newCidQueue(),
+		},
 		newReqs:             make(chan []cid.Cid),
 		cancelKeys:          make(chan []cid.Cid),
-		sw:                  newSessionWants(),
 		latencyReqs:         make(chan chan time.Duration),
 		tickDelayReqs:       make(chan time.Duration),
 		ctx:                 ctx,
@@ -127,12 +141,12 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid) {
 
 // IsWanted returns true if this session is waiting to receive the given Cid.
 func (s *Session) IsWanted(c cid.Cid) bool {
-	return s.sw.IsWanted(c)
+	return s.isWanted(c)
 }
 
 // InterestedIn returns true if this session has ever requested the given Cid.
 func (s *Session) InterestedIn(c cid.Cid) bool {
-	return s.sw.InterestedIn(c)
+	return s.interestedIn(c)
 }
 
 // GetBlock fetches a single block.
@@ -200,7 +214,7 @@ func (s *Session) run(ctx context.Context) {
 		case keys := <-s.newReqs:
 			s.wantBlocks(ctx, keys)
 		case keys := <-s.cancelKeys:
-			s.sw.CancelPending(keys)
+			s.cancelPending(keys)
 		case <-s.idleTick.C:
 			s.handleIdleTick(ctx)
 		case <-s.periodicSearchTimer.C:
@@ -217,7 +231,7 @@ func (s *Session) run(ctx context.Context) {
 }
 
 func (s *Session) handleIdleTick(ctx context.Context) {
-	live := s.sw.PrepareBroadcast()
+	live := s.prepareBroadcast()
 
 	// Broadcast these keys to everyone we're connected to
 	s.pm.RecordPeerRequests(nil, live)
@@ -230,13 +244,29 @@ func (s *Session) handleIdleTick(ctx context.Context) {
 	}
 	s.resetIdleTick()
 
-	if s.sw.LiveWantsCount() > 0 {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	if len(s.sw.liveWants) > 0 {
 		s.consecutiveTicks++
 	}
 }
 
+func (s *Session) prepareBroadcast() []cid.Cid {
+	s.sw.Lock()
+	defer s.sw.Unlock()
+
+	live := make([]cid.Cid, 0, len(s.sw.liveWants))
+	now := time.Now()
+	for c := range s.sw.liveWants {
+		live = append(live, c)
+		s.sw.liveWants[c] = now
+	}
+	return live
+}
+
 func (s *Session) handlePeriodicSearch(ctx context.Context) {
-	randomWant := s.sw.RandomLiveWant()
+	randomWant := s.randomLiveWant()
 	if !randomWant.Defined() {
 		return
 	}
@@ -249,11 +279,40 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 	s.periodicSearchTimer.Reset(s.periodicSearchDelay.NextWaitTime())
 }
 
+func (s *Session) randomLiveWant() cid.Cid {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	if len(s.sw.liveWants) == 0 {
+		return cid.Cid{}
+	}
+	i := rand.Intn(len(s.sw.liveWants))
+	// picking a random live want
+	for k := range s.sw.liveWants {
+		if i == 0 {
+			return k
+		}
+		i--
+	}
+	return cid.Cid{}
+}
+
 func (s *Session) handleShutdown() {
 	s.idleTick.Stop()
 
-	live := s.sw.LiveWants()
+	live := s.liveWants()
 	s.wm.CancelWants(s.ctx, live, nil, s.id)
+}
+
+func (s *Session) liveWants() []cid.Cid {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	live := make([]cid.Cid, 0, len(s.sw.liveWants))
+	for c := range s.sw.liveWants {
+		live = append(live, c)
+	}
+	return live
 }
 
 func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
@@ -264,7 +323,7 @@ func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
 	}
 
 	// Update the want list
-	wanted, totalLatency := s.sw.BlocksReceived(rcv.ks)
+	wanted, totalLatency := s.blocksReceived(rcv.ks)
 	if len(wanted) == 0 {
 		return
 	}
@@ -281,7 +340,7 @@ func (s *Session) handleIncoming(ctx context.Context, rcv rcvFrom) {
 }
 
 func (s *Session) updateReceiveCounters(ctx context.Context, rcv rcvFrom) {
-	isWanted, wasWanted := s.sw.SplitIsWasWanted(rcv.ks)
+	isWanted, wasWanted := s.splitIsWasWanted(rcv.ks)
 	for range isWanted {
 		s.srs.RecordUniqueBlock()
 	}
@@ -293,6 +352,50 @@ func (s *Session) updateReceiveCounters(ctx context.Context, rcv rcvFrom) {
 	if len(rcv.ks) > 0 {
 		s.pm.RecordPeerResponse(rcv.from, rcv.ks)
 	}
+}
+
+func (s *Session) splitIsWasWanted(cids []cid.Cid) ([]cid.Cid, []cid.Cid) {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	isWanted := make([]cid.Cid, 0, len(cids))
+	wasWanted := make([]cid.Cid, 0, len(cids))
+	for _, c := range cids {
+		if s.unlockedIsWanted(c) {
+			isWanted = append(isWanted, c)
+		} else if s.sw.pastWants.Has(c) {
+			wasWanted = append(wasWanted, c)
+		}
+	}
+	return isWanted, wasWanted
+}
+
+func (s *Session) blocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
+	s.sw.Lock()
+	defer s.sw.Unlock()
+
+	totalLatency := time.Duration(0)
+	wanted := make([]cid.Cid, 0, len(cids))
+	for _, c := range cids {
+		if s.unlockedIsWanted(c) {
+			wanted = append(wanted, c)
+
+			// If the block CID was in the live wants queue, remove it
+			tval, ok := s.sw.liveWants[c]
+			if ok {
+				totalLatency += time.Since(tval)
+				delete(s.sw.liveWants, c)
+			} else {
+				// Otherwise remove it from the toFetch queue, if it was there
+				s.sw.toFetch.Remove(c)
+			}
+
+			// Keep track of CIDs we've successfully fetched
+			s.sw.pastWants.Push(c)
+		}
+	}
+
+	return wanted, totalLatency
 }
 
 func (s *Session) cancelIncoming(ctx context.Context, ks []cid.Cid) {
@@ -313,7 +416,7 @@ func (s *Session) processIncoming(ctx context.Context, ks []cid.Cid, totalLatenc
 }
 
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
-	ks := s.sw.GetNextWants(s.wantLimit(), newks)
+	ks := s.getNextWants(s.wantLimit(), newks)
 	if len(ks) == 0 {
 		return
 	}
@@ -328,6 +431,38 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	} else {
 		s.pm.RecordPeerRequests(nil, ks)
 		s.wm.WantBlocks(ctx, ks, nil, s.id)
+	}
+}
+
+func (s *Session) getNextWants(limit int, newWants []cid.Cid) []cid.Cid {
+	s.sw.Lock()
+	defer s.sw.Unlock()
+
+	now := time.Now()
+
+	for _, k := range newWants {
+		s.sw.toFetch.Push(k)
+	}
+
+	currentLiveCount := len(s.sw.liveWants)
+	toAdd := limit - currentLiveCount
+
+	var live []cid.Cid
+	for ; toAdd > 0 && s.sw.toFetch.Len() > 0; toAdd-- {
+		c := s.sw.toFetch.Pop()
+		live = append(live, c)
+		s.sw.liveWants[c] = now
+	}
+
+	return live
+}
+
+func (s *Session) cancelPending(keys []cid.Cid) {
+	s.sw.Lock()
+	defer s.sw.Unlock()
+
+	for _, k := range keys {
+		s.sw.toFetch.Remove(k)
 	}
 }
 
@@ -352,4 +487,26 @@ func (s *Session) wantLimit() int {
 		return targetedLiveWantsLimit
 	}
 	return broadcastLiveWantsLimit
+}
+
+func (s *Session) interestedIn(c cid.Cid) bool {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	return s.unlockedIsWanted(c) || s.sw.pastWants.Has(c)
+}
+
+func (s *Session) isWanted(c cid.Cid) bool {
+	s.sw.RLock()
+	defer s.sw.RUnlock()
+
+	return s.unlockedIsWanted(c)
+}
+
+func (s *Session) unlockedIsWanted(c cid.Cid) bool {
+	_, ok := s.sw.liveWants[c]
+	if !ok {
+		ok = s.sw.toFetch.Has(c)
+	}
+	return ok
 }
