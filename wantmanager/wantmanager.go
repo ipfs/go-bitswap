@@ -5,6 +5,7 @@ import (
 	"math"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	bspb "github.com/ipfs/go-bitswap/peerbroker"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
 	logging "github.com/ipfs/go-log"
 
@@ -25,7 +26,7 @@ const (
 type PeerHandler interface {
 	Disconnected(p peer.ID)
 	Connected(p peer.ID, initialWants *wantlist.SessionTrackedWantlist)
-	SendMessage(entries []bsmsg.Entry, targets []peer.ID, from uint64)
+	SendMessage(entries []bsmsg.Entry, targets []peer.ID, sessid uint64)
 }
 
 type wantMessage interface {
@@ -44,6 +45,9 @@ type WantManager struct {
 	// synchronized by Run loop, only touch inside there
 	wl   *wantlist.SessionTrackedWantlist
 	bcwl *wantlist.SessionTrackedWantlist
+
+	pal        bspb.PeerAvailabilityListener
+	peerCounts map[peer.ID]int
 
 	ctx    context.Context
 	cancel func()
@@ -65,19 +69,26 @@ func New(ctx context.Context, peerHandler PeerHandler) *WantManager {
 		cancel:        cancel,
 		peerHandler:   peerHandler,
 		wantlistGauge: wantlistGauge,
+		peerCounts:    make(map[peer.ID]int),
 	}
 }
 
 // WantBlocks adds the given cids to the wantlist, tracked by the given session.
-func (wm *WantManager) WantBlocks(ctx context.Context, ks []cid.Cid, peers []peer.ID, ses uint64) {
+func (wm *WantManager) WantBlocks(ctx context.Context, ks []cid.Cid, wantHaves []cid.Cid, sendDontHave bool, peers []peer.ID, ses uint64) {
 	log.Debugf("[wantlist] want blocks; cids=%s, peers=%s, ses=%d", ks, peers, ses)
-	wm.addEntries(ctx, ks, peers, false, ses)
+	wm.addEntries(ctx, ks, wantHaves, sendDontHave, peers, false, ses)
 }
 
 // CancelWants removes the given cids from the wantlist, tracked by the given session.
 func (wm *WantManager) CancelWants(ctx context.Context, ks []cid.Cid, peers []peer.ID, ses uint64) {
 	log.Debugf("[wantlist] unwant blocks; cids=%s, peers=%s, ses=%d", ks, peers, ses)
-	wm.addEntries(context.Background(), ks, peers, true, ses)
+	wm.addEntries(context.Background(), ks, []cid.Cid{}, false, peers, true, ses)
+}
+
+// CancelWantHaves removes the given want-have cids from the wantlist, tracked by the given session.
+func (wm *WantManager) CancelWantHaves(ctx context.Context, wantHaves []cid.Cid, peers []peer.ID, ses uint64) {
+	log.Debugf("[wantlist] rm want-haves; want-haves=%s, peers=%s, ses=%d", wantHaves, peers, ses)
+	wm.addEntries(context.Background(), nil, wantHaves, false, peers, true, ses)
 }
 
 // CurrentWants returns the list of current wants.
@@ -112,19 +123,25 @@ func (wm *WantManager) CurrentBroadcastWants() []wantlist.Entry {
 	}
 }
 
-// WantCount returns the total count of wants.
-func (wm *WantManager) WantCount() int {
-	resp := make(chan int, 1)
+func (wm *WantManager) AvailablePeers() []peer.ID {
+	resp := make(chan []peer.ID, 1)
 	select {
-	case wm.wantMessages <- &wantCountMessage{resp}:
+	case wm.wantMessages <- &availablePeersMessage{resp}:
 	case <-wm.ctx.Done():
-		return 0
+		return []peer.ID{}
 	}
 	select {
-	case count := <-resp:
-		return count
+	case ps := <-resp:
+		return ps
 	case <-wm.ctx.Done():
-		return 0
+		return []peer.ID{}
+	}
+}
+
+func (wm *WantManager) RegisterPeerAvailabilityListener(l bspb.PeerAvailabilityListener) {
+	select {
+	case wm.wantMessages <- &registerPAL{l}:
+	case <-wm.ctx.Done():
 	}
 }
 
@@ -167,16 +184,24 @@ func (wm *WantManager) run() {
 	}
 }
 
-func (wm *WantManager) addEntries(ctx context.Context, ks []cid.Cid, targets []peer.ID, cancel bool, ses uint64) {
+func (wm *WantManager) addEntries(ctx context.Context, ks []cid.Cid, wantHaves []cid.Cid, sendDontHave bool, targets []peer.ID, cancel bool, ses uint64) {
+	// TODO: Keep track of which wantHaves have been sent to which peers
+
 	entries := make([]bsmsg.Entry, 0, len(ks))
 	for i, k := range ks {
 		entries = append(entries, bsmsg.Entry{
 			Cancel: cancel,
-			Entry:  wantlist.NewRefEntry(k, maxPriority-i),
+			Entry: wantlist.NewRefEntry(k, maxPriority-i, false, sendDontHave),
+		})
+	}
+	for i, k := range wantHaves {
+		entries = append(entries, bsmsg.Entry{
+			Cancel: cancel,
+			Entry: wantlist.NewRefEntry(k, maxPriority-i, true, sendDontHave),
 		})
 	}
 	select {
-	case wm.wantMessages <- &wantSet{entries: entries, targets: targets, from: ses}:
+	case wm.wantMessages <- &wantSet{entries: entries, targets: targets, sessid: ses}:
 	case <-wm.ctx.Done():
 	case <-ctx.Done():
 	}
@@ -185,7 +210,7 @@ func (wm *WantManager) addEntries(ctx context.Context, ks []cid.Cid, targets []p
 type wantSet struct {
 	entries []bsmsg.Entry
 	targets []peer.ID
-	from    uint64
+	sessid  uint64
 }
 
 func (ws *wantSet) handle(wm *WantManager) {
@@ -195,25 +220,74 @@ func (ws *wantSet) handle(wm *WantManager) {
 	// add changes to our wantlist
 	for _, e := range ws.entries {
 		if e.Cancel {
-			if brdc {
-				wm.bcwl.Remove(e.Cid, ws.from)
-			}
+			if e.WantType == wantlist.WantType_Block {
+				// We only ever broadcast want-haves. So don't remove broadcast
+				// wantlist entries until we receive a cancel for the block itself.
+				wm.bcwl.Remove(e.Cid, ws.sessid, false)
 
-			if wm.wl.Remove(e.Cid, ws.from) {
-				wm.wantlistGauge.Dec()
+				// For the global want-list we disregard want-haves
+				if wm.wl.Remove(e.Cid, ws.sessid, false) {
+					wm.wantlistGauge.Dec()
+				}
 			}
 		} else {
 			if brdc {
-				wm.bcwl.AddEntry(e.Entry, ws.from)
+				wm.bcwl.AddEntry(e.Entry, ws.sessid)
 			}
-			if wm.wl.AddEntry(e.Entry, ws.from) {
-				wm.wantlistGauge.Inc()
+			// For the global want-list we disregard want-haves
+			if e.WantType == wantlist.WantType_Block {
+				if wm.wl.AddEntry(e.Entry, ws.sessid) {
+					wm.wantlistGauge.Inc()
+				}
 			}
 		}
 	}
 
+	// Very crudely implemented rate-limiting. Doesn't ever decrement.
+	// TODO: get this from the want list instead of maintaining
+	// it separately here
+	// TODO: handle disconnects
+	// TODO: handle dups
+	for _, e := range ws.entries {
+		if e.WantType == wantlist.WantType_Block {
+			for _, p := range ws.targets {
+				if _, ok := wm.peerCounts[p]; !ok {
+					wm.peerCounts[p] = 0
+				}
+				if e.Cancel {
+					// TODO: handle cancel-block (it's a broadcast to all peers so won't get decremented here)
+					wm.peerCounts[p]--
+				} else {
+					wm.peerCounts[p]++
+				}
+			}
+		}
+	}
+
+	// for p, c := range wm.peerCounts {
+	// 	log.Warningf("want-manager: %s live = %d", p, c)
+	// }
+
 	// broadcast those wantlist changes
-	wm.peerHandler.SendMessage(ws.entries, ws.targets, ws.from)
+	wm.peerHandler.SendMessage(ws.entries, ws.targets, ws.sessid)
+}
+
+type availablePeersMessage struct {
+	resp chan<- []peer.ID
+}
+
+const maxLiveWantsPerPeer = 1024
+func (apm *availablePeersMessage) handle(wm *WantManager) {
+	// Very simple rate-limit on peers
+	// TODO: get this from the want list instead of maintaining
+	// it separately here
+	peers := make([]peer.ID, 0, len(wm.peerCounts))
+	for p, c := range wm.peerCounts {
+		if c < maxLiveWantsPerPeer {
+			peers = append(peers, p)
+		}
+	}
+	apm.resp <- peers
 }
 
 type currentWantsMessage struct {
@@ -232,12 +306,12 @@ func (cbcwm *currentBroadcastWantsMessage) handle(wm *WantManager) {
 	cbcwm.resp <- wm.bcwl.Entries()
 }
 
-type wantCountMessage struct {
-	resp chan<- int
+type registerPAL struct {
+	l bspb.PeerAvailabilityListener
 }
 
-func (wcm *wantCountMessage) handle(wm *WantManager) {
-	wcm.resp <- wm.wl.Len()
+func (cm *registerPAL) handle(wm *WantManager) {
+	wm.pal = cm.l
 }
 
 type connectedMessage struct {
@@ -246,6 +320,13 @@ type connectedMessage struct {
 
 func (cm *connectedMessage) handle(wm *WantManager) {
 	wm.peerHandler.Connected(cm.p, wm.bcwl)
+
+	if _, ok := wm.peerCounts[cm.p]; !ok {
+		wm.peerCounts[cm.p] = 0
+	}
+	if wm.pal != nil {
+		wm.pal.PeerAvailable()
+	}
 }
 
 type disconnectedMessage struct {

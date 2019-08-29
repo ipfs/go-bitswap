@@ -2,6 +2,7 @@ package bitswap
 
 import (
 	"context"
+	"fmt"
 
 	engine "github.com/ipfs/go-bitswap/decision"
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -9,6 +10,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending
@@ -50,6 +52,9 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 				if !ok {
 					continue
 				}
+
+				// TODO: Add accounting data for message.BlockInfos
+
 				// update the BS ledger to reflect sent message
 				// TODO: Should only track *useful* messages in ledger
 				outgoing := bsmsg.New(false)
@@ -88,6 +93,22 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 
 	msgSize := 0
 	msg := bsmsg.New(false)
+	for _, blockInfo := range env.Message.BlockInfos() {
+		c, err := cid.Cast(blockInfo.Cid)
+		if err != nil {
+			panic(err)
+		}
+		if blockInfo.Type == pb.Message_Have {
+			log.Infof("Sending HAVE %s to %s", c.String()[2:8], env.Peer)
+		} else if blockInfo.Type == pb.Message_DontHave {
+			log.Infof("Sending DONT_HAVE %s to %s", c.String()[2:8], env.Peer)
+		} else {
+			panic(fmt.Sprintf("unrecognized BlockInfo type %v", blockInfo.Type))
+		}
+		// TODO: should msgSize include len(c.Bytes()) + len(enum)?
+		// msgSize += len(block.RawData())
+		msg.AddBlockInfo(c, blockInfo.Type)
+	}
 	for _, block := range env.Message.Blocks() {
 		msgSize += len(block.RawData())
 		msg.AddBlock(block)
@@ -99,6 +120,7 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	if err != nil {
 		log.Infof("sendblock error: %s", err)
 	}
+	log.Infof("Sent message to %s", env.Peer)
 }
 
 func (bs *Bitswap) provideWorker(px process.Process) {

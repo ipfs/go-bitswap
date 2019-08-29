@@ -3,7 +3,9 @@ package bitswap_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -38,64 +40,129 @@ type runStats struct {
 
 var benchmarkLog []runStats
 
+type bench struct {
+	name string
+	nodeCount int
+	blockCount int
+	distFn distFunc
+	fetchFn fetchFunc
+}
+
+var benches = []bench {
+	// Fetch from two seed nodes that both have all 100 blocks
+	// - request one at a time, in series
+	bench {"3Nodes-AllToAll-OneAtATime", 3, 100, allToAll, oneAtATime},
+	// - request all 100 with a single GetBlocks() call
+	bench {"3Nodes-AllToAll-BigBatch", 3, 100, allToAll, batchFetchAll},
+
+	// Fetch from two seed nodes, one at a time, where:
+	// - node A has blocks 0 - 74
+	// - node B has blocks 25 - 99
+	bench {"3Nodes-Overlap1-OneAtATime", 3, 100, overlap1, oneAtATime},
+
+
+	// Fetch from two seed nodes, where:
+	// - node A has even blocks
+	// - node B has odd blocks
+	// - both nodes have every third block
+
+	// - request one at a time, in series
+	// * times out every time potential-threshold reaches 1.0
+	bench {"3Nodes-Overlap3-OneAtATime", 3, 100, overlap2, oneAtATime},
+	// - request 10 at a time, in series
+	bench {"3Nodes-Overlap3-BatchBy10", 3, 100, overlap2, batchFetchBy10},
+	// - request all 100 in parallel as individual GetBlock() calls
+	bench {"3Nodes-Overlap3-AllConcurrent", 3, 100, overlap2, fetchAllConcurrent},
+	// - request all 100 with a single GetBlocks() call
+	bench {"3Nodes-Overlap3-BigBatch", 3, 100, overlap2, batchFetchAll},
+	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
+	bench {"3Nodes-Overlap3-UnixfsFetch", 3, 100, overlap2, unixfsFileFetch},
+
+	// Fetch from nine seed nodes, all nodes have all blocks
+	// - request one at a time, in series
+	bench {"10Nodes-AllToAll-OneAtATime", 10, 100, allToAll, oneAtATime},
+	// - request 10 at a time, in series
+	bench {"10Nodes-AllToAll-BatchFetchBy10", 10, 100, allToAll, batchFetchBy10},
+	// - request all 100 with a single GetBlocks() call
+	bench {"10Nodes-AllToAll-BigBatch", 10, 100, allToAll, batchFetchAll},
+	// - request all 100 in parallel as individual GetBlock() calls
+	bench {"10Nodes-AllToAll-AllConcurrent", 10, 100, allToAll, fetchAllConcurrent},
+	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
+	bench {"10Nodes-AllToAll-UnixfsFetch", 10, 100, allToAll, unixfsFileFetch},
+
+	// Fetch from nine seed nodes, blocks are distributed randomly across all nodes (no dups)
+	// - request one at a time, in series
+	bench {"10Nodes-OnePeerPerBlock-OneAtATime", 10, 100, onePeerPerBlock, oneAtATime},
+	// - request all 100 with a single GetBlocks() call
+	bench {"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},
+	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
+	bench {"10Nodes-OnePeerPerBlock-UnixfsFetch", 10, 100, onePeerPerBlock, unixfsFileFetch},
+
+	// Fetch from 19 seed nodes, all nodes have all blocks, fetch all 200 blocks with a single GetBlocks() call
+	bench {"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
+}
+
 func BenchmarkDups2Nodes(b *testing.B) {
 	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
-	b.Run("AllToAll-OneAtATime", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, allToAll, oneAtATime)
-	})
-	b.Run("AllToAll-BigBatch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, allToAll, batchFetchAll)
-	})
 
-	b.Run("Overlap1-OneAtATime", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap1, oneAtATime)
-	})
+	for _, bch := range benches {
+		b.Run(bch.name, func(b *testing.B) {
+			subtestDistributeAndFetch(b, bch.nodeCount, bch.blockCount, fixedDelay, bch.distFn, bch.fetchFn)
+		})
+	}
 
-	b.Run("Overlap3-OneAtATime", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap2, oneAtATime)
-	})
-	b.Run("Overlap3-BatchBy10", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap2, batchFetchBy10)
-	})
-	b.Run("Overlap3-AllConcurrent", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap2, fetchAllConcurrent)
-	})
-	b.Run("Overlap3-BigBatch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap2, batchFetchAll)
-	})
-	b.Run("Overlap3-UnixfsFetch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 3, 100, fixedDelay, overlap2, unixfsFileFetch)
-	})
-	b.Run("10Nodes-AllToAll-OneAtATime", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, oneAtATime)
-	})
-	b.Run("10Nodes-AllToAll-BatchFetchBy10", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, batchFetchBy10)
-	})
-	b.Run("10Nodes-AllToAll-BigBatch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, batchFetchAll)
-	})
-	b.Run("10Nodes-AllToAll-AllConcurrent", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, fetchAllConcurrent)
-	})
-	b.Run("10Nodes-AllToAll-UnixfsFetch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, allToAll, unixfsFileFetch)
-	})
-	b.Run("10Nodes-OnePeerPerBlock-OneAtATime", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, oneAtATime)
-	})
-	b.Run("10Nodes-OnePeerPerBlock-BigBatch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, batchFetchAll)
-	})
-	b.Run("10Nodes-OnePeerPerBlock-UnixfsFetch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 10, 100, fixedDelay, onePeerPerBlock, unixfsFileFetch)
-	})
-	b.Run("200Nodes-AllToAll-BigBatch", func(b *testing.B) {
-		subtestDistributeAndFetch(b, 200, 20, fixedDelay, allToAll, batchFetchAll)
-	})
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	_ = ioutil.WriteFile("tmp/benchmark.json", out, 0666)
+	printResults(benchmarkLog)
+}
+
+func printResults(rs []runStats) {
+	nameOrder := make([]string, 0, 0)
+	names := make(map[string]struct{})
+	for i := 0; i < len(rs); i++ {
+		if _, ok := names[rs[i].Name]; !ok {
+			nameOrder = append(nameOrder, rs[i].Name)
+			names[rs[i].Name] = struct{}{}
+		}
+	}
+
+	for i := 0; i < len(names); i++ {
+		name := nameOrder[i]
+		count := 0
+		sent := 0.0
+		rcvd := 0.0
+		dups := 0.0
+		elpd := 0.0
+		for i := 0; i < len(rs); i++ {
+			if rs[i].Name == name {
+				count++
+				sent += float64(rs[i].MsgSent)
+				rcvd += float64(rs[i].MsgRecd)
+				dups += float64(rs[i].Dups)
+				elpd += float64(rs[i].Time)
+			}
+		}
+		sent /= float64(count)
+		rcvd /= float64(count)
+		dups /= float64(count)
+
+		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd / 1000000000.0)
+		fmt.Printf("%-75s %s / sent %d / recv %d / dups %d\n",
+			label,
+			fmtDuration(time.Duration(int64(math.Round(elpd / float64(count))))),
+			int64(math.Round(sent)), int64(math.Round(rcvd)), int64(math.Round(dups)))
+	}
+
+	// b.Logf("%d runs: sent %f / recv %f / dups %f\n", count, sent, rcvd, dups)
+}
+
+func fmtDuration(d time.Duration) string {
+    d = d.Round(time.Millisecond)
+    s := d / time.Second
+    d -= s * time.Second
+    ms := d / time.Millisecond
+    return fmt.Sprintf("%d.%03ds", s, ms)
 }
 
 const fastSpeed = 60 * time.Millisecond
@@ -146,6 +213,7 @@ func BenchmarkDupsManyNodesRealWorldNetwork(b *testing.B) {
 	})
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	_ = ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
+	printResults(benchmarkLog)
 }
 
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, df distFunc, ff fetchFunc) {
@@ -154,19 +222,18 @@ func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, d
 		net := tn.VirtualNetwork(mockrouting.NewServer(), d)
 
 		ig := testinstance.NewTestInstanceGenerator(net)
-		defer ig.Close()
 
 		bg := blocksutil.NewBlockGenerator()
 
 		instances := ig.Instances(numnodes)
 		blocks := bg.Blocks(numblks)
 		runDistribution(b, instances, blocks, df, ff, start)
+		ig.Close()
 	}
 }
 
 func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
-
 		start := time.Now()
 		net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
 
@@ -209,7 +276,7 @@ func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []b
 		Name:    b.Name(),
 	}
 	benchmarkLog = append(benchmarkLog, stats)
-	b.Logf("send/recv: %d / %d", nst.MessagesSent, nst.MessagesRecvd)
+	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
 }
 
 func allToAll(b *testing.B, provs []testinstance.Instance, blocks []blocks.Block) {
@@ -282,7 +349,7 @@ func oneAtATime(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 			b.Fatal(err)
 		}
 	}
-	b.Logf("Session fetch latency: %s", ses.GetAverageLatency())
+	// b.Logf("Session fetch latency: %s", ses.GetAverageLatency())
 }
 
 // fetch data in batches, 10 at a time

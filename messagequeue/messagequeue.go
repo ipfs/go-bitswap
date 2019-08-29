@@ -2,6 +2,7 @@ package messagequeue
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -130,7 +131,7 @@ func (mq *MessageQueue) addWantlist() {
 			mq.nextMessage = bsmsg.New(false)
 		}
 		for _, e := range mq.wl.Entries() {
-			mq.nextMessage.AddEntry(e.Cid, e.Priority)
+			mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
 		}
 		select {
 		case mq.outgoingWork <- struct{}{}:
@@ -158,14 +159,14 @@ func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) bool {
 
 	for _, e := range entries {
 		if e.Cancel {
-			if mq.wl.Remove(e.Cid, ses) {
+			if mq.wl.Remove(e.Cid, ses, e.WantType) {
 				work = true
 				mq.nextMessage.Cancel(e.Cid)
 			}
 		} else {
-			if mq.wl.Add(e.Cid, e.Priority, ses) {
+			if mq.wl.Add(e.Cid, e.Priority, e.WantType, e.SendDontHave, ses) {
 				work = true
-				mq.nextMessage.AddEntry(e.Cid, e.Priority)
+				mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
 			}
 		}
 	}
@@ -186,6 +187,44 @@ func (mq *MessageQueue) sendMessage() {
 	if message == nil || message.Empty() {
 		return
 	}
+
+	entries := message.Wantlist()
+	wblocks := 0
+	whaves := 0
+	cwblocks := 0
+	cwhaves := 0
+	for _, e := range entries {
+		if e.WantType == wantlist.WantType_Have {
+			if e.Cancel {
+				cwhaves++
+			} else {
+				whaves++
+			}
+		} else {
+			if e.Cancel {
+				cwblocks++
+			} else {
+				wblocks++
+			}
+		}
+	}
+	detail := ""
+	if wblocks > 0 {
+		detail += fmt.Sprintf(" %d want-block", wblocks)
+	}
+	if cwblocks > 0 {
+		detail += fmt.Sprintf(" %d cancel-block", cwblocks)
+	}
+	if whaves > 0 {
+		detail += fmt.Sprintf(" %d want-have", whaves)
+	}
+	if cwhaves > 0 {
+		detail += fmt.Sprintf(" %d cancel-have", cwhaves)
+	}
+	log.Infof("Sending message to %s with %d entries:%s\n", mq.p, len(entries), detail)
+	// for _, e := range entries {
+	// 	log.Debugf("  %s: Cancel? %t / WantHave %t / SendDontHave %t\n", e.Cid.String()[2:8], e.Cancel, e.WantHave, e.SendDontHave)
+	// }
 
 	err := mq.initializeSender()
 	if err != nil {

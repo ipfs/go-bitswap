@@ -44,7 +44,7 @@ func GenerateWantlist(n int, ses uint64) *wantlist.SessionTrackedWantlist {
 	wl := wantlist.NewSessionTrackedWantlist()
 	for i := 0; i < n; i++ {
 		prioritySeq++
-		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq)
+		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false)
 		wl.AddEntry(entry, ses)
 	}
 	return wl
@@ -56,7 +56,7 @@ func GenerateMessageEntries(n int, isCancel bool) []bsmsg.Entry {
 	for i := 0; i < n; i++ {
 		prioritySeq++
 		msg := bsmsg.Entry{
-			Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq),
+			Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false),
 			Cancel: isCancel,
 		}
 		bsmsgs = append(bsmsgs, msg)

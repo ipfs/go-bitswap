@@ -5,6 +5,7 @@ package bitswap
 import (
 	"context"
 	"errors"
+	// "fmt"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	bsmq "github.com/ipfs/go-bitswap/messagequeue"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	notifications "github.com/ipfs/go-bitswap/notifications"
+	bspb "github.com/ipfs/go-bitswap/peerbroker"
 	bspm "github.com/ipfs/go-bitswap/peermanager"
 	bspqm "github.com/ipfs/go-bitswap/providerquerymanager"
 	bssession "github.com/ipfs/go-bitswap/session"
@@ -117,10 +119,11 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	pqm := bspqm.New(ctx, network)
 
 	sessionFactory := func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter,
+		pb *bspb.PeerBroker,
 		notif notifications.PubSub,
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D) bssm.Session {
-		return bssession.New(ctx, id, wm, pm, srs, notif, provSearchDelay, rebroadcastDelay)
+		return bssession.New(ctx, id, wm, pm, srs, pb, notif, provSearchDelay, rebroadcastDelay)
 	}
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.PeerManager {
 		return bsspm.New(ctx, id, network.ConnectionManager(), pqm)
@@ -129,6 +132,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		return bssrs.New(ctx)
 	}
 	notif := notifications.New()
+	peerBroker := bspb.New(ctx, wm)
 
 	bs := &Bitswap{
 		blockstore:       bstore,
@@ -139,7 +143,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
 		wm:               wm,
 		pqm:              pqm,
-		sm:               bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, sessionRequestSplitterFactory, notif),
+		sm:               bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, sessionRequestSplitterFactory, peerBroker, notif),
 		notif:            notif,
 		counters:         new(counters),
 		dupMetric:        dupHist,
@@ -158,6 +162,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	bs.wm.Startup()
 	bs.pqm.Startup()
 	network.SetDelegate(bs)
+	peerBroker.Startup()
 
 	// Start up bitswaps async worker routines
 	bs.startWorkers(ctx, px)
@@ -273,14 +278,14 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 // HasBlock announces the existence of a block to this bitswap service. The
 // service will potentially notify its peers.
 func (bs *Bitswap) HasBlock(blk blocks.Block) error {
-	return bs.receiveBlocksFrom(context.Background(), "", []blocks.Block{blk})
+	return bs.receiveBlocksFrom(context.Background(), "", []blocks.Block{blk}, nil, nil)
 }
 
 // TODO: Some of this stuff really only needs to be done when adding a block
 // from the user, not when receiving it from the network.
 // In case you run `git blame` on this comment, I'll save you some time: ask
 // @whyrusleeping, I don't know the answers you seek.
-func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []blocks.Block) error {
+func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []blocks.Block, haves []cid.Cid, dontHaves []cid.Cid) error {
 	select {
 	case <-bs.process.Closing():
 		return errors.New("bitswap is closed")
@@ -330,13 +335,13 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 
 	// Send all block keys (including duplicates) to any sessions that want them.
 	// (The duplicates are needed by sessions for accounting purposes)
-	bs.sm.ReceiveFrom(from, allKs)
+	bs.sm.ReceiveFrom(from, allKs, haves, dontHaves)
 
 	// Send wanted block keys to decision engine
 	bs.engine.AddBlocks(wantedKs)
 
 	// Publish the block to any Bitswap clients that had requested blocks.
-	// (the sessions use this pubsub mechanism to inform clients of received
+	// (the sessions use this pubsub mechanism to inform clients of incoming
 	// blocks)
 	for _, b := range wanted {
 		bs.notif.Publish(b)
@@ -378,20 +383,20 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 
 	iblocks := incoming.Blocks()
 
-	if len(iblocks) == 0 {
-		return
+	if len(iblocks) > 0 {
+		bs.updateReceiveCounters(iblocks)
+		for _, b := range iblocks {
+			log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
+		}
 	}
 
-	bs.updateReceiveCounters(iblocks)
-	for _, b := range iblocks {
-		log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
-	}
-
-	// Process blocks
-	err := bs.receiveBlocksFrom(ctx, p, iblocks)
-	if err != nil {
-		log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
-		return
+	if len(iblocks) > 0 || len(incoming.Haves()) > 0 || len(incoming.DontHaves()) > 0 {
+		// Process blocks
+		err := bs.receiveBlocksFrom(ctx, p, iblocks, incoming.Haves(), incoming.DontHaves())
+		if err != nil {
+			// log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
+			return
+		}
 	}
 }
 

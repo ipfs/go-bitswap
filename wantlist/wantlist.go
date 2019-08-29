@@ -19,10 +19,18 @@ type Wantlist struct {
 	set map[cid.Cid]Entry
 }
 
+type WantTypeT bool
+const (
+	WantType_Block = false
+	WantType_Have = true
+)
+
 // Entry is an entry in a want list, consisting of a cid and its priority
 type Entry struct {
 	Cid      cid.Cid
 	Priority int
+	WantType WantTypeT
+	SendDontHave bool
 }
 
 type sessionTrackedEntry struct {
@@ -31,10 +39,12 @@ type sessionTrackedEntry struct {
 }
 
 // NewRefEntry creates a new reference tracked wantlist entry.
-func NewRefEntry(c cid.Cid, p int) Entry {
+func NewRefEntry(c cid.Cid, p int, wantType WantTypeT, sendDontHave bool) Entry {
 	return Entry{
 		Cid:      c,
 		Priority: p,
+		WantType: wantType,
+		SendDontHave: sendDontHave,
 	}
 }
 
@@ -66,15 +76,30 @@ func New() *Wantlist {
 // TODO: think through priority changes here
 // Add returns true if the cid did not exist in the wantlist before this call
 // (even if it was under a different session).
-func (w *SessionTrackedWantlist) Add(c cid.Cid, priority int, ses uint64) bool {
+func (w *SessionTrackedWantlist) Add(c cid.Cid, priority int, wantType WantTypeT, sendDontHave bool, ses uint64) bool {
+	changed := false
 
 	if e, ok := w.set[c]; ok {
 		e.sesTrk[ses] = struct{}{}
-		return false
+
+		// Wanting a block overrides wanting a HAVE
+		if e.WantType == WantType_Have && wantType == WantType_Block {
+			e.WantType = WantType_Block
+			changed = true
+		}
+		// Asking for an immediate response takes priority (over not asking for
+		// an immediate response)
+		if !e.SendDontHave && sendDontHave {
+			e.SendDontHave = true
+		}
+
+		w.set[c] = e
+
+		return changed
 	}
 
 	w.set[c] = &sessionTrackedEntry{
-		Entry:  Entry{Cid: c, Priority: priority},
+		Entry:  Entry{Cid: c, Priority: priority, WantType: wantType, SendDontHave: sendDontHave},
 		sesTrk: map[uint64]struct{}{ses: struct{}{}},
 	}
 
@@ -98,9 +123,14 @@ func (w *SessionTrackedWantlist) AddEntry(e Entry, ses uint64) bool {
 // 'true' is returned if this call to Remove removed the final session ID
 // tracking the cid. (meaning true will be returned iff this call caused the
 // value of 'Contains(c)' to change from true to false)
-func (w *SessionTrackedWantlist) Remove(c cid.Cid, ses uint64) bool {
+func (w *SessionTrackedWantlist) Remove(c cid.Cid, ses uint64, wantType WantTypeT) bool {
 	e, ok := w.set[c]
 	if !ok {
+		return false
+	}
+
+	// Don't remove a want-block if we got a remove want-have
+	if e.WantType == WantType_Block && wantType == WantType_Have {
 		return false
 	}
 
@@ -159,14 +189,30 @@ func (w *Wantlist) Len() int {
 }
 
 // Add adds an entry in a wantlist from CID & Priority, if not already present.
-func (w *Wantlist) Add(c cid.Cid, priority int) bool {
-	if _, ok := w.set[c]; ok {
-		return false
+func (w *Wantlist) Add(c cid.Cid, priority int, wantType WantTypeT, sendDontHave bool) bool {
+	changed := false
+	if e, ok := w.set[c]; ok {
+		// Wanting a block overrides wanting a HAVE
+		if e.WantType == WantType_Have && wantType == WantType_Block {
+			e.WantType = WantType_Block
+			changed = true
+		}
+		// Asking for an immediate response takes priority (over not asking for
+		// an immediate response)
+		if !e.SendDontHave && sendDontHave {
+			e.SendDontHave = true
+		}
+
+		w.set[c] = e
+
+		return changed
 	}
 
 	w.set[c] = Entry{
 		Cid:      c,
 		Priority: priority,
+		WantType: wantType,
+		SendDontHave: sendDontHave,
 	}
 
 	return true
@@ -182,9 +228,14 @@ func (w *Wantlist) AddEntry(e Entry) bool {
 }
 
 // Remove removes the given cid from the wantlist.
-func (w *Wantlist) Remove(c cid.Cid) bool {
-	_, ok := w.set[c]
+func (w *Wantlist) Remove(c cid.Cid, wantType WantTypeT) bool {
+	e, ok := w.set[c]
 	if !ok {
+		return false
+	}
+
+	// Don't remove a want-block with a "remove want-have"
+	if e.WantType == WantType_Block && wantType == WantType_Have {
 		return false
 	}
 

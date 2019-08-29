@@ -13,8 +13,11 @@ import (
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
+	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
+
+var log = logging.Logger("bitswap:s")
 
 type wantReq struct {
 	cids  []cid.Cid
@@ -139,6 +142,7 @@ func TestSessionGetBlocks(t *testing.T) {
 
 		select {
 		case cancelBlock := <-cancelReqs:
+			log.Debugf("got cancel %d", i)
 			newCancelReqs = append(newCancelReqs, cancelBlock)
 		case <-ctx.Done():
 			t.Fatal("did not cancel block want")
@@ -146,6 +150,7 @@ func TestSessionGetBlocks(t *testing.T) {
 
 		select {
 		case receivedBlock := <-getBlocksCh:
+			log.Debugf("got block %d", i)
 			receivedBlocks = append(receivedBlocks, receivedBlock)
 		case <-ctx.Done():
 			t.Fatal("Did not receive block!")
@@ -153,6 +158,7 @@ func TestSessionGetBlocks(t *testing.T) {
 
 		select {
 		case wantBlock := <-wantReqs:
+			log.Debugf("got want %d", i)
 			newBlockReqs = append(newBlockReqs, wantBlock)
 		default:
 		}

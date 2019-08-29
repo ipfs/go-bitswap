@@ -25,9 +25,12 @@ type BitSwapMessage interface {
 
 	// Blocks returns a slice of unique blocks.
 	Blocks() []blocks.Block
+	BlockInfos() []pb.Message_BlockInfo
+	Haves() []cid.Cid
+	DontHaves() []cid.Cid
 
 	// AddEntry adds an entry to the Wantlist.
-	AddEntry(key cid.Cid, priority int)
+	AddEntry(key cid.Cid, priority int, wantType wantlist.WantTypeT, sendDontHave bool)
 
 	Cancel(key cid.Cid)
 
@@ -37,6 +40,9 @@ type BitSwapMessage interface {
 	Full() bool
 
 	AddBlock(blocks.Block)
+	AddBlockInfo(cid.Cid, pb.Message_BlockInfoType)
+	AddHave(cid.Cid)
+	AddDontHave(cid.Cid)
 	Exportable
 
 	Loggable() map[string]interface{}
@@ -52,9 +58,10 @@ type Exportable interface {
 }
 
 type impl struct {
-	full     bool
-	wantlist map[cid.Cid]*Entry
-	blocks   map[cid.Cid]blocks.Block
+	full       bool
+	wantlist   map[cid.Cid]*Entry
+	blocks     map[cid.Cid]blocks.Block
+	blockInfos map[cid.Cid]pb.Message_BlockInfoType
 }
 
 // New returns a new, empty bitswap message
@@ -64,9 +71,10 @@ func New(full bool) BitSwapMessage {
 
 func newMsg(full bool) *impl {
 	return &impl{
-		blocks:   make(map[cid.Cid]blocks.Block),
-		wantlist: make(map[cid.Cid]*Entry),
-		full:     full,
+		blocks:     make(map[cid.Cid]blocks.Block),
+		blockInfos: make(map[cid.Cid]pb.Message_BlockInfoType),
+		wantlist:   make(map[cid.Cid]*Entry),
+		full:       full,
 	}
 }
 
@@ -84,7 +92,7 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 		if err != nil {
 			return nil, fmt.Errorf("incorrectly formatted cid in wantlist: %s", err)
 		}
-		m.addEntry(c, int(e.Priority), e.Cancel)
+		m.addEntry(c, int(e.Priority), e.Cancel, pb2go(e.WantType), e.SendDontHave)
 	}
 
 	// deprecated
@@ -114,6 +122,16 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 		m.AddBlock(blk)
 	}
 
+	for _, bi := range pbm.GetBlockInfos() {
+		c, err := cid.Cast(bi.GetCid())
+		if err != nil {
+			return nil, err
+		}
+
+		t := bi.GetType()
+		m.AddBlockInfo(c, t)
+	}
+
 	return m, nil
 }
 
@@ -122,7 +140,7 @@ func (m *impl) Full() bool {
 }
 
 func (m *impl) Empty() bool {
-	return len(m.blocks) == 0 && len(m.wantlist) == 0
+	return len(m.blocks) == 0 && len(m.wantlist) == 0 && len(m.blockInfos) == 0
 }
 
 func (m *impl) Wantlist() []Entry {
@@ -141,25 +159,58 @@ func (m *impl) Blocks() []blocks.Block {
 	return bs
 }
 
+func (m *impl) BlockInfos() []pb.Message_BlockInfo {
+	bis := make([]pb.Message_BlockInfo, 0, len(m.blockInfos))
+	for c, t := range m.blockInfos {
+		bis = append(bis, pb.Message_BlockInfo{c.Bytes(), t})
+	}
+	return bis
+}
+
+func (m *impl) Haves() []cid.Cid {
+	return m.getBlockInfoByType(pb.Message_Have)
+}
+
+func (m *impl) DontHaves() []cid.Cid {
+	return m.getBlockInfoByType(pb.Message_DontHave)
+}
+
+func (m *impl) getBlockInfoByType(t pb.Message_BlockInfoType) []cid.Cid {
+	cids := make([]cid.Cid, 0)
+	for c, bit := range m.blockInfos {
+		if bit == t {
+			cids = append(cids, c)
+		}
+	}
+	return cids
+}
+
 func (m *impl) Cancel(k cid.Cid) {
-	delete(m.wantlist, k)
-	m.addEntry(k, 0, true)
+	m.addEntry(k, 0, true, false, false)
 }
 
-func (m *impl) AddEntry(k cid.Cid, priority int) {
-	m.addEntry(k, priority, false)
+func (m *impl) AddEntry(k cid.Cid, priority int, wantType wantlist.WantTypeT, sendDontHave bool) {
+	m.addEntry(k, priority, false, wantType, sendDontHave)
 }
 
-func (m *impl) addEntry(c cid.Cid, priority int, cancel bool) {
+func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType wantlist.WantTypeT, sendDontHave bool) {
 	e, exists := m.wantlist[c]
 	if exists {
 		e.Priority = priority
 		e.Cancel = cancel
+		e.SendDontHave = sendDontHave
+		// Want for a block overrides existing want for a HAVE
+		if wantType == wantlist.WantType_Block || e.WantType == wantlist.WantType_Have {
+			e.WantType = wantType
+		}
+		m.wantlist[c] = e
 	} else {
 		m.wantlist[c] = &Entry{
 			Entry: wantlist.Entry{
 				Cid:      c,
 				Priority: priority,
+				WantType: wantType,
+				SendDontHave: sendDontHave,
 			},
 			Cancel: cancel,
 		}
@@ -168,6 +219,18 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool) {
 
 func (m *impl) AddBlock(b blocks.Block) {
 	m.blocks[b.Cid()] = b
+}
+
+func (m *impl) AddBlockInfo(c cid.Cid, t pb.Message_BlockInfoType) {
+	m.blockInfos[c] = t
+}
+
+func (m *impl) AddHave(c cid.Cid) {
+	m.AddBlockInfo(c, pb.Message_Have)
+}
+
+func (m *impl) AddDontHave(c cid.Cid) {
+	m.AddBlockInfo(c, pb.Message_DontHave)
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.
@@ -201,6 +264,8 @@ func (m *impl) ToProtoV0() *pb.Message {
 			Block:    e.Cid.Bytes(),
 			Priority: int32(e.Priority),
 			Cancel:   e.Cancel,
+			WantType: go2pb(e.WantType),
+			SendDontHave: e.SendDontHave,
 		})
 	}
 	pbm.Wantlist.Full = m.full
@@ -221,6 +286,8 @@ func (m *impl) ToProtoV1() *pb.Message {
 			Block:    e.Cid.Bytes(),
 			Priority: int32(e.Priority),
 			Cancel:   e.Cancel,
+			WantType: go2pb(e.WantType),
+			SendDontHave: e.SendDontHave,
 		})
 	}
 	pbm.Wantlist.Full = m.full
@@ -233,6 +300,12 @@ func (m *impl) ToProtoV1() *pb.Message {
 			Prefix: b.Cid().Prefix().Bytes(),
 		})
 	}
+
+	pbm.BlockInfos = make([]pb.Message_BlockInfo, 0, len(m.blockInfos))
+	for c, t := range m.blockInfos {
+		pbm.BlockInfos = append(pbm.BlockInfos, pb.Message_BlockInfo{c.Bytes(), t})
+	}
+
 	return pbm
 }
 
@@ -271,4 +344,20 @@ func (m *impl) Loggable() map[string]interface{} {
 		"blocks": blocks,
 		"wants":  m.Wantlist(),
 	}
+}
+
+func pb2go(wantType pb.Message_Wantlist_WantType) wantlist.WantTypeT {
+	wt := wantlist.WantType_Block
+	if wantType == pb.Message_Wantlist_Have {
+		wt = wantlist.WantType_Have
+	}
+	return wantlist.WantTypeT(wt)
+}
+
+func go2pb(wantType wantlist.WantTypeT) pb.Message_Wantlist_WantType {
+	wt := pb.Message_Wantlist_Block
+	if wantType == wantlist.WantType_Have {
+		wt = pb.Message_Wantlist_Have
+	}
+	return wt
 }
