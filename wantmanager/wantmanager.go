@@ -248,21 +248,21 @@ func (ws *wantSet) handle(wm *WantManager) {
 	// it separately here
 	// TODO: handle disconnects
 	// TODO: handle dups
-	for _, e := range ws.entries {
-		if e.WantType == wantlist.WantType_Block {
-			for _, p := range ws.targets {
-				if _, ok := wm.peerCounts[p]; !ok {
-					wm.peerCounts[p] = 0
-				}
-				if e.Cancel {
-					// TODO: handle cancel-block (it's a broadcast to all peers so won't get decremented here)
-					wm.peerCounts[p]--
-				} else {
-					wm.peerCounts[p]++
-				}
-			}
-		}
-	}
+	// for _, e := range ws.entries {
+	// 	if e.WantType == wantlist.WantType_Block {
+	// 		for _, p := range ws.targets {
+	// 			if _, ok := wm.peerCounts[p]; !ok {
+	// 				wm.peerCounts[p] = 0
+	// 			}
+	// 			if e.Cancel {
+	// 				// TODO: handle cancel-block (it's a broadcast to all peers so won't get decremented here)
+	// 				wm.peerCounts[p]--
+	// 			} else {
+	// 				wm.peerCounts[p]++
+	// 			}
+	// 		}
+	// 	}
+	// }
 
 	// for p, c := range wm.peerCounts {
 	// 	log.Warningf("want-manager: %s live = %d", p, c)
