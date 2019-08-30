@@ -101,7 +101,7 @@ var benches = []bench{
 	bench{"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
 }
 
-func BenchmarkDups2Nodes(b *testing.B) {
+func BenchmarkFixedDelay(b *testing.B) {
 	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
 
@@ -114,54 +114,6 @@ func BenchmarkDups2Nodes(b *testing.B) {
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	_ = ioutil.WriteFile("tmp/benchmark.json", out, 0666)
 	printResults(benchmarkLog)
-}
-
-func printResults(rs []runStats) {
-	nameOrder := make([]string, 0)
-	names := make(map[string]struct{})
-	for i := 0; i < len(rs); i++ {
-		if _, ok := names[rs[i].Name]; !ok {
-			nameOrder = append(nameOrder, rs[i].Name)
-			names[rs[i].Name] = struct{}{}
-		}
-	}
-
-	for i := 0; i < len(names); i++ {
-		name := nameOrder[i]
-		count := 0
-		sent := 0.0
-		rcvd := 0.0
-		dups := 0.0
-		elpd := 0.0
-		for i := 0; i < len(rs); i++ {
-			if rs[i].Name == name {
-				count++
-				sent += float64(rs[i].MsgSent)
-				rcvd += float64(rs[i].MsgRecd)
-				dups += float64(rs[i].Dups)
-				elpd += float64(rs[i].Time)
-			}
-		}
-		sent /= float64(count)
-		rcvd /= float64(count)
-		dups /= float64(count)
-
-		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd/1000000000.0)
-		fmt.Printf("%-75s %s / sent %d / recv %d / dups %d\n",
-			label,
-			fmtDuration(time.Duration(int64(math.Round(elpd/float64(count))))),
-			int64(math.Round(sent)), int64(math.Round(rcvd)), int64(math.Round(dups)))
-	}
-
-	// b.Logf("%d runs: sent %f / recv %f / dups %f\n", count, sent, rcvd, dups)
-}
-
-func fmtDuration(d time.Duration) string {
-	d = d.Round(time.Millisecond)
-	s := d / time.Second
-	d -= s * time.Second
-	ms := d / time.Millisecond
-	return fmt.Sprintf("%d.%03ds", s, ms)
 }
 
 const fastSpeed = 60 * time.Millisecond
@@ -177,7 +129,7 @@ const slowBandwidth = 100000.0
 const slowBandwidthDeviation = 16500.0
 const stdBlockSize = 8000
 
-func BenchmarkDupsManyNodesRealWorldNetwork(b *testing.B) {
+func BenchmarkRealWorld(b *testing.B) {
 	benchmarkLog = nil
 	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
 	var randomGen *rand.Rand = nil
@@ -413,4 +365,50 @@ func unixfsFileFetch(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 	}
 	for range out {
 	}
+}
+
+func printResults(rs []runStats) {
+	nameOrder := make([]string, 0)
+	names := make(map[string]struct{})
+	for i := 0; i < len(rs); i++ {
+		if _, ok := names[rs[i].Name]; !ok {
+			nameOrder = append(nameOrder, rs[i].Name)
+			names[rs[i].Name] = struct{}{}
+		}
+	}
+
+	for i := 0; i < len(names); i++ {
+		name := nameOrder[i]
+		count := 0
+		sent := 0.0
+		rcvd := 0.0
+		dups := 0.0
+		elpd := 0.0
+		for i := 0; i < len(rs); i++ {
+			if rs[i].Name == name {
+				count++
+				sent += float64(rs[i].MsgSent)
+				rcvd += float64(rs[i].MsgRecd)
+				dups += float64(rs[i].Dups)
+				elpd += float64(rs[i].Time)
+			}
+		}
+		sent /= float64(count)
+		rcvd /= float64(count)
+		dups /= float64(count)
+
+		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd/1000000000.0)
+		fmt.Printf("%-75s %s / sent %d / recv %d / dups %d\n",
+			label,
+			fmtDuration(time.Duration(int64(math.Round(elpd/float64(count))))),
+			int64(math.Round(sent)), int64(math.Round(rcvd)), int64(math.Round(dups)))
+	}
+}
+
+func fmtDuration(d time.Duration) string {
+	d = d.Round(time.Millisecond)
+	s := d / time.Second
+	d -= s * time.Second
+	ms := d / time.Millisecond
+	return fmt.Sprintf("%d.%03ds", s, ms)
 }
