@@ -6,11 +6,11 @@ import (
 
 	engine "github.com/ipfs/go-bitswap/decision"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
-	pb "github.com/ipfs/go-bitswap/message/pb"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending

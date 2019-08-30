@@ -191,13 +191,13 @@ func (wm *WantManager) addEntries(ctx context.Context, ks []cid.Cid, wantHaves [
 	for i, k := range ks {
 		entries = append(entries, bsmsg.Entry{
 			Cancel: cancel,
-			Entry: wantlist.NewRefEntry(k, maxPriority-i, false, sendDontHave),
+			Entry:  wantlist.NewRefEntry(k, maxPriority-i, false, sendDontHave),
 		})
 	}
 	for i, k := range wantHaves {
 		entries = append(entries, bsmsg.Entry{
 			Cancel: cancel,
-			Entry: wantlist.NewRefEntry(k, maxPriority-i, true, sendDontHave),
+			Entry:  wantlist.NewRefEntry(k, maxPriority-i, true, sendDontHave),
 		})
 	}
 	select {
@@ -277,6 +277,7 @@ type availablePeersMessage struct {
 }
 
 const maxLiveWantsPerPeer = 1024
+
 func (apm *availablePeersMessage) handle(wm *WantManager) {
 	// Very simple rate-limit on peers
 	// TODO: get this from the want list instead of maintaining

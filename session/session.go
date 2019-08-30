@@ -57,10 +57,10 @@ const (
 )
 
 type op struct {
-	op   opType
-	from peer.ID
-	keys []cid.Cid
-	haves []cid.Cid
+	op        opType
+	from      peer.ID
+	keys      []cid.Cid
+	haves     []cid.Cid
 }
 
 // Session holds state for an individual bitswap transfer operation.
@@ -73,8 +73,8 @@ type Session struct {
 	pm  PeerManager
 	srs RequestSplitter
 
-	sw sessionWants
-	pb  *bspb.PeerBroker
+	sw    sessionWants
+	pb    *bspb.PeerBroker
 	peers *peer.Set
 
 	// channels
@@ -201,10 +201,10 @@ func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.Want {
 	s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{c})
 
 	return &bspb.Want{
-		Cid:  c,
+		Cid:       c,
 		WantHaves: wh,
-		Peer: p,
-		Ses:  s.id,
+		Peer:      p,
+		Ses:       s.id,
 	}
 }
 
@@ -379,7 +379,7 @@ func (s *Session) handleReceive(ctx context.Context, from peer.ID, keys []cid.Ci
 		// If we didn't get any blocks, but we did get some HAVEs, we must have
 		// discovered at least one peer by now, so signal the PeerBroker to
 		// ask us if we have wants
-		s.pb.WantAvailable()		
+		s.pb.WantAvailable()
 	}
 }
 
@@ -399,7 +399,7 @@ func (s *Session) updateReceiveCounters(ctx context.Context, from peer.ID, keys 
 		s.recentWasUnique = s.recentWasUnique[poplen:]
 	}
 	// fmt.Println("recentWasUnique", s.recentWasUnique)
-	if (len(s.recentWasUnique) > 16) {
+	if len(s.recentWasUnique) > 16 {
 		unqCount := 1
 		dupCount := 1
 		for _, u := range s.recentWasUnique {

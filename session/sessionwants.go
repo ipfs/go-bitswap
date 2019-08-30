@@ -1,8 +1,8 @@
 package session
 
 import (
-	"math/rand"
 	"fmt"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -17,8 +17,8 @@ type sessionWants struct {
 	liveWants map[cid.Cid]time.Time
 	pastWants *cid.Set
 
-	wantPotential map[cid.Cid]map[peer.ID]float64
-	wantPeers map[cid.Cid][]peer.ID
+	wantPotential      map[cid.Cid]map[peer.ID]float64
+	wantPeers          map[cid.Cid][]peer.ID
 	potentialThreshold float64
 
 	blockPresence map[cid.Cid]map[peer.ID]bool
@@ -26,12 +26,12 @@ type sessionWants struct {
 
 func newSessionWants() sessionWants {
 	return sessionWants{
-		liveWants: make(map[cid.Cid]time.Time),
-		toFetch:   newCidQueue(),
-		pastWants: cid.NewSet(),
-		wantPotential: make(map[cid.Cid]map[peer.ID]float64),
-		wantPeers: make(map[cid.Cid][]peer.ID),
-		blockPresence: make(map[cid.Cid]map[peer.ID]bool),
+		liveWants:          make(map[cid.Cid]time.Time),
+		toFetch:            newCidQueue(),
+		pastWants:          cid.NewSet(),
+		wantPotential:      make(map[cid.Cid]map[peer.ID]float64),
+		wantPeers:          make(map[cid.Cid][]peer.ID),
+		blockPresence:      make(map[cid.Cid]map[peer.ID]bool),
 		potentialThreshold: 1.5,
 	}
 }
@@ -69,7 +69,7 @@ func (sw *sessionWants) DecreasePotentialThreshold() {
 // measures latency. It returns the CIDs of blocks that were actually wanted
 // (as opposed to duplicates) and the total latency for all incoming blocks.
 func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
-// fmt.Println("   ", sw.Stats())
+	// fmt.Println("   ", sw.Stats())
 	now := time.Now()
 
 	sw.Lock()
@@ -97,7 +97,7 @@ func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration
 			sw.clearWantSentToPeer(c)
 		}
 	}
-// fmt.Println("   ", sw.Stats())
+	// fmt.Println("   ", sw.Stats())
 	return wanted, totalLatency
 }
 
@@ -138,7 +138,7 @@ func (sw *sessionWants) PrepareBroadcast() []cid.Cid {
 	defer sw.Unlock()
 
 	// live := make([]cid.Cid, 0, len(sw.liveWants))
-	live := make([]cid.Cid, 0, sw.toFetch.Len() + len(sw.liveWants))
+	live := make([]cid.Cid, 0, sw.toFetch.Len()+len(sw.liveWants))
 	for _, c := range sw.toFetch.Cids() {
 		live = append(live, c)
 		sw.liveWants[c] = now
@@ -271,23 +271,23 @@ func (sw *sessionWants) wasWantSentToPeer(c cid.Cid, p peer.ID) bool {
 }
 
 type potentialGain struct {
-	cid cid.Cid
+	cid       cid.Cid
 	potential float64
-	maxGain float64
-	peer peer.ID
+	maxGain   float64
+	peer      peer.ID
 }
 
 func (pg potentialGain) String() string {
 	return fmt.Sprintf("%s potential %f. Gain for %s: %f", pg.cid.String()[2:8], pg.potential, pg.peer, pg.maxGain)
 }
 
-func potentialGainLess(pgs []potentialGain) func (i, j int) bool {
+func potentialGainLess(pgs []potentialGain) func(i, j int) bool {
 	indices := make(map[cid.Cid]int, len(pgs))
 	for i, pg := range pgs {
 		indices[pg.cid] = i
 	}
 
-	return func (i, j int) bool {
+	return func(i, j int) bool {
 		// Sort by max gain, highest to lowest
 		if pgs[i].maxGain > pgs[j].maxGain {
 			return true
@@ -315,14 +315,14 @@ func potentialGainLess(pgs []potentialGain) func (i, j int) bool {
 }
 
 func (sw *sessionWants) getBestPotentialLiveWant(peers []peer.ID) (cid.Cid, peer.ID, float64) {
-// fmt.Printf("getBestPotentialLiveWant(%s)\n", peers)
+	// fmt.Printf("getBestPotentialLiveWant(%s)\n", peers)
 	bestC := cid.Cid{}
 	bestP := peer.ID("")
 	bestPotential := -1.0
 
 	// Work out the best peer to send each want to, and how big a potential
 	// would be gained
-	pgs := make([]potentialGain, 0, sw.toFetch.Len() + len(sw.liveWants))
+	pgs := make([]potentialGain, 0, sw.toFetch.Len()+len(sw.liveWants))
 	for c := range sw.liveWants {
 		potential := sw.sumWantPotential(c)
 		if potential < sw.potentialThreshold {
@@ -374,7 +374,7 @@ func (sw *sessionWants) getBestPotentialLiveWant(peers []peer.ID) (cid.Cid, peer
 // Amount to increase potential by if we received a HAVE message
 const rcvdHavePotentialGain = 0.8
 
-func (sw * sessionWants) getPotentialGain(c cid.Cid, peers []peer.ID) potentialGain {
+func (sw *sessionWants) getPotentialGain(c cid.Cid, peers []peer.ID) potentialGain {
 	maxGain := -1.0
 	var maxPeer peer.ID
 
@@ -408,7 +408,7 @@ func (sw * sessionWants) getPotentialGain(c cid.Cid, peers []peer.ID) potentialG
 	}
 
 	potential := sw.sumWantPotential(c)
-	return potentialGain { c, potential, maxGain, maxPeer }
+	return potentialGain{c, potential, maxGain, maxPeer}
 }
 
 func (sw *sessionWants) notInWantPeers(cid cid.Cid, peers []peer.ID) []peer.ID {

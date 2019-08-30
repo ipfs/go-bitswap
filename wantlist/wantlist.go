@@ -20,16 +20,17 @@ type Wantlist struct {
 }
 
 type WantTypeT bool
+
 const (
 	WantType_Block = false
-	WantType_Have = true
+	WantType_Have  = true
 )
 
 // Entry is an entry in a want list, consisting of a cid and its priority
 type Entry struct {
-	Cid      cid.Cid
-	Priority int
-	WantType WantTypeT
+	Cid          cid.Cid
+	Priority     int
+	WantType     WantTypeT
 	SendDontHave bool
 }
 
@@ -41,9 +42,9 @@ type sessionTrackedEntry struct {
 // NewRefEntry creates a new reference tracked wantlist entry.
 func NewRefEntry(c cid.Cid, p int, wantType WantTypeT, sendDontHave bool) Entry {
 	return Entry{
-		Cid:      c,
-		Priority: p,
-		WantType: wantType,
+		Cid:          c,
+		Priority:     p,
+		WantType:     wantType,
 		SendDontHave: sendDontHave,
 	}
 }
@@ -209,9 +210,9 @@ func (w *Wantlist) Add(c cid.Cid, priority int, wantType WantTypeT, sendDontHave
 	}
 
 	w.set[c] = Entry{
-		Cid:      c,
-		Priority: priority,
-		WantType: wantType,
+		Cid:          c,
+		Priority:     priority,
+		WantType:     wantType,
 		SendDontHave: sendDontHave,
 	}
 

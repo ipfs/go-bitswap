@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	logging "github.com/ipfs/go-log"
+	// logging "github.com/ipfs/go-log"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-var log = logging.Logger("bitswap")
+// var log = logging.Logger("bitswap")
 
 type WantSource interface {
 	MatchWantPeer([]peer.ID) *Want
@@ -31,10 +31,10 @@ type message interface {
 }
 
 type Want struct {
-	Cid  cid.Cid
+	Cid       cid.Cid
 	WantHaves []cid.Cid
-	Peer peer.ID
-	Ses  uint64
+	Peer      peer.ID
+	Ses       uint64
 }
 
 type PeerBroker struct {
@@ -126,6 +126,7 @@ func (pb *PeerBroker) run() {
 }
 
 const peerBatchSize = 16
+
 func (pb *PeerBroker) checkMatch() {
 	batches := make(map[uint64]map[peer.ID][]Want)
 

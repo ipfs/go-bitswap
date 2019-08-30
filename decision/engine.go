@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
+	wantlist "github.com/ipfs/go-bitswap/wantlist"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
@@ -16,8 +18,6 @@ import (
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
 	peer "github.com/libp2p/go-libp2p-core/peer"
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	wantlist "github.com/ipfs/go-bitswap/wantlist"
 )
 
 // TODO consider taking responsibility for other types of requests. For
@@ -212,9 +212,9 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			entry, ok := l.WantListContains(c)
 			l.lk.Unlock()
 
-// if ok {
-// 	log.Debugf("wantlist has %s: WantHave %t / SendDontHave: %t", c.String()[2:8], entry.WantHave, entry.SendDontHave)
-// }
+			// if ok {
+			// 	log.Debugf("wantlist has %s: WantHave %t / SendDontHave: %t", c.String()[2:8], entry.WantHave, entry.SendDontHave)
+			// }
 			// If the remote peer wants HAVE or DONT_HAVE messages
 			has := true
 			if ok && (entry.WantType == wantlist.WantType_Have || entry.SendDontHave) {
@@ -226,7 +226,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 
 				// If we have the block, and the remote peer asked for a HAVE
 				if has && entry.WantType == wantlist.WantType_Have {
-// log.Debugf("%s: Have", c.String()[2:8])
+					// log.Debugf("%s: Have", c.String()[2:8])
 					msg.AddHave(c)
 				}
 				// If we don't have the block, and the remote peer asked for a DONT_HAVE

@@ -41,25 +41,24 @@ type runStats struct {
 var benchmarkLog []runStats
 
 type bench struct {
-	name string
-	nodeCount int
+	name       string
+	nodeCount  int
 	blockCount int
-	distFn distFunc
-	fetchFn fetchFunc
+	distFn     distFunc
+	fetchFn    fetchFunc
 }
 
-var benches = []bench {
+var benches = []bench{
 	// Fetch from two seed nodes that both have all 100 blocks
 	// - request one at a time, in series
-	bench {"3Nodes-AllToAll-OneAtATime", 3, 100, allToAll, oneAtATime},
+	bench{"3Nodes-AllToAll-OneAtATime", 3, 100, allToAll, oneAtATime},
 	// - request all 100 with a single GetBlocks() call
-	bench {"3Nodes-AllToAll-BigBatch", 3, 100, allToAll, batchFetchAll},
+	bench{"3Nodes-AllToAll-BigBatch", 3, 100, allToAll, batchFetchAll},
 
 	// Fetch from two seed nodes, one at a time, where:
 	// - node A has blocks 0 - 74
 	// - node B has blocks 25 - 99
-	bench {"3Nodes-Overlap1-OneAtATime", 3, 100, overlap1, oneAtATime},
-
+	bench{"3Nodes-Overlap1-OneAtATime", 3, 100, overlap1, oneAtATime},
 
 	// Fetch from two seed nodes, where:
 	// - node A has even blocks
@@ -68,38 +67,38 @@ var benches = []bench {
 
 	// - request one at a time, in series
 	// * times out every time potential-threshold reaches 1.0
-	bench {"3Nodes-Overlap3-OneAtATime", 3, 100, overlap2, oneAtATime},
+	bench{"3Nodes-Overlap3-OneAtATime", 3, 100, overlap2, oneAtATime},
 	// - request 10 at a time, in series
-	bench {"3Nodes-Overlap3-BatchBy10", 3, 100, overlap2, batchFetchBy10},
+	bench{"3Nodes-Overlap3-BatchBy10", 3, 100, overlap2, batchFetchBy10},
 	// - request all 100 in parallel as individual GetBlock() calls
-	bench {"3Nodes-Overlap3-AllConcurrent", 3, 100, overlap2, fetchAllConcurrent},
+	bench{"3Nodes-Overlap3-AllConcurrent", 3, 100, overlap2, fetchAllConcurrent},
 	// - request all 100 with a single GetBlocks() call
-	bench {"3Nodes-Overlap3-BigBatch", 3, 100, overlap2, batchFetchAll},
+	bench{"3Nodes-Overlap3-BigBatch", 3, 100, overlap2, batchFetchAll},
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
-	bench {"3Nodes-Overlap3-UnixfsFetch", 3, 100, overlap2, unixfsFileFetch},
+	bench{"3Nodes-Overlap3-UnixfsFetch", 3, 100, overlap2, unixfsFileFetch},
 
 	// Fetch from nine seed nodes, all nodes have all blocks
 	// - request one at a time, in series
-	bench {"10Nodes-AllToAll-OneAtATime", 10, 100, allToAll, oneAtATime},
+	bench{"10Nodes-AllToAll-OneAtATime", 10, 100, allToAll, oneAtATime},
 	// - request 10 at a time, in series
-	bench {"10Nodes-AllToAll-BatchFetchBy10", 10, 100, allToAll, batchFetchBy10},
+	bench{"10Nodes-AllToAll-BatchFetchBy10", 10, 100, allToAll, batchFetchBy10},
 	// - request all 100 with a single GetBlocks() call
-	bench {"10Nodes-AllToAll-BigBatch", 10, 100, allToAll, batchFetchAll},
+	bench{"10Nodes-AllToAll-BigBatch", 10, 100, allToAll, batchFetchAll},
 	// - request all 100 in parallel as individual GetBlock() calls
-	bench {"10Nodes-AllToAll-AllConcurrent", 10, 100, allToAll, fetchAllConcurrent},
+	bench{"10Nodes-AllToAll-AllConcurrent", 10, 100, allToAll, fetchAllConcurrent},
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
-	bench {"10Nodes-AllToAll-UnixfsFetch", 10, 100, allToAll, unixfsFileFetch},
+	bench{"10Nodes-AllToAll-UnixfsFetch", 10, 100, allToAll, unixfsFileFetch},
 
 	// Fetch from nine seed nodes, blocks are distributed randomly across all nodes (no dups)
 	// - request one at a time, in series
-	bench {"10Nodes-OnePeerPerBlock-OneAtATime", 10, 100, onePeerPerBlock, oneAtATime},
+	bench{"10Nodes-OnePeerPerBlock-OneAtATime", 10, 100, onePeerPerBlock, oneAtATime},
 	// - request all 100 with a single GetBlocks() call
-	bench {"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},
+	bench{"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
-	bench {"10Nodes-OnePeerPerBlock-UnixfsFetch", 10, 100, onePeerPerBlock, unixfsFileFetch},
+	bench{"10Nodes-OnePeerPerBlock-UnixfsFetch", 10, 100, onePeerPerBlock, unixfsFileFetch},
 
 	// Fetch from 19 seed nodes, all nodes have all blocks, fetch all 200 blocks with a single GetBlocks() call
-	bench {"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
+	bench{"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
 }
 
 func BenchmarkDups2Nodes(b *testing.B) {
@@ -118,7 +117,7 @@ func BenchmarkDups2Nodes(b *testing.B) {
 }
 
 func printResults(rs []runStats) {
-	nameOrder := make([]string, 0, 0)
+	nameOrder := make([]string, 0)
 	names := make(map[string]struct{})
 	for i := 0; i < len(rs); i++ {
 		if _, ok := names[rs[i].Name]; !ok {
@@ -147,10 +146,10 @@ func printResults(rs []runStats) {
 		rcvd /= float64(count)
 		dups /= float64(count)
 
-		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd / 1000000000.0)
+		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd/1000000000.0)
 		fmt.Printf("%-75s %s / sent %d / recv %d / dups %d\n",
 			label,
-			fmtDuration(time.Duration(int64(math.Round(elpd / float64(count))))),
+			fmtDuration(time.Duration(int64(math.Round(elpd/float64(count))))),
 			int64(math.Round(sent)), int64(math.Round(rcvd)), int64(math.Round(dups)))
 	}
 
@@ -158,11 +157,11 @@ func printResults(rs []runStats) {
 }
 
 func fmtDuration(d time.Duration) string {
-    d = d.Round(time.Millisecond)
-    s := d / time.Second
-    d -= s * time.Second
-    ms := d / time.Millisecond
-    return fmt.Sprintf("%d.%03ds", s, ms)
+	d = d.Round(time.Millisecond)
+	s := d / time.Second
+	d -= s * time.Second
+	ms := d / time.Millisecond
+	return fmt.Sprintf("%d.%03ds", s, ms)
 }
 
 const fastSpeed = 60 * time.Millisecond

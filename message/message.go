@@ -207,9 +207,9 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType wantlist.
 	} else {
 		m.wantlist[c] = &Entry{
 			Entry: wantlist.Entry{
-				Cid:      c,
-				Priority: priority,
-				WantType: wantType,
+				Cid:          c,
+				Priority:     priority,
+				WantType:     wantType,
 				SendDontHave: sendDontHave,
 			},
 			Cancel: cancel,
@@ -261,10 +261,10 @@ func (m *impl) ToProtoV0() *pb.Message {
 	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
 		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
-			Block:    e.Cid.Bytes(),
-			Priority: int32(e.Priority),
-			Cancel:   e.Cancel,
-			WantType: go2pb(e.WantType),
+			Block:        e.Cid.Bytes(),
+			Priority:     int32(e.Priority),
+			Cancel:       e.Cancel,
+			WantType:     go2pb(e.WantType),
 			SendDontHave: e.SendDontHave,
 		})
 	}
@@ -283,10 +283,10 @@ func (m *impl) ToProtoV1() *pb.Message {
 	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
 		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
-			Block:    e.Cid.Bytes(),
-			Priority: int32(e.Priority),
-			Cancel:   e.Cancel,
-			WantType: go2pb(e.WantType),
+			Block:        e.Cid.Bytes(),
+			Priority:     int32(e.Priority),
+			Cancel:       e.Cancel,
+			WantType:     go2pb(e.WantType),
 			SendDontHave: e.SendDontHave,
 		})
 	}
