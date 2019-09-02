@@ -9,6 +9,9 @@ go-bitswap
 
 > An implementation of the bitswap protocol in go!
 
+## Lead Maintainer
+
+[Dirk](https://github.com/dirkmc)
 
 ## Table of Contents
 
