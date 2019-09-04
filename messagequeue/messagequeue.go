@@ -159,7 +159,9 @@ func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) bool {
 
 	for _, e := range entries {
 		if e.Cancel {
-			if mq.wl.Remove(e.Cid, ses, e.WantType) {
+			// Note: We don't want to actually send out a cancel message for
+			// want-have, only for want-block
+			if mq.wl.Remove(e.Cid, ses, e.WantType) && e.WantType == wantlist.WantType_Block {
 				work = true
 				mq.nextMessage.Cancel(e.Cid)
 			}
@@ -221,10 +223,25 @@ func (mq *MessageQueue) sendMessage() {
 	if cwhaves > 0 {
 		detail += fmt.Sprintf(" %d cancel-have", cwhaves)
 	}
-	log.Infof("Sending message to %s with %d entries:%s\n", mq.p, len(entries), detail)
+	// log.Warningf("Sending message to %s with %d entries:%s\n", mq.p, len(entries), detail)
 	// for _, e := range entries {
 	// 	log.Debugf("  %s: Cancel? %t / WantHave %t / SendDontHave %t\n", e.Cid.String()[2:8], e.Cancel, e.WantHave, e.SendDontHave)
 	// }
+	for _, e := range entries {
+		if e.Cancel {
+			if e.WantType == wantlist.WantType_Have {
+				log.Debugf("->%s: CANCEL-have %s\n", mq.p, e.Cid.String()[2:8])
+			} else {
+				log.Debugf("->%s: CANCEL-block %s\n", mq.p, e.Cid.String()[2:8])
+			}
+		} else {
+			if e.WantType == wantlist.WantType_Have {
+				log.Debugf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
+			} else {
+				log.Debugf("->%s: want-block %s\n", mq.p, e.Cid.String()[2:8])
+			}
+		}
+	}
 
 	err := mq.initializeSender()
 	if err != nil {

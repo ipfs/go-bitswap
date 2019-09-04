@@ -57,10 +57,11 @@ const (
 )
 
 type op struct {
-	op        opType
-	from      peer.ID
-	keys      []cid.Cid
-	haves     []cid.Cid
+	op            opType
+	from          peer.ID
+	keys          []cid.Cid
+	haves         []cid.Cid
+	dontHaves []cid.Cid
 }
 
 // Session holds state for an individual bitswap transfer operation.
@@ -135,32 +136,49 @@ func New(ctx context.Context,
 	return s
 }
 
+func (s *Session) ID() uint64 {
+	return s.id
+}
+
 // ReceiveFrom receives incoming blocks from the given peer.
 func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	s.sw.BlockInfoReceived(from, haves, dontHaves)
 
 	interestedKs := s.sw.FilterInteresting(ks)
 	wantedHaves := s.sw.FilterWanted(haves)
-	wantedDontHavesCount := s.sw.CountWanted(dontHaves)
-	if len(interestedKs) > 0 || len(wantedHaves) == 0 || wantedDontHavesCount > 0 {
-		log.Infof("Ses%d: ReceiveFrom %s: %d / %d blocks, %d / %d haves, %d / %d dont haves\n",
-			s.id, from, len(interestedKs), len(ks), len(wantedHaves), len(haves), wantedDontHavesCount, len(dontHaves))
-	}
-
-	if len(interestedKs) == 0 && len(wantedHaves) == 0 {
-		return
-	}
+	wantedDontHaves := s.sw.FilterWanted(dontHaves)
+	log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
+		s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
-	size := s.peers.Size()
-	s.peers.Add(from)
-	if (s.peers.Size() > size) {
-		log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
+	interestedHaves := s.sw.FilterInteresting(haves)
+	if len(interestedKs) > 0 || len(interestedHaves) > 0 {
+		size := s.peers.Size()
+		s.peers.Add(from)
+		if (s.peers.Size() > size) {
+			log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
+		}
+	}
+
+	if len(interestedKs) == 0 && len(wantedHaves) == 0 && len(wantedDontHaves) == 0 {
+		return
+	}
+
+	for _, c := range interestedKs {
+		log.Debugf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
+		// log.Warningf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
+	}
+	for _, c := range wantedHaves {
+		log.Debugf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
+		// log.Warningf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
+	}
+	for _, c := range wantedDontHaves {
+		log.Debugf("Ses%d<-%s: DONT_HAVE %s\n", s.id, from, c.String()[2:8])
 	}
 
 	select {
-	case s.incoming <- op{op: opReceive, from: from, keys: interestedKs, haves: wantedHaves}:
+	case s.incoming <- op{op: opReceive, from: from, keys: interestedKs, haves: wantedHaves, dontHaves: wantedDontHaves}:
 	case <-s.ctx.Done():
 	}
 }
@@ -170,7 +188,7 @@ func (s *Session) IsWanted(c cid.Cid) bool {
 	return s.sw.IsWanted(c)
 }
 
-func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.Want {
+func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.SessionAsk {
 	// TODO: make sure PendingCount() and PopNextPending() happen atomically
 	// (eg pass this match function as a callback to Pop())
 
@@ -190,7 +208,7 @@ func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.Want {
 		return nil
 	}
 
-	c, wh, p := s.sw.PopNextPending(matches)
+	c, wh, p, ph := s.sw.PopNextPending(matches)
 	if !c.Defined() {
 		// fmt.Println("Dont have match")
 		return nil
@@ -200,11 +218,11 @@ func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.Want {
 	// TODO: do this through event loop
 	s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{c})
 
-	return &bspb.Want{
+	return &bspb.SessionAsk{
 		Cid:       c,
 		WantHaves: wh,
+		PeerHaves: ph,
 		Peer:      p,
-		Ses:       s.id,
 	}
 }
 
@@ -271,7 +289,7 @@ func (s *Session) run(ctx context.Context) {
 		case oper := <-s.incoming:
 			switch oper.op {
 			case opReceive:
-				s.handleReceive(ctx, oper.from, oper.keys, oper.haves)
+				s.handleReceive(ctx, oper.from, oper.keys, oper.haves, oper.dontHaves)
 			case opWant:
 				s.wantBlocks(ctx, oper.keys)
 			case opCancel:
@@ -280,7 +298,8 @@ func (s *Session) run(ctx context.Context) {
 				panic("unhandled operation")
 			}
 		case <-s.idleTick.C:
-			s.handleIdleTick(ctx)
+			log.Warningf("\n\n\nSes%d: idle tick\n", s.id)
+			s.broadcastLiveWants(ctx)
 		case <-s.periodicSearchTimer.C:
 			s.handlePeriodicSearch(ctx)
 		case resp := <-s.latencyReqs:
@@ -294,19 +313,17 @@ func (s *Session) run(ctx context.Context) {
 	}
 }
 
-func (s *Session) handleIdleTick(ctx context.Context) {
+func (s *Session) broadcastLiveWants(ctx context.Context) {
 	live := s.sw.PrepareBroadcast()
-	log.Infof("Ses%d: Idle tick: broadcast %d keys\n", s.id, len(live))
+	log.Infof("Ses%d: broadcast %d keys\n", s.id, len(live))
 
-	// Broadcast these keys to everyone we're connected to
+	// Broadcast a want-have for the live wants to everyone we're connected to
 	// TODO: Doesn't really make sense to record requests here if we're not getting blocks back
 	// (we're now asking for HAVEs, not blocks)
 	s.pm.RecordPeerRequests(nil, live)
-
-	// TODO: When this returns, trigger PeerBroker
 	s.wm.WantBlocks(ctx, nil, live, false, nil, s.id)
 
-	// do no find providers on consecutive ticks
+	// do not find providers on consecutive ticks
 	// -- just rely on periodic search widening
 	if len(live) > 0 && (s.consecutiveTicks == 0) {
 		s.pm.FindMorePeers(ctx, live[0])
@@ -342,7 +359,7 @@ func (s *Session) handleShutdown() {
 	s.wm.CancelWants(s.ctx, live, nil, s.id)
 }
 
-func (s *Session) handleReceive(ctx context.Context, from peer.ID, keys []cid.Cid, haves []cid.Cid) {
+func (s *Session) handleReceive(ctx context.Context, from peer.ID, keys []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	// Record statistics only if the blocks came from the network
 	// (blocks can also be received from the local node)
 	if from != "" {
@@ -375,10 +392,17 @@ func (s *Session) handleReceive(ctx context.Context, from peer.ID, keys []cid.Ci
 		s.processIncoming(ctx, wanted, totalLatency)
 
 		s.resetIdleTick()
-	} else if len(haves) > 0 {
-		// If we didn't get any blocks, but we did get some HAVEs, we must have
-		// discovered at least one peer by now, so signal the PeerBroker to
-		// ask us if we have wants
+	} else if s.peers.Size() > 0 && (len(haves) > 0 || len(dontHaves) > 0) {
+		// // If all known peers have sent a DONT_HAVE for all live wants,
+		// // broadcast live wants
+		// if len(dontHaves) > 0 && s.sw.EveryPeerDoesntHaveLiveWants(s.peers.Peers()) {
+		// 	s.broadcastLiveWants(ctx)
+		// 	return
+		// }
+
+		// The session didn't get any blocks, but did get some information, so
+		// signal the PeerBroker to ask the session if it has wants
+		// log.Warningf("Received %d HAVE / %d DONT_HAVE for peer %s. Signaling PeerBroker\n", len(haves), len(dontHaves), from)
 		s.pb.WantAvailable()
 	}
 }
@@ -446,7 +470,7 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	// If we have discovered some peers, signal the PeerBroker to ask us for
 	// blocks
 	if s.peers.Size() > 0 {
-		log.Infof("Ses%d: WantAvailable()\n", s.id)
+		// log.Warningf("Ses%d: WantAvailable()\n", s.id)
 		s.pb.WantAvailable()
 	} else {
 		// No peers discovered yet, broadcast some want-haves

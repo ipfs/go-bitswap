@@ -186,18 +186,17 @@ func (wm *WantManager) run() {
 
 func (wm *WantManager) addEntries(ctx context.Context, ks []cid.Cid, wantHaves []cid.Cid, sendDontHave bool, targets []peer.ID, cancel bool, ses uint64) {
 	// TODO: Keep track of which wantHaves have been sent to which peers
-
 	entries := make([]bsmsg.Entry, 0, len(ks))
 	for i, k := range ks {
 		entries = append(entries, bsmsg.Entry{
 			Cancel: cancel,
-			Entry:  wantlist.NewRefEntry(k, maxPriority-i, false, sendDontHave),
+			Entry:  wantlist.NewRefEntry(k, maxPriority-i, wantlist.WantType_Block, sendDontHave),
 		})
 	}
 	for i, k := range wantHaves {
 		entries = append(entries, bsmsg.Entry{
 			Cancel: cancel,
-			Entry:  wantlist.NewRefEntry(k, maxPriority-i, true, sendDontHave),
+			Entry:  wantlist.NewRefEntry(k, maxPriority-i, wantlist.WantType_Have, sendDontHave),
 		})
 	}
 	select {
@@ -223,10 +222,10 @@ func (ws *wantSet) handle(wm *WantManager) {
 			if e.WantType == wantlist.WantType_Block {
 				// We only ever broadcast want-haves. So don't remove broadcast
 				// wantlist entries until we receive a cancel for the block itself.
-				wm.bcwl.Remove(e.Cid, ws.sessid, false)
+				wm.bcwl.Remove(e.Cid, ws.sessid, wantlist.WantType_Block)
 
 				// For the global want-list we disregard want-haves
-				if wm.wl.Remove(e.Cid, ws.sessid, false) {
+				if wm.wl.Remove(e.Cid, ws.sessid, wantlist.WantType_Block) {
 					wm.wantlistGauge.Dec()
 				}
 			}

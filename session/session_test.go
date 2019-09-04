@@ -8,16 +8,14 @@ import (
 
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
+	bspb "github.com/ipfs/go-bitswap/peerbroker"
 	"github.com/ipfs/go-bitswap/testutil"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
-	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
-
-var log = logging.Logger("bitswap:s")
 
 type wantReq struct {
 	cids  []cid.Cid
@@ -29,7 +27,11 @@ type fakeWantManager struct {
 	cancelReqs chan wantReq
 }
 
-func (fwm *fakeWantManager) WantBlocks(ctx context.Context, cids []cid.Cid, peers []peer.ID, ses uint64) {
+func (fwm *fakeWantManager) AvailablePeers() []peer.ID {
+	return fwm.peers
+}
+
+func (fwm *fakeWantManager) WantBlocks(ctx context.Context, cids []cid.Cid, wantHaves []cid.Cid, sendDontHave bool, peers []peer.ID, ses uint64) {
 	select {
 	case fwm.wantReqs <- wantReq{cids, peers}:
 	case <-ctx.Done():
@@ -37,6 +39,13 @@ func (fwm *fakeWantManager) WantBlocks(ctx context.Context, cids []cid.Cid, peer
 }
 
 func (fwm *fakeWantManager) CancelWants(ctx context.Context, cids []cid.Cid, peers []peer.ID, ses uint64) {
+	select {
+	case fwm.cancelReqs <- wantReq{cids, peers}:
+	case <-ctx.Done():
+	}
+}
+
+func (fwm *fakeWantManager) CancelWantHaves(ctx context.Context, cids []cid.Cid, peers []peer.ID, ses uint64) {
 	select {
 	case fwm.cancelReqs <- wantReq{cids, peers}:
 	case <-ctx.Done():
@@ -99,7 +108,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, id, fwm, fpm, frs, notif, time.Second, delay.Fixed(time.Minute))
+	session := New(ctx, id, fwm, fpm, frs, bspb.New(ctx, fwm), notif, time.Second, delay.Fixed(time.Minute))
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
 	var cids []cid.Cid

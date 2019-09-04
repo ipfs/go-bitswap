@@ -177,6 +177,10 @@ type networkClient struct {
 	stats   bsnet.Stats
 }
 
+func (nc *networkClient) Self() peer.ID {
+	return nc.local
+}
+
 func (nc *networkClient) SendMessage(
 	ctx context.Context,
 	to peer.ID,
@@ -270,7 +274,7 @@ func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	tag := tagForPeers(nc.local, p)
 	if _, ok := nc.network.conns[tag]; ok {
 		nc.network.mu.Unlock()
-		log.Warning("ALREADY CONNECTED TO PEER (is this a reconnect? test lib needs fixing)")
+		// log.Warning("ALREADY CONNECTED TO PEER (is this a reconnect? test lib needs fixing)")
 		return nil
 	}
 	nc.network.conns[tag] = struct{}{}

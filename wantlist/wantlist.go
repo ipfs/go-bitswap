@@ -6,7 +6,10 @@ import (
 	"sort"
 
 	cid "github.com/ipfs/go-cid"
+	logging "github.com/ipfs/go-log"
 )
+
+var log = logging.Logger("wl")
 
 // SessionTrackedWantlist is a list of wants that also track which bitswap
 // sessions have requested them
@@ -120,6 +123,8 @@ func (w *SessionTrackedWantlist) AddEntry(e Entry, ses uint64) bool {
 	return true
 }
 
+// TODO (dirkmc): How does Remove work with sessions?
+
 // Remove removes the given cid from being tracked by the given session.
 // 'true' is returned if this call to Remove removed the final session ID
 // tracking the cid. (meaning true will be returned iff this call caused the
@@ -195,6 +200,7 @@ func (w *Wantlist) Add(c cid.Cid, priority int, wantType WantTypeT, sendDontHave
 	if e, ok := w.set[c]; ok {
 		// Wanting a block overrides wanting a HAVE
 		if e.WantType == WantType_Have && wantType == WantType_Block {
+			// log.Warningf("    override want-have with want-block: %s", c.String()[2:8])
 			e.WantType = WantType_Block
 			changed = true
 		}

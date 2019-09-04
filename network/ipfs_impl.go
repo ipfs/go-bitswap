@@ -78,6 +78,10 @@ func (s *streamMessageSender) SendMsg(ctx context.Context, msg bsmsg.BitSwapMess
 	return s.bsnet.msgToStream(ctx, s.s, msg)
 }
 
+func (bsnet *impl) Self() peer.ID {
+	return ""
+}
+
 func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.BitSwapMessage) error {
 	deadline := time.Now().Add(sendMessageTimeout)
 	if dl, ok := ctx.Deadline(); ok {

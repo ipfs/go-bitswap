@@ -169,6 +169,7 @@ func BenchmarkRealWorld(b *testing.B) {
 
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
+		// fmt.Println("\n\n\n\nStarting bench")
 		start := time.Now()
 		net := tn.VirtualNetwork(mockrouting.NewServer(), d)
 

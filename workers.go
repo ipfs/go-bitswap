@@ -53,8 +53,6 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					continue
 				}
 
-				// TODO: Add accounting data for message.BlockInfos
-
 				// update the BS ledger to reflect sent message
 				// TODO: Should only track *useful* messages in ledger
 				outgoing := bsmsg.New(false)
@@ -67,6 +65,13 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 						}
 					}))
 					outgoing.AddBlock(block)
+				}
+				for _, blockInfo := range envelope.Message.BlockInfos() {
+					c, err := cid.Cast(blockInfo.Cid)
+					if err != nil {
+						panic(err)
+					}
+					outgoing.AddBlockInfo(c, blockInfo.Type)
 				}
 				bs.engine.MessageSent(envelope.Peer, outgoing)
 
@@ -93,6 +98,7 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 
 	msgSize := 0
 	msg := bsmsg.New(false)
+
 	for _, blockInfo := range env.Message.BlockInfos() {
 		c, err := cid.Cast(blockInfo.Cid)
 		if err != nil {
