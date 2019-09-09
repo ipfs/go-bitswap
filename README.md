@@ -11,7 +11,7 @@ go-bitswap
 
 ## Lead Maintainer
 
-[Dirk](https://github.com/dirkmc)
+[Dirk McCormick](https://github.com/dirkmc)
 
 ## Table of Contents
 
