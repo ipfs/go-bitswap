@@ -78,11 +78,15 @@ func newMsg(full bool) *impl {
 	}
 }
 
-// Entry is an wantlist entry in a Bitswap message (along with whether it's an
-// add or cancel).
+// Entry is a wantlist entry in a Bitswap message, with flags indicating
+// - whether message is a cancel
+// - whether requester wants a DONT_HAVE message
+// - whether requester wants a HAVE message (instead of the block)
 type Entry struct {
 	wantlist.Entry
-	Cancel bool
+	Cancel       bool
+	SendDontHave bool
+	WantType     wantlist.WantTypeT
 }
 
 func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
@@ -207,12 +211,12 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType wantlist.
 	} else {
 		m.wantlist[c] = &Entry{
 			Entry: wantlist.Entry{
-				Cid:          c,
-				Priority:     priority,
-				WantType:     wantType,
-				SendDontHave: sendDontHave,
+				Cid:      c,
+				Priority: priority,
 			},
-			Cancel: cancel,
+			WantType:     wantType,
+			SendDontHave: sendDontHave,
+			Cancel:       cancel,
 		}
 	}
 }

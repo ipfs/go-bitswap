@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	bsmsg "github.com/ipfs/go-bitswap/message"
-	pb "github.com/ipfs/go-bitswap/message/pb"
+	// pb "github.com/ipfs/go-bitswap/message/pb"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
@@ -65,6 +65,10 @@ const (
 
 	// tagWeight is the default weight for peers associated with an engine
 	tagWeight = 5
+
+	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
+	// bytes up to which we will replace a want-have with a want-block
+	maxBlockSizeReplaceHasWithBlock = 1024
 )
 
 // Envelope contains a message for a Peer.
@@ -77,6 +81,12 @@ type Envelope struct {
 
 	// A callback to notify the decision queue that the task is complete
 	Sent func()
+}
+
+type blockInfo struct {
+	sendDontHave bool
+	wantType     wantlist.WantTypeT
+	size         int
 }
 
 // PeerTagger covers the methods on the connection manager used by the decision
@@ -114,7 +124,7 @@ type Engine struct {
 	ledgerMap map[peer.ID]*ledger
 
 	ticker *time.Ticker
-	self peer.ID
+	self   peer.ID
 }
 
 // NewEngine creates a new block sending engine for the given block store
@@ -126,7 +136,7 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal: make(chan struct{}, 1),
 		ticker:     time.NewTicker(time.Millisecond * 100),
-		self: self,
+		self:       self,
 	}
 	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
 	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
@@ -205,69 +215,46 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			}
 		}
 
-		l := e.findOrCreate(nextTask.Target)
-		l.lk.Lock()
-		defer l.lk.Unlock()
-
 		// with a task in hand, we're ready to prepare the envelope...
 		msg := bsmsg.New(true)
 		for _, entry := range nextTask.Tasks {
-			// c := entry.Identifier.(cid.Cid)
-			c, err := cid.Parse(entry.Identifier.(string)[1:])
-			if err != nil {
-				panic(err)
-			}
+			c := entry.Identifier.(cid.Cid)
+			info := entry.Info.(*blockInfo)
 
-			entry, ok := l.WantListContains(c)
-// if ok {
-// 	if !entry.SendDontHave {
-// 		whs := "want block"
-// 		if entry.WantType == wantlist.WantType_Have {
-// 			whs = "want have"
-// 		}
-// 		log.Warningf("  engine-%s: nextEnvelope - %s %s", e.self, whs, c.String()[2:8])
-// 	}
-// } else {
-// 	log.Warningf("  engine-%s: nextEnvelope - <no wantlist entry> for %s", e.self, c.String()[2:8])
-// }
-
-			// if ok {
-			// 	log.Debugf("wantlist has %s: WantHave %t / SendDontHave: %t", c.String()[2:8], entry.WantHave, entry.SendDontHave)
-			// }
-			// If the remote peer wants HAVE or DONT_HAVE messages
-			has := true
-			if ok && (entry.WantType == wantlist.WantType_Have || entry.SendDontHave) {
+			if info.wantType == wantlist.WantType_Have {
+				// Check if we have the block
 				has, err := e.bs.Has(c)
 				if err != nil {
 					log.Errorf("tried to execute a task and errored stating block: %s", err)
 					continue
 				}
 
-				// If we have the block, and the remote peer asked for a HAVE
-				if has && entry.WantType == wantlist.WantType_Have {
+				// If we have the block
+				if has {
 					// log.Debugf("%s: Have", c.String()[2:8])
 					// log.Warningf("    engine-%s: nextEnvelope - add HAVE %s", e.self, c.String()[2:8])
 					msg.AddHave(c)
-				}
-				// If we don't have the block, and the remote peer asked for a DONT_HAVE
-				if !has && entry.SendDontHave {
+				} else if info.sendDontHave {
+					// If we don't have the block, and the remote peer asked for a DONT_HAVE
 					msg.AddDontHave(c)
-					// Don't send DONT_HAVE more than once
-					entry.SendDontHave = false
 				}
-			}
-
-			// If the remote peer wants a block
-			if !ok || (ok && entry.WantType == wantlist.WantType_Block && has) {
+			} else {
+				// Fetch the block
 				block, err := e.bs.Get(c)
 				if err != nil {
-					if err != bstore.ErrNotFound {
+					// If we don't have the block, and the requester wanted a
+					// DONT_HAVE, add it to the message
+					if err == bstore.ErrNotFound {
+						if info.sendDontHave {
+							msg.AddDontHave(c)
+						}
+					} else {
 						log.Errorf("tried to execute a task and errored fetching block: %s", err)
 					}
-					continue
+				} else {
+					// log.Warningf("    engine-%s: nextEnvelope - add block %s", e.self, c.String()[2:8])
+					msg.AddBlock(block)
 				}
-				// log.Warningf("    engine-%s: nextEnvelope - add block %s", e.self, c.String()[2:8])
-				msg.AddBlock(block)
 			}
 		}
 
@@ -341,64 +328,83 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	if m.Full() {
 		l.wantList = wl.New()
 	}
-// msgNum := rand.Intn(1024)
+	// msgNum := rand.Intn(1024)
 	// Process each want
 	var msgSize int
 	var activeEntries []peertask.Task
 	for _, entry := range m.Wantlist() {
+		// TODO: remove any want-haves from m.Wantlist() if there is a want-block for the same CID
+
 		// If it's a cancel, remove the want from the ledger and send queue
 		if entry.Cancel {
 			log.Debugf("%s cancel %s", p, entry.Cid)
 			if l.CancelWant(entry.Cid) {
-				// e.peerRequestQueue.Remove(entry.Cid, p)
-
-				taskId := fmt.Sprintf("h%s", entry.Cid.String())
-				e.peerRequestQueue.Remove(taskId, p)
-				taskId = fmt.Sprintf("b%s", entry.Cid.String())
-				e.peerRequestQueue.Remove(taskId, p)
+				// taskId := fmt.Sprintf("h%s", entry.Cid.String())
+				// e.peerRequestQueue.Remove(taskId, p)
+				// taskId = fmt.Sprintf("b%s", entry.Cid.String())
+				// e.peerRequestQueue.Remove(taskId, p)
+				e.peerRequestQueue.Remove(entry.Cid, p)
 			}
 		} else {
 			// If it's a regular want, add it to the ledger and check if we
 			// have the block
-			// whs := "want block"
-			// if entry.WantType == wantlist.WantType_Have {
-			// 	whs = "want have"
-			// }
-			// log.Warningf("engine%d - msg%d: %s %s - %d", e.id, msgNum, whs, entry.Cid.String()[2:8], entry.Priority)
-
-			// taskId := fmt.Sprintf("-%s", entry.Cid)
-			// existing, ok := l.WantListContains(entry.Cid)
-			// if ok && existing.WantType == wantlist.WantType_Have && entry.WantType == wantlist.WantType_Block {
-			// 	log.Warningf(" ** engine-%s - msg%d: want-block override existing want-have %s", e.self, msgNum, entry.Cid.String()[2:8])
-			// 	taskId = fmt.Sprintf("b%s", entry.Cid)
-			// }
-			taskId := fmt.Sprintf("b%s", entry.Cid)
-			if entry.WantType == wantlist.WantType_Have {
-				taskId = fmt.Sprintf("h%s", entry.Cid)
-			}
-			l.Wants(entry.Cid, entry.Priority, entry.WantType, entry.SendDontHave)
+			l.Wants(entry.Cid, entry.Priority)
 			blockSize, err := e.bs.GetSize(entry.Cid)
 			if err != nil {
 				if err == bstore.ErrNotFound {
 					// TODO: Enqueue these before any blocks and give them highest priority
 					if entry.SendDontHave {
-						activeEntries = append(activeEntries, peertask.Task{Identifier: taskId, Priority: entry.Priority})
+						replaceable := true
+						if entry.WantType == wantlist.WantType_Block {
+							replaceable = false
+						}
+						activeEntries = append(activeEntries, peertask.Task{
+							Identifier:  entry.Cid,
+							Priority:    entry.Priority,
+							Replaceable: replaceable,
+							Info: &blockInfo{
+								sendDontHave: true,
+								wantType:     entry.WantType,
+								size:         blockSize,
+							},
+						})
 					}
 				} else {
 					log.Error(err)
 				}
 			} else {
+				// If the request is a want-have, and the block is small
+				// enough, treat the request as a want-block
+				wantHave := entry.WantType == wantlist.WantType_Have
+				sendBlock := !wantHave || (wantHave && blockSize <= maxBlockSizeReplaceHasWithBlock)
+
 				// We have the block.
 				// Add entries to the send queue in groups such that the total
 				// block size of the group is below the maximum message size.
 				newWorkExists = true
-				if msgSize+blockSize > maxMessageSize {
+				if sendBlock && msgSize+blockSize > maxMessageSize {
 					e.peerRequestQueue.PushBlock(p, activeEntries...)
 					activeEntries = []peertask.Task{}
 					msgSize = 0
 				}
 
-				activeEntries = append(activeEntries, peertask.Task{Identifier: taskId, Priority: entry.Priority})
+				wantType := wantlist.WantType_Have
+				replaceable := true
+				if sendBlock {
+					wantType = wantlist.WantType_Block
+					replaceable = false
+				}
+
+				activeEntries = append(activeEntries, peertask.Task{
+					Identifier:  entry.Cid,
+					Priority:    entry.Priority,
+					Replaceable: replaceable,
+					Info: &blockInfo{
+						sendDontHave: entry.SendDontHave,
+						wantType:     wantType,
+						size:         blockSize,
+					},
+				})
 				msgSize += blockSize
 			}
 		}
@@ -416,20 +422,52 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 }
 
 func (e *Engine) addBlocks(ks []cid.Cid) {
-	work := false
-
+	// Get the set of blocks that are wanted by our peers
+	wantedKs := cid.NewSet()
 	for _, l := range e.ledgerMap {
 		l.lk.Lock()
 		for _, k := range ks {
-			if entry, ok := l.WantListContains(k); ok {
-				e.peerRequestQueue.PushBlock(l.Partner, peertask.Task{
-					Identifier: entry.Cid,
-					Priority:   entry.Priority,
-				})
-				work = true
+			if _, ok := l.WantListContains(k); ok {
+				wantedKs.Add(k)
 			}
 		}
 		l.lk.Unlock()
+	}
+
+	if wantedKs.Len() == 0 {
+		return
+	}
+
+	// Get the size of each wanted block
+	blockSizes := make(map[cid.Cid]int)
+	for _, k := range wantedKs.Keys() {
+		blockSize, err := e.bs.GetSize(k)
+		if err != nil {
+			if err != bstore.ErrNotFound {
+				log.Warningf("Could not get size of %s from blockstore: %s", k, err)
+			}
+		} else {
+			blockSizes[k] = blockSize
+		}
+	}
+
+	// Add any wanted blocks to the request queue for each peer
+	work := false
+	for _, l := range e.ledgerMap {
+		for _, k := range wantedKs.Keys() {
+			if entry, ok := l.WantListContains(k); ok {
+				work = true
+				e.peerRequestQueue.PushBlock(l.Partner, peertask.Task{
+					Identifier: entry.Cid,
+					Priority:   entry.Priority,
+					Info: &blockInfo{
+						sendDontHave: false,
+						wantType:     wantlist.WantType_Block,
+						size:         blockSizes[k],
+					},
+				})
+			}
+		}
 	}
 
 	if work {
@@ -462,32 +500,8 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 
 	for _, block := range m.Blocks() {
 		l.SentBytes(len(block.RawData()))
-		l.wantList.Remove(block.Cid(), wantlist.WantType_Block)
+		l.wantList.Remove(block.Cid())
 		// e.peerRequestQueue.Remove(block.Cid(), p)
-		taskId := fmt.Sprintf("h%s", block.Cid().String())
-		e.peerRequestQueue.Remove(taskId, p)
-		taskId = fmt.Sprintf("b%s", block.Cid().String())
-		e.peerRequestQueue.Remove(taskId, p)
-	}
-
-	// log.Warningf("MessageSent%d: %d BlockInfos", e.id, len(m.BlockInfos()))
-	for _, blockInfo := range m.BlockInfos() {
-		c, err := cid.Cast(blockInfo.Cid)
-		if err != nil {
-			panic(err)
-		}
-		// TODO: how to calculate bytes sent for block info?
-		// l.SentBytes(len(block.RawData()))
-		if blockInfo.Type == pb.Message_Have {
-			if l.wantList.Remove(c, wantlist.WantType_Have) {
-				// log.Warningf("MessageSent%d: rm want-have %s (rm from queue)", e.id, c.String()[2:8])
-				e.peerRequestQueue.Remove(c, p)
-		taskId := fmt.Sprintf("h%s", c.String())
-		e.peerRequestQueue.Remove(taskId, p)
-			} else {
-				// log.Warningf("MessageSent%d: rm want-have %s (DONT rm from queue)", e.id, c.String()[2:8])
-			}
-		}
 	}
 }
 

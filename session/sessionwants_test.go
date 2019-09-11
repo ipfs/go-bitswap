@@ -176,7 +176,7 @@ func TestPopNextPending(t *testing.T) {
 	// - wantHaves should be all cids except c1
 	// - p1 should be one of the peers (random)
 	// - ph should be all peers except p1
-log.Warningf("Pop1")
+	log.Warningf("Pop1")
 	c1, wantHaves, p1, ph := sw.PopNextPending(peers)
 	if p1 == "" {
 		t.Fatal("expected peer")
@@ -221,7 +221,6 @@ log.Warningf("Pop1")
 		t.Fatal("expected not to have received DONT_HAVE")
 	}
 
-
 	otherPeers := make([]peer.ID, 0, 2)
 	for _, p := range peers {
 		if p != p1 {
@@ -233,9 +232,9 @@ log.Warningf("Pop1")
 	// - wantHaves should be all cids except c2
 	// - p2 should be one of otherPeers (random)
 	// - ph should not be p2
-log.Warningf("Pop2")
+	log.Warningf("Pop2")
 	c2, wantHaves2, p2, ph2 := sw.PopNextPending(otherPeers)
-log.Warningf("Pop2 done")
+	log.Warningf("Pop2 done")
 	if p2 == "" {
 		t.Fatal("expected peer")
 	}
@@ -291,7 +290,6 @@ log.Warningf("Pop2 done")
 	if !sw.liveWants.receivedDontHaveFromPeer(c1, p1) {
 		t.Fatal("expected to have received DONT_HAVE")
 	}
-
 
 	// Receive block for second cid
 	// One CID should have moved from live to past list

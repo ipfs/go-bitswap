@@ -58,6 +58,8 @@ var benches = []bench{
 	// Fetch from two seed nodes, one at a time, where:
 	// - node A has blocks 0 - 74
 	// - node B has blocks 25 - 99
+	// * Slow because we only get blocks from one node for 75 blocks, then
+	//   have to broadcast
 	bench{"3Nodes-Overlap1-OneAtATime", 3, 100, overlap1, oneAtATime},
 
 	// Fetch from two seed nodes, where:
@@ -66,7 +68,9 @@ var benches = []bench{
 	// - both nodes have every third block
 
 	// - request one at a time, in series
-	// * times out every time potential-threshold reaches 1.0
+	// * Slow because when potential-threshold decreases to 0.5,
+	//   we frequently have to send want-have then wait for HAVE then
+	//   send want-block
 	bench{"3Nodes-Overlap3-OneAtATime", 3, 100, overlap2, oneAtATime},
 	// - request 10 at a time, in series
 	bench{"3Nodes-Overlap3-BatchBy10", 3, 100, overlap2, batchFetchBy10},
@@ -91,6 +95,15 @@ var benches = []bench{
 
 	// Fetch from nine seed nodes, blocks are distributed randomly across all nodes (no dups)
 	// - request one at a time, in series
+	// * Slow because
+	//   1. We broadcast to 9 nodes, get 1 response (1 session peer)
+	//   2. Then ask that peer for next block
+	//   3. Times out
+	//   4. Repeat 1, (2 session peers)
+	//   Possible optimization: if all peers in the session send DONT_HAVEs for
+	//   block, broadcast to all connected peers (check if there are more connected
+	//   peers than session peers, and somehow limit broadcasts to make sure they're
+	//   not too frequent)
 	bench{"10Nodes-OnePeerPerBlock-OneAtATime", 10, 100, onePeerPerBlock, oneAtATime},
 	// - request all 100 with a single GetBlocks() call
 	bench{"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},

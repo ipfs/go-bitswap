@@ -40,15 +40,15 @@ func GenerateCids(n int) []cid.Cid {
 }
 
 // GenerateWantlist makes a populated wantlist.
-func GenerateWantlist(n int, ses uint64) *wantlist.SessionTrackedWantlist {
-	wl := wantlist.NewSessionTrackedWantlist()
-	for i := 0; i < n; i++ {
-		prioritySeq++
-		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false)
-		wl.AddEntry(entry, ses)
-	}
-	return wl
-}
+// func GenerateWantlist(n int, ses uint64) *wantlist.SessionTrackedWantlist {
+// 	wl := wantlist.NewSessionTrackedWantlist()
+// 	for i := 0; i < n; i++ {
+// 		prioritySeq++
+// 		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false)
+// 		wl.AddEntry(entry, ses)
+// 	}
+// 	return wl
+// }
 
 // GenerateMessageEntries makes fake bitswap message entries.
 func GenerateMessageEntries(n int, isCancel bool) []bsmsg.Entry {
@@ -56,7 +56,8 @@ func GenerateMessageEntries(n int, isCancel bool) []bsmsg.Entry {
 	for i := 0; i < n; i++ {
 		prioritySeq++
 		msg := bsmsg.Entry{
-			Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false),
+			// Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false),
+			Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq),
 			Cancel: isCancel,
 		}
 		bsmsgs = append(bsmsgs, msg)
@@ -126,4 +127,44 @@ func IndexOf(blks []blocks.Block, c cid.Cid) int {
 // ContainsBlock returns true if a block is found n a list of blocks
 func ContainsBlock(blks []blocks.Block, block blocks.Block) bool {
 	return IndexOf(blks, block.Cid()) != -1
+}
+
+// ContainsKey returns true if a key is found n a list of CIDs.
+func ContainsKey(ks []cid.Cid, c cid.Cid) bool {
+	for _, k := range ks {
+		if c == k {
+			return true
+		}
+	}
+	return false
+}
+
+// MatchKeysIgnoreOrder returns true if the lists of CIDs match (even if
+// they're in a different order)
+func MatchKeysIgnoreOrder(ks1 []cid.Cid, ks2 []cid.Cid) bool {
+	if len(ks1) != len(ks2) {
+		return false
+	}
+
+	for _, k := range ks1 {
+		if !ContainsKey(ks2, k) {
+			return false
+		}
+	}
+	return true
+}
+
+// MatchPeersIgnoreOrder returns true if the lists of peers match (even if
+// they're in a different order)
+func MatchPeersIgnoreOrder(ps1 []peer.ID, ps2 []peer.ID) bool {
+	if len(ps1) != len(ps2) {
+		return false
+	}
+
+	for _, p := range ps1 {
+		if !ContainsPeer(ps2, p) {
+			return false
+		}
+	}
+	return true
 }

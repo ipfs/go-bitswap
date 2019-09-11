@@ -2,11 +2,13 @@ package session
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
 	notifications "github.com/ipfs/go-bitswap/notifications"
-	bspb "github.com/ipfs/go-bitswap/peerbroker"
+	bspbkr "github.com/ipfs/go-bitswap/peerbroker"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -25,9 +27,12 @@ const (
 // WantManager is an interface that can be used to request blocks
 // from given peers.
 type WantManager interface {
-	WantBlocks(context.Context, []cid.Cid, []cid.Cid, bool, []peer.ID, uint64)
-	CancelWants(context.Context, []cid.Cid, []peer.ID, uint64)
-	CancelWantHaves(context.Context, []cid.Cid, []peer.ID, uint64)
+	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
+	// WantBlocks(context.Context, []cid.Cid, []cid.Cid, bool, []peer.ID, uint64)
+	// CancelWants(context.Context, []cid.Cid, []peer.ID, uint64)
+	PeerCanSendWants(peer.ID, []cid.Cid) []cid.Cid
+	PeersCanSendWantBlock(cid.Cid, []peer.ID) []peer.ID
+	RemoveSession(context.Context, uint64)
 }
 
 // PeerManager provides an interface for tracking and optimize peers, and
@@ -57,11 +62,8 @@ const (
 )
 
 type op struct {
-	op            opType
-	from          peer.ID
-	keys          []cid.Cid
-	haves         []cid.Cid
-	dontHaves []cid.Cid
+	op   opType
+	keys []cid.Cid
 }
 
 // Session holds state for an individual bitswap transfer operation.
@@ -75,20 +77,19 @@ type Session struct {
 	srs RequestSplitter
 
 	sw    sessionWants
-	pb    *bspb.PeerBroker
+	pb    *bspbkr.PeerBroker
 	peers *peer.Set
+
+	latencyTrkr latencyTracker
 
 	// channels
 	incoming      chan op
-	latencyReqs   chan chan time.Duration
 	tickDelayReqs chan time.Duration
 
 	// do not touch outside run loop
 	idleTick            *time.Timer
 	periodicSearchTimer *time.Timer
 	baseTickDelay       time.Duration
-	latTotal            time.Duration
-	fetchcnt            int
 	consecutiveTicks    int
 	recentWasUnique     []bool
 	initialSearchDelay  time.Duration
@@ -106,13 +107,13 @@ func New(ctx context.Context,
 	wm WantManager,
 	pm PeerManager,
 	srs RequestSplitter,
-	pb *bspb.PeerBroker,
+	pb *bspbkr.PeerBroker,
+	bpm *bsbpm.BlockPresenceManager,
 	notif notifications.PubSub,
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D) *Session {
 	s := &Session{
-		sw:                  newSessionWants(),
-		latencyReqs:         make(chan chan time.Duration),
+		sw:                  newSessionWants(bpm, wm),
 		tickDelayReqs:       make(chan time.Duration),
 		ctx:                 ctx,
 		wm:                  wm,
@@ -121,6 +122,7 @@ func New(ctx context.Context,
 		incoming:            make(chan op, 16),
 		pb:                  pb,
 		peers:               peer.NewSet(),
+		latencyTrkr:         latencyTracker{},
 		notif:               notif,
 		uuid:                loggables.Uuid("GetBlockRequest"),
 		baseTickDelay:       time.Millisecond * 500,
@@ -140,47 +142,64 @@ func (s *Session) ID() uint64 {
 	return s.id
 }
 
+func (s *Session) FilterWanted(ks []cid.Cid) []cid.Cid {
+	return s.sw.FilterWanted(ks)
+}
+
 // ReceiveFrom receives incoming blocks from the given peer.
 func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	s.sw.BlockInfoReceived(from, haves, dontHaves)
-
 	interestedKs := s.sw.FilterInteresting(ks)
-	wantedHaves := s.sw.FilterWanted(haves)
-	wantedDontHaves := s.sw.FilterWanted(dontHaves)
-	log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
-		s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
+
+	// s.logReceiveFrom(from, interestedKs, haves, dontHaves)
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
 	interestedHaves := s.sw.FilterInteresting(haves)
-	if len(interestedKs) > 0 || len(interestedHaves) > 0 {
-		size := s.peers.Size()
+	if len(interestedKs) > 0 || len(interestedHaves) > 0 && !s.peers.Contains(from) {
 		s.peers.Add(from)
-		if (s.peers.Size() > size) {
-			log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
-		}
+		log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
 	}
 
-	if len(interestedKs) == 0 && len(wantedHaves) == 0 && len(wantedDontHaves) == 0 {
+	// Record statistics only if the blocks came from the network
+	// (blocks can also be received from the local node)
+	if len(interestedKs) > 0 && from != "" {
+		s.updateReceiveCounters(from, interestedKs)
+	}
+
+	if len(interestedKs) == 0 && len(dontHaves) == 0 {
 		return
 	}
 
-	for _, c := range interestedKs {
-		log.Debugf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
-		// log.Warningf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
-	}
-	for _, c := range wantedHaves {
-		log.Debugf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
-		// log.Warningf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
-	}
-	for _, c := range wantedDontHaves {
-		log.Debugf("Ses%d<-%s: DONT_HAVE %s\n", s.id, from, c.String()[2:8])
+	wanted, totalLatency := s.sw.ReceiveFrom(from, ks, dontHaves)
+	s.latencyTrkr.receiveUpdate(len(wanted), totalLatency)
+
+	if len(wanted) == 0 {
+		return
 	}
 
 	select {
-	case s.incoming <- op{op: opReceive, from: from, keys: interestedKs, haves: wantedHaves, dontHaves: wantedDontHaves}:
+	case s.incoming <- op{op: opReceive, keys: wanted}:
 	case <-s.ctx.Done():
 	}
+}
+
+func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
+	// wantedHaves := s.sw.FilterWanted(haves)
+	// wantedDontHaves := s.sw.FilterWanted(dontHaves)
+	// log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
+	// 	s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
+	for _, c := range interestedKs {
+		// log.Debugf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
+		log.Warningf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
+	}
+	wantedHaves := s.sw.FilterWanted(haves)
+	for _, c := range wantedHaves {
+		// log.Debugf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
+		log.Warningf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
+	}
+	// for _, c := range wantedDontHaves {
+	// 	log.Debugf("Ses%d<-%s: DONT_HAVE %s\n", s.id, from, c.String()[2:8])
+	// }
 }
 
 // IsWanted returns true if this session is waiting to receive the given Cid.
@@ -188,19 +207,13 @@ func (s *Session) IsWanted(c cid.Cid) bool {
 	return s.sw.IsWanted(c)
 }
 
-func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.SessionAsk {
-	// TODO: make sure PendingCount() and PopNextPending() happen atomically
-	// (eg pass this match function as a callback to Pop())
-
+func (s *Session) MatchWantPeer(ps []peer.ID) *bspbkr.SessionAsk {
 	// Check if the session is interested in any of the available peers
 	matches := make([]peer.ID, 0, len(ps))
-	// peers := s.pm.GetOptimizedPeers()
-	peers := s.peers.Peers()
-	for _, i := range peers {
-		for _, p := range ps {
-			if i == p {
-				matches = append(matches, p)
-			}
+	sessionPeers := s.allPeers()
+	for _, p := range ps {
+		if sessionPeers.Contains(p) {
+			matches = append(matches, p)
 		}
 	}
 
@@ -210,15 +223,17 @@ func (s *Session) MatchWantPeer(ps []peer.ID) *bspb.SessionAsk {
 
 	c, wh, p, ph := s.sw.PopNextPending(matches)
 	if !c.Defined() {
-		// fmt.Println("Dont have match")
 		return nil
 	}
-	// fmt.Println("Do have match")
 
-	// TODO: do this through event loop
-	s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{c})
+	// Record request for each want sent to peer
+	s.pm.RecordPeerRequests([]peer.ID{p}, append(wh, c))
+	// Record request for each want-have sent to other peers
+	for _, p := range ph {
+		s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{c})
+	}
 
-	return &bspb.SessionAsk{
+	return &bspbkr.SessionAsk{
 		Cid:       c,
 		WantHaves: wh,
 		PeerHaves: ph,
@@ -254,23 +269,6 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	)
 }
 
-// GetAverageLatency returns the average latency for block requests.
-func (s *Session) GetAverageLatency() time.Duration {
-	resp := make(chan time.Duration)
-	select {
-	case s.latencyReqs <- resp:
-	case <-s.ctx.Done():
-		return -1 * time.Millisecond
-	}
-
-	select {
-	case latency := <-resp:
-		return latency
-	case <-s.ctx.Done():
-		return -1 * time.Millisecond
-	}
-}
-
 // SetBaseTickDelay changes the rate at which ticks happen.
 func (s *Session) SetBaseTickDelay(baseTickDelay time.Duration) {
 	select {
@@ -289,7 +287,7 @@ func (s *Session) run(ctx context.Context) {
 		case oper := <-s.incoming:
 			switch oper.op {
 			case opReceive:
-				s.handleReceive(ctx, oper.from, oper.keys, oper.haves, oper.dontHaves)
+				s.handleReceive(oper.keys)
 			case opWant:
 				s.wantBlocks(ctx, oper.keys)
 			case opCancel:
@@ -298,12 +296,9 @@ func (s *Session) run(ctx context.Context) {
 				panic("unhandled operation")
 			}
 		case <-s.idleTick.C:
-			log.Warningf("\n\n\nSes%d: idle tick\n", s.id)
-			s.broadcastLiveWants(ctx)
+			s.handleIdleTick(ctx)
 		case <-s.periodicSearchTimer.C:
 			s.handlePeriodicSearch(ctx)
-		case resp := <-s.latencyReqs:
-			resp <- s.averageLatency()
 		case baseTickDelay := <-s.tickDelayReqs:
 			s.baseTickDelay = baseTickDelay
 		case <-ctx.Done():
@@ -313,15 +308,15 @@ func (s *Session) run(ctx context.Context) {
 	}
 }
 
-func (s *Session) broadcastLiveWants(ctx context.Context) {
+func (s *Session) handleIdleTick(ctx context.Context) {
+	// log.Warningf("\n\n\nSes%d: idle tick\n", s.id)
+
 	live := s.sw.PrepareBroadcast()
 	log.Infof("Ses%d: broadcast %d keys\n", s.id, len(live))
 
 	// Broadcast a want-have for the live wants to everyone we're connected to
-	// TODO: Doesn't really make sense to record requests here if we're not getting blocks back
-	// (we're now asking for HAVEs, not blocks)
 	s.pm.RecordPeerRequests(nil, live)
-	s.wm.WantBlocks(ctx, nil, live, false, nil, s.id)
+	s.wm.BroadcastWantHaves(ctx, s.id, live)
 
 	// do not find providers on consecutive ticks
 	// -- just rely on periodic search widening
@@ -330,7 +325,10 @@ func (s *Session) broadcastLiveWants(ctx context.Context) {
 	}
 	s.resetIdleTick()
 
+	// If we have live wants
 	if s.sw.HasLiveWants() {
+		// Bump the potential threshold so that each CID will be sent as a
+		// want-block to more peers
 		s.sw.IncrementPotentialThreshold()
 		s.consecutiveTicks++
 	}
@@ -347,7 +345,8 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 	s.pm.FindMorePeers(ctx, randomWant)
 
 	// TODO: When this returns, trigger PeerBroker
-	s.wm.WantBlocks(ctx, nil, []cid.Cid{randomWant}, false, nil, s.id)
+	// s.wm.WantBlocks(ctx, nil, []cid.Cid{randomWant}, false, nil, s.id)
+	s.wm.BroadcastWantHaves(ctx, s.id, []cid.Cid{randomWant})
 
 	s.periodicSearchTimer.Reset(s.periodicSearchDelay.NextWaitTime())
 }
@@ -355,60 +354,30 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 func (s *Session) handleShutdown() {
 	s.pb.UnregisterSource(s)
 	s.idleTick.Stop()
-	live := s.sw.LiveWants()
-	s.wm.CancelWants(s.ctx, live, nil, s.id)
+	// live := s.sw.LiveWants()
+	// s.wm.CancelWants(s.ctx, live, nil, s.id)
+	s.wm.RemoveSession(s.ctx, s.id)
 }
 
-func (s *Session) handleReceive(ctx context.Context, from peer.ID, keys []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	// Record statistics only if the blocks came from the network
-	// (blocks can also be received from the local node)
-	if from != "" {
-		s.updateReceiveCounters(ctx, from, keys)
-	}
+func (s *Session) handleReceive(ks []cid.Cid) {
+	s.idleTick.Stop()
 
-	// Update the want list
-	wanted, totalLatency := s.sw.BlocksReceived(keys)
+	// We've received new wanted blocks, so reset the number of ticks
+	// that have occurred since the last new block
+	s.consecutiveTicks = 0
 
-	if len(wanted) > 0 {
-		// We've received the blocks so we can cancel any outstanding wants for
-		// them.
-		// Record that the block was was cancelled (for latency tracking)
-		s.pm.RecordCancels(wanted)
-		// Remove the wants for the blocks from the WantManager.
-		// This also sends a Cancel message to any peer we had sent a
-		// want-block or want-have.
-		s.wm.CancelWants(s.ctx, wanted, nil, s.id)
-	}
+	s.pm.RecordCancels(ks)
 
-	if len(haves) > 0 {
-		// Remove the want-haves for any received HAVEs.
-		s.wm.CancelWantHaves(s.ctx, haves, []peer.ID{from}, s.id)
-	}
-
-	if len(wanted) > 0 {
-		s.idleTick.Stop()
-
-		// Process the received blocks
-		s.processIncoming(ctx, wanted, totalLatency)
-
-		s.resetIdleTick()
-	} else if s.peers.Size() > 0 && (len(haves) > 0 || len(dontHaves) > 0) {
-		// // If all known peers have sent a DONT_HAVE for all live wants,
-		// // broadcast live wants
-		// if len(dontHaves) > 0 && s.sw.EveryPeerDoesntHaveLiveWants(s.peers.Peers()) {
-		// 	s.broadcastLiveWants(ctx)
-		// 	return
-		// }
-
-		// The session didn't get any blocks, but did get some information, so
-		// signal the PeerBroker to ask the session if it has wants
-		// log.Warningf("Received %d HAVE / %d DONT_HAVE for peer %s. Signaling PeerBroker\n", len(haves), len(dontHaves), from)
-		s.pb.WantAvailable()
-	}
+	s.resetIdleTick()
 }
 
-func (s *Session) updateReceiveCounters(ctx context.Context, from peer.ID, keys []cid.Cid) {
+func (s *Session) updateReceiveCounters(from peer.ID, keys []cid.Cid) {
 	maxRecent := 256
+
+	// TODO: If we sent a want-have but received a block, (because the block
+	// was small enough for the responder to send the block instead of a HAVE)
+	// don't count the block as a duplicate.
+
 	// Record unique vs duplicate blocks
 	s.sw.ForEachUniqDup(keys, func() {
 		s.srs.RecordUniqueBlock()
@@ -447,19 +416,13 @@ func (s *Session) updateReceiveCounters(ctx context.Context, from peer.ID, keys 
 	}
 }
 
-func (s *Session) processIncoming(ctx context.Context, ks []cid.Cid, totalLatency time.Duration) {
-	// Keep track of the total number of blocks received and total latency
-	s.fetchcnt += len(ks)
-
-	log.Infof("Ses%d total received blocks: %d\n", s.id, s.fetchcnt)
-
-	s.latTotal += totalLatency
-
-	// We've received new wanted blocks, so reset the number of ticks
-	// that have occurred since the last new block
-	s.consecutiveTicks = 0
-
-	s.wantBlocks(ctx, nil)
+// TODO: Move all peer management into s.pm (SessionPeerManager)
+func (s *Session) allPeers() *peer.Set {
+	ops := s.pm.GetOptimizedPeers()
+	for _, op := range ops {
+		s.peers.Add(op.Peer)
+	}
+	return s.peers
 }
 
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
@@ -469,7 +432,7 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 
 	// If we have discovered some peers, signal the PeerBroker to ask us for
 	// blocks
-	if s.peers.Size() > 0 {
+	if s.allPeers().Size() > 0 {
 		// log.Warningf("Ses%d: WantAvailable()\n", s.id)
 		s.pb.WantAvailable()
 	} else {
@@ -478,23 +441,48 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 		if len(ks) > 0 {
 			log.Infof("Ses%d: No peers - broadcasting %d want HAVE requests\n", s.id, len(ks))
 			s.pm.RecordPeerRequests(nil, ks)
-			s.wm.WantBlocks(ctx, nil, ks, false, nil, s.id)
+			s.wm.BroadcastWantHaves(ctx, s.id, ks)
 		}
 	}
 }
 
-func (s *Session) averageLatency() time.Duration {
-	return s.latTotal / time.Duration(s.fetchcnt)
-}
-
 func (s *Session) resetIdleTick() {
 	var tickDelay time.Duration
-	if s.latTotal == 0 {
+	if !s.latencyTrkr.hasLatency() {
 		tickDelay = s.initialSearchDelay
 	} else {
-		avLat := s.averageLatency()
+		avLat := s.latencyTrkr.averageLatency()
+		// log.Warningf("averageLatency %s", avLat)
 		tickDelay = s.baseTickDelay + (3 * avLat)
 	}
 	tickDelay = tickDelay * time.Duration(1+s.consecutiveTicks)
 	s.idleTick.Reset(tickDelay)
+}
+
+type latencyTracker struct {
+	sync.RWMutex
+	totalLatency time.Duration
+	count        int
+}
+
+func (lt *latencyTracker) hasLatency() bool {
+	lt.RLock()
+	defer lt.RUnlock()
+
+	return lt.totalLatency > 0 && lt.count > 0
+}
+
+func (lt *latencyTracker) averageLatency() time.Duration {
+	lt.RLock()
+	defer lt.RUnlock()
+
+	return lt.totalLatency / time.Duration(lt.count)
+}
+
+func (lt *latencyTracker) receiveUpdate(count int, totalLatency time.Duration) {
+	lt.Lock()
+	defer lt.Unlock()
+
+	lt.totalLatency += totalLatency
+	lt.count += count
 }

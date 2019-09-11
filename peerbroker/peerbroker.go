@@ -1,8 +1,9 @@
-package wantmanager
+package peerbroker
 
 import (
+	"bytes"
 	"context"
-	// "fmt"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,10 +25,11 @@ type WantSource interface {
 
 type PeerAvailabilityListener interface {
 	PeerAvailable()
+	WantAvailable()
 }
 
 type WantManager interface {
-	WantBlocks(context.Context, []cid.Cid, []cid.Cid, bool, []peer.ID, uint64)
+	WantBlocks(context.Context, peer.ID, uint64, []cid.Cid, []cid.Cid)
 	AvailablePeers() []peer.ID
 	RegisterPeerAvailabilityListener(PeerAvailabilityListener)
 }
@@ -41,6 +43,18 @@ type SessionAsk struct {
 	Peer      peer.ID
 	WantHaves []cid.Cid
 	PeerHaves []peer.ID
+}
+
+func (a *SessionAsk) String() string {
+	var b bytes.Buffer
+	b.WriteString(fmt.Sprintf("->%s: want-block %s\n", a.Peer, a.Cid))
+	for _, c := range a.WantHaves {
+		b.WriteString(fmt.Sprintf("  want-have %s\n", c))
+	}
+	for _, p := range a.PeerHaves {
+		b.WriteString(fmt.Sprintf("  peer-have %s\n", p))
+	}
+	return b.String()
 }
 
 type PeerBroker struct {
@@ -57,7 +71,7 @@ type PeerBroker struct {
 
 	// Don't access/modify outside of run loop
 	sources map[WantSource]struct{}
-	btchr *batcher
+	btchr   *batcher
 }
 
 // New initializes a new PeerBroker for a given context.
@@ -95,6 +109,7 @@ func (pb *PeerBroker) PeerAvailable() {
 
 func (pb *PeerBroker) WantAvailable() {
 	// fmt.Println("WantAvailable")
+	// TODO: only ask given sessions
 	pb.signalMatchReady()
 }
 
@@ -146,20 +161,23 @@ func (pb *PeerBroker) checkMatch() {
 			ask := s.MatchWantPeer(peers)
 			// fmt.Printf("      MatchWantPeer %v\n", w)
 			if ask != nil {
+				// log.Warningf("      got ask %s", ask)
 				gotWant = true
 				cnt++
-				// pb.addRequest(batches, s.ID(), ask.Peer, batchWant{ask.Cid, ask.WantHaves})
-				pb.btchr.addRequest(ask.Peer, batchWant{ask.Cid, ask.WantHaves, s.ID()})
+
+				// pb.btchr.addRequest(ask.Peer, batchWant{ask.Cid, ask.WantHaves, s.ID()})
 				// log.Warningf("      want-blk->%s want-haves->%s: %s\n", ask.Peer, ask.PeerHaves, ask.Cid.String()[2:8])
+				pb.wantManager.WantBlocks(pb.ctx, ask.Peer, s.ID(), []cid.Cid{ask.Cid}, ask.WantHaves)
+
 				for _, p := range ask.PeerHaves {
-// log.Warningf("      ask.PeerHaves %s %s\n", p, ask.Cid.String()[2:8])
-					// pb.addRequest(batches, s.ID(), p, batchWant{cid.Cid{}, []cid.Cid{ask.Cid}})
-					pb.btchr.addRequest(p, batchWant{cid.Cid{}, []cid.Cid{ask.Cid}, s.ID()})
+					// log.Warningf("      ask.PeerHaves %s %s\n", p, ask.Cid.String()[2:8])
+					// pb.btchr.addRequest(p, batchWant{cid.Cid{}, []cid.Cid{ask.Cid}, s.ID()})
+					pb.wantManager.WantBlocks(pb.ctx, p, s.ID(), []cid.Cid{}, []cid.Cid{ask.Cid})
 				}
 			}
 		}
-		// log.Warningf("           checkMatch done (gotWant: %t)\n", gotWant)
 	}
+	// log.Warningf("           checkMatch done (gotWant: %t)\n", gotWant)
 	// fmt.Printf("  checkMatch [done]\n")
 	// for s, pw := range batches {
 	// 	for p, b := range pw {
@@ -172,9 +190,9 @@ func (pb *PeerBroker) checkMatch() {
 
 type batcher struct {
 	sync.Mutex
-	ctx context.Context
+	ctx         context.Context
 	wantManager WantManager
-	batches map[peer.ID]*batchInfo
+	batches     map[peer.ID]*batchInfo
 }
 
 type batchInfo struct {
@@ -190,8 +208,8 @@ type batchWant struct {
 
 func newBatcher(ctx context.Context, wm WantManager) *batcher {
 	return &batcher{
-		ctx: ctx,
-		batches: make(map[peer.ID]*batchInfo),
+		ctx:         ctx,
+		batches:     make(map[peer.ID]*batchInfo),
 		wantManager: wm,
 	}
 }
@@ -210,7 +228,7 @@ func (b *batcher) addRequest(p peer.ID, w batchWant) {
 	bi, ok := b.batches[p]
 	if !ok {
 		bi = &batchInfo{
-			wants: make([]batchWant, 1),
+			wants: make([]batchWant, 0, 1),
 			timer: time.AfterFunc(peerBatchDebounce, func() {
 				b.sendBatch(p)
 			}),
@@ -248,7 +266,7 @@ func (b *batcher) sendBatch(p peer.ID) {
 
 	// TODO: Respect session id
 	sesid := uint64(1)
-	b.wantManager.WantBlocks(b.ctx, cids.Keys(), wantHaves.Keys(), true, []peer.ID{p}, sesid)
+	b.wantManager.WantBlocks(b.ctx, p, sesid, cids.Keys(), wantHaves.Keys())
 
 	delete(b.batches, p)
 }

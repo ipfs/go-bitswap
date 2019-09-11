@@ -7,8 +7,8 @@ import (
 	"time"
 
 	notifications "github.com/ipfs/go-bitswap/notifications"
-	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	bspb "github.com/ipfs/go-bitswap/peerbroker"
+	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	"github.com/ipfs/go-bitswap/testutil"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"

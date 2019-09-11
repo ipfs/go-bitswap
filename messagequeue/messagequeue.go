@@ -3,12 +3,14 @@ package messagequeue
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
+	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -18,6 +20,8 @@ var log = logging.Logger("bitswap")
 const (
 	defaultRebroadcastInterval = 30 * time.Second
 	maxRetries                 = 10
+	// maxPriority is the max priority as defined by the bitswap protocol
+	maxPriority = math.MaxInt32
 )
 
 // MessageNetwork is any network that can connect peers and generate a message
@@ -37,7 +41,7 @@ type MessageQueue struct {
 	done         chan struct{}
 
 	// do not touch out of run loop
-	wl                    *wantlist.SessionTrackedWantlist
+	// wl                    *wantlist.SessionTrackedWantlist
 	nextMessage           bsmsg.BitSwapMessage
 	nextMessageLk         sync.RWMutex
 	sender                bsnet.MessageSender
@@ -49,8 +53,8 @@ type MessageQueue struct {
 // New creats a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
 	return &MessageQueue{
-		ctx:                 ctx,
-		wl:                  wantlist.NewSessionTrackedWantlist(),
+		ctx: ctx,
+		// wl:                  wantlist.NewSessionTrackedWantlist(),
 		network:             network,
 		p:                   p,
 		outgoingWork:        make(chan struct{}, 1),
@@ -59,22 +63,68 @@ func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
 	}
 }
 
-// AddMessage adds new entries to an outgoing message for a given session.
-func (mq *MessageQueue) AddMessage(entries []bsmsg.Entry, ses uint64) {
-	if !mq.addEntries(entries, ses) {
-		return
+func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
+	mq.addMessageEntries(func() {
+		sendDontHave := false
+		for i, c := range wantHaves {
+			mq.nextMessage.AddEntry(c, maxPriority-i, wantlist.WantType_Have, sendDontHave)
+		}
+	})
+}
+
+func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
+	mq.addMessageEntries(func() {
+		sendDontHave := true
+		for i, c := range wantHaves {
+			mq.nextMessage.AddEntry(c, maxPriority-i, wantlist.WantType_Have, sendDontHave)
+		}
+		for i, c := range wantBlocks {
+			mq.nextMessage.AddEntry(c, maxPriority-len(wantHaves)-i, wantlist.WantType_Block, sendDontHave)
+		}
+	})
+}
+
+func (mq *MessageQueue) AddCancels(cancelKs []cid.Cid) {
+	mq.addMessageEntries(func() {
+		for _, c := range cancelKs {
+			mq.nextMessage.Cancel(c)
+		}
+	})
+}
+
+func (mq *MessageQueue) addMessageEntries(addEntriesFn func()) {
+	mq.nextMessageLk.Lock()
+	defer mq.nextMessageLk.Unlock()
+
+	// if we have no message held allocate a new one
+	if mq.nextMessage == nil {
+		mq.nextMessage = bsmsg.New(false)
 	}
+
+	addEntriesFn()
+
 	select {
 	case mq.outgoingWork <- struct{}{}:
 	default:
 	}
 }
 
+// // AddMessage adds new entries to an outgoing message for a given session.
+// func (mq *MessageQueue) AddMessage(entries []bsmsg.Entry, ses uint64) {
+// 	if !mq.addEntries(entries, ses) {
+// 		return
+// 	}
+// 	select {
+// 	case mq.outgoingWork <- struct{}{}:
+// 	default:
+// 	}
+// }
+
 // AddWantlist adds a complete session tracked want list to a message queue
-func (mq *MessageQueue) AddWantlist(initialWants *wantlist.SessionTrackedWantlist) {
-	initialWants.CopyWants(mq.wl)
-	mq.addWantlist()
-}
+// func (mq *MessageQueue) AddWantlist(initialWants *wantlist.SessionTrackedWantlist) {
+// 	initialWants.CopyWants(mq.wl)
+// 	mq.addWantlist()
+// }
 
 // SetRebroadcastInterval sets a new interval on which to rebroadcast the full wantlist
 func (mq *MessageQueue) SetRebroadcastInterval(delay time.Duration) {
@@ -126,18 +176,19 @@ func (mq *MessageQueue) addWantlist() {
 	mq.nextMessageLk.Lock()
 	defer mq.nextMessageLk.Unlock()
 
-	if mq.wl.Len() > 0 {
-		if mq.nextMessage == nil {
-			mq.nextMessage = bsmsg.New(false)
-		}
-		for _, e := range mq.wl.Entries() {
-			mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
-		}
-		select {
-		case mq.outgoingWork <- struct{}{}:
-		default:
-		}
-	}
+	// TODO: rebroadcast
+	// if mq.wl.Len() > 0 {
+	// 	if mq.nextMessage == nil {
+	// 		mq.nextMessage = bsmsg.New(false)
+	// 	}
+	// 	for _, e := range mq.wl.Entries() {
+	// 		mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
+	// 	}
+	// 	select {
+	// 	case mq.outgoingWork <- struct{}{}:
+	// 	default:
+	// 	}
+	// }
 }
 
 func (mq *MessageQueue) rebroadcastWantlist() {
@@ -148,32 +199,32 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 	mq.addWantlist()
 }
 
-func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) bool {
-	var work bool
-	mq.nextMessageLk.Lock()
-	defer mq.nextMessageLk.Unlock()
-	// if we have no message held allocate a new one
-	if mq.nextMessage == nil {
-		mq.nextMessage = bsmsg.New(false)
-	}
+// func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) bool {
+// 	var work bool
+// 	mq.nextMessageLk.Lock()
+// 	defer mq.nextMessageLk.Unlock()
+// 	// if we have no message held allocate a new one
+// 	if mq.nextMessage == nil {
+// 		mq.nextMessage = bsmsg.New(false)
+// 	}
 
-	for _, e := range entries {
-		if e.Cancel {
-			// Note: We don't want to actually send out a cancel message for
-			// want-have, only for want-block
-			if mq.wl.Remove(e.Cid, ses, e.WantType) && e.WantType == wantlist.WantType_Block {
-				work = true
-				mq.nextMessage.Cancel(e.Cid)
-			}
-		} else {
-			if mq.wl.Add(e.Cid, e.Priority, e.WantType, e.SendDontHave, ses) {
-				work = true
-				mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
-			}
-		}
-	}
-	return work
-}
+// 	for _, e := range entries {
+// 		if e.Cancel {
+// 			// Note: We don't want to actually send out a cancel message for
+// 			// want-have, only for want-block
+// 			if mq.wl.Remove(e.Cid, ses, e.WantType) && e.WantType == wantlist.WantType_Block {
+// 				work = true
+// 				mq.nextMessage.Cancel(e.Cid)
+// 			}
+// 		} else {
+// 			if mq.wl.Add(e.Cid, e.Priority, e.WantType, e.SendDontHave, ses) {
+// 				work = true
+// 				mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
+// 			}
+// 		}
+// 	}
+// 	return work
+// }
 
 func (mq *MessageQueue) extractOutgoingMessage() bsmsg.BitSwapMessage {
 	// grab outgoing message
@@ -237,8 +288,10 @@ func (mq *MessageQueue) sendMessage() {
 		} else {
 			if e.WantType == wantlist.WantType_Have {
 				log.Debugf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
+				// log.Warningf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
 			} else {
 				log.Debugf("->%s: want-block %s\n", mq.p, e.Cid.String()[2:8])
+				// log.Warningf("->%s: want-block %s\n", mq.p, e.Cid.String()[2:8])
 			}
 		}
 	}

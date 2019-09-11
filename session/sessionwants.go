@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
+
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -14,13 +16,20 @@ import (
 // Amount to increase potential by if we received a HAVE message
 const rcvdHavePotentialGain = 0.8
 
+type BlockSentManager interface {
+	PeersCanSendWantBlock(c cid.Cid, peers []peer.ID) []peer.ID
+	PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid
+}
+
 type sessionWants struct {
 	sync.RWMutex
-	toFetch   *cidQueue
+	toFetch *cidQueue
 	// liveWants map[cid.Cid]time.Time
 	liveWants liveWantsInfo
 	pastWants *cid.Set
 
+	bpm *bsbpm.BlockPresenceManager
+	bsm BlockSentManager
 	// wantPotential      map[cid.Cid]map[peer.ID]float64
 	// wantPeers          map[cid.Cid][]peer.ID
 	potentialThreshold float64
@@ -29,15 +38,17 @@ type sessionWants struct {
 	maxPeerHaves int
 }
 
-func newSessionWants() sessionWants {
+func newSessionWants(bpm *bsbpm.BlockPresenceManager, bsm BlockSentManager) sessionWants {
 	return sessionWants{
 		// liveWants:          make(map[cid.Cid]time.Time),
-		liveWants:          newLiveWantsInfo(),
-		toFetch:            newCidQueue(),
-		pastWants:          cid.NewSet(),
+		liveWants: newLiveWantsInfo(),
+		toFetch:   newCidQueue(),
+		pastWants: cid.NewSet(),
 		// wantPotential:      make(map[cid.Cid]map[peer.ID]float64),
 		// wantPeers:          make(map[cid.Cid][]peer.ID),
 		// blockPresence:      make(map[cid.Cid]map[peer.ID]bool),
+		bpm:                bpm,
+		bsm:                bsm,
 		potentialThreshold: 1.5,
 		maxPeerHaves:       16,
 	}
@@ -69,21 +80,23 @@ func (sw *sessionWants) DecreasePotentialThreshold() {
 	if sw.potentialThreshold < 0.5 {
 		sw.potentialThreshold = 0.5
 	}
-	// log.Debugf("potentialThreshold: %f\n", sw.potentialThreshold)
+	// log.Warningf("potentialThreshold: %f\n", sw.potentialThreshold)
 }
 
-// BlocksReceived moves received block CIDs from live to past wants and
-// measures latency. It returns the CIDs of blocks that were actually wanted
-// (as opposed to duplicates) and the total latency for all incoming blocks.
-func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration) {
+// ReceiveFrom moves received block CIDs from live to past wants and
+// measures latency. It returns the CIDs of blocks that were actually
+// wanted (as opposed to duplicates) and the total latency for all incoming blocks.
+func (sw *sessionWants) ReceiveFrom(p peer.ID, ks []cid.Cid, dontHaves []cid.Cid) ([]cid.Cid, time.Duration) {
 	now := time.Now()
 
 	sw.Lock()
 	defer sw.Unlock()
 
+	sw.dontHavesReceived(p, dontHaves)
+
 	totalLatency := time.Duration(0)
-	wanted := make([]cid.Cid, 0, len(cids))
-	for _, c := range cids {
+	wanted := make([]cid.Cid, 0, len(ks))
+	for _, c := range ks {
 		if sw.unlockedIsWanted(c) {
 			wanted = append(wanted, c)
 
@@ -94,13 +107,22 @@ func (sw *sessionWants) BlocksReceived(cids []cid.Cid) ([]cid.Cid, time.Duration
 
 			// Remove the CID from the live wants / toFetch queue and add it
 			// to the past wants
-			sw.liveWants.clearLiveWant(c)
+			sw.liveWants.removeLiveWant(c)
 			sw.toFetch.Remove(c)
 			sw.pastWants.Add(c)
 		}
 	}
 
 	return wanted, totalLatency
+}
+
+func (sw *sessionWants) dontHavesReceived(p peer.ID, dontHaves []cid.Cid) {
+	// For each DONT_HAVE
+	for _, c := range dontHaves {
+		// If we sent a want-block to this peer, decrease the want's potential by the
+		// corresponding amount
+		sw.liveWants.removeWantPotential(c, p)
+	}
 }
 
 // GetNextWants adds any new wants to the list of CIDs to fetch, then moves as
@@ -186,36 +208,36 @@ func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 	}
 }
 
-func (sw *sessionWants) BlockInfoReceived(p peer.ID, haves []cid.Cid, dontHaves []cid.Cid) {
-	sw.Lock()
-	defer sw.Unlock()
+// func (sw *sessionWants) BlockInfoReceived(p peer.ID, haves []cid.Cid, dontHaves []cid.Cid) {
+// 	sw.Lock()
+// 	defer sw.Unlock()
 
-	// For each HAVE
-	for _, c := range haves {
-		// log.Warningf("      sesswants: info<-%s HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
-		// If we want this block, record that the peer has the block
-		if sw.unlockedIsWanted(c) {
-			sw.liveWants.updateBlockPresence(c, p, true)
-			// log.Warningf("        updated block presence to HAVE\n")
-		}
-	}
+// 	// For each HAVE
+// 	for _, c := range haves {
+// 		// log.Warningf("      sesswants: info<-%s HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
+// 		// If we want this block, record that the peer has the block
+// 		// if sw.unlockedIsWanted(c) {
+// 		// 	sw.liveWants.updateBlockPresence(c, p, true)
+// 		// 	// log.Warningf("        updated block presence to HAVE\n")
+// 		// }
+// 	}
 
-	// For each DONT_HAVE
-	for _, c := range dontHaves {
-		// log.Warningf("      sesswants: info<-%s DONT_HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
-		// If we sent a want-block to this peer, decrease the want's potential by the
-		// corresponding amount
-		if sw.liveWants.wasWantBlockSentToPeer(c, p) {
-			sw.liveWants.removeWantPotential(c, p)
-			// log.Warningf("        new potential:  %.2f\n", sw.sumWantPotential(c))
-		}
-		// If we want this block, record that the peer does not have the block
-		if sw.unlockedIsWanted(c) {
-			sw.liveWants.updateBlockPresence(c, p, false)
-			// log.Warningf("        updated block presence to DONT_HAVE\n")
-		}
-	}
-}
+// 	// For each DONT_HAVE
+// 	for _, c := range dontHaves {
+// 		// log.Warningf("      sesswants: info<-%s DONT_HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
+// 		// If we sent a want-block to this peer, decrease the want's potential by the
+// 		// corresponding amount
+// 		// if sw.liveWants.wasWantBlockSentToPeer(c, p) {
+// 			sw.liveWants.removeWantPotential(c, p)
+// 			// log.Warningf("        new potential:  %.2f\n", sw.sumWantPotential(c))
+// 		// }
+// 		// If we want this block, record that the peer does not have the block
+// 		// if sw.unlockedIsWanted(c) {
+// 		// 	sw.liveWants.updateBlockPresence(c, p, false)
+// 		// 	// log.Warningf("        updated block presence to DONT_HAVE\n")
+// 		// }
+// 	}
+// }
 
 func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, peer.ID, []peer.ID) {
 	now := time.Now()
@@ -224,25 +246,25 @@ func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, pee
 	defer sw.Unlock()
 
 	var wantHaves []cid.Cid
-log.Warningf("sw %s", sw)
 
 	c, p, potential, ph := sw.getBestPotentialLiveWant(peers)
 	if c.Defined() {
-		sw.liveWants.setWantBlockSentToPeer(c, p)
-		sw.liveWants.addWantPotential(c, p, potential)
+		// log.Warningf("getBestPotentialLiveWant(%d peers): ->%s want-block %s (+%.2f: sum %.2f / threshold %.2f) %d peer-haves",
+		// 	len(peers), p, c.String()[2:8], potential, sw.liveWants.sumWantPotential(c), sw.potentialThreshold, len(ph))
 		if _, ok := sw.liveWants[c]; !ok {
 			sw.toFetch.Remove(c)
 			sw.liveWants.setSentAt(c, now)
 		}
+		// sw.liveWants.setWantBlockSentToPeer(c, p)
+		sw.liveWants.addWantPotential(c, p, potential)
 		wantHaves = sw.getPiggybackWantHaves(c, p)
-		for _, whp := range wantHaves {
-			sw.liveWants.setWantHaveSentToPeer(whp, p)
-		}
-		for _, php := range ph {
-			sw.liveWants.setWantHaveSentToPeer(c, php)
-		}
+		// for _, whp := range wantHaves {
+		// 	sw.liveWants.setWantHaveSentToPeer(whp, p)
+		// }
+		// for _, php := range ph {
+		// 	sw.liveWants.setWantHaveSentToPeer(c, php)
+		// }
 	}
-log.Warningf("sw %s", sw)
 
 	return c, wantHaves, p, ph
 }
@@ -250,22 +272,25 @@ log.Warningf("sw %s", sw)
 // When we send a want-block to a peer, we also include want-haves for other
 // wants in our fetch / live want lists in the request
 func (sw *sessionWants) getPiggybackWantHaves(c cid.Cid, p peer.ID) []cid.Cid {
-	others := make([]cid.Cid, 0)
+	toFetch := sw.toFetch.Cids()
+	others := make([]cid.Cid, 0, len(toFetch)+len(sw.liveWants))
 
 	// Include other cids from the fetch queue
-	for _, k := range sw.toFetch.Cids() {
-		if !c.Equals(k) && !sw.liveWants.wasWantBlockSentToPeer(k, p) && !sw.liveWants.wasWantHaveSentToPeer(k, p) {
+	for _, k := range toFetch {
+		// if !c.Equals(k) && !sw.liveWants.wasWantBlockSentToPeer(k, p) && !sw.liveWants.wasWantHaveSentToPeer(k, p) {
+		if !c.Equals(k) {
 			others = append(others, k)
 		}
 	}
 	// Include other cids from the live queue
 	for k := range sw.liveWants {
-		if !c.Equals(k) && !sw.liveWants.wasWantBlockSentToPeer(k, p) && !sw.liveWants.wasWantHaveSentToPeer(k, p) {
+		// if !c.Equals(k) && !sw.liveWants.wasWantBlockSentToPeer(k, p) && !sw.liveWants.wasWantHaveSentToPeer(k, p) {
+		if !c.Equals(k) {
 			others = append(others, k)
 		}
 	}
 
-	return others
+	return sw.bsm.PeerCanSendWants(p, others)
 }
 
 type potentialGain struct {
@@ -323,33 +348,33 @@ func (sw *sessionWants) getBestPotentialLiveWant(peers []peer.ID) (cid.Cid, peer
 	// would be gained
 	pgs := make([]potentialGain, 0, sw.toFetch.Len()+len(sw.liveWants))
 	for c := range sw.liveWants {
-		// Check if the want already already has enough potential
+		// Check if the want already has enough potential
 		potential := sw.liveWants.sumWantPotential(c)
 		if potential < sw.potentialThreshold {
-			// log.Debugf("%s: live want potential %.2f is below threshold %.2f", c.String()[2:6], potential, sw.potentialThreshold)
+			// log.Warningf("  %s: live want potential %.2f is below threshold %.2f", c.String()[2:6], potential, sw.potentialThreshold)
 			maxPeer, maxGain := sw.getPotentialGain(c, peers)
 			if maxPeer != "" {
 				pgs = append(pgs, potentialGain{
-					cid: c,
+					cid:       c,
 					potential: potential,
-					maxGain: maxGain,
-					peer: maxPeer,
+					maxGain:   maxGain,
+					peer:      maxPeer,
 				})
 			}
 		} else {
-			// log.Debugf("%s: live want potential %.2f is above threshold %.2f", c.String()[2:6], potential, sw.potentialThreshold)
+			// log.Warningf("  %s: live want potential %.2f is above threshold %.2f", c.String()[2:6], potential, sw.potentialThreshold)
 		}
 	}
 	for _, c := range sw.toFetch.Cids() {
-		// log.Debugf("%s: to fetch want selected (threshold %.2f)", c.String()[2:6], sw.potentialThreshold)
+		// log.Warningf("  %s: to fetch want selected (threshold %.2f)", c.String()[2:6], sw.potentialThreshold)
 		// fmt.Printf("  selecting %s from fetch queue (session threshold %f)\n", c.String()[2:8], sw.potentialThreshold)
 		maxPeer, maxGain := sw.getPotentialGain(c, peers)
 		if maxPeer != "" {
 			pgs = append(pgs, potentialGain{
-				cid: c,
+				cid:       c,
 				potential: sw.liveWants.sumWantPotential(c),
-				maxGain: maxGain,
-				peer: maxPeer,
+				maxGain:   maxGain,
+				peer:      maxPeer,
 			})
 		}
 	}
@@ -391,7 +416,7 @@ func (sw *sessionWants) getBestPotentialLiveWant(peers []peer.ID) (cid.Cid, peer
 			if peers[i] != bestP {
 				// Don't bother sending want-have if the peer already sent us
 				// DONT_HAVE for this CID
-				if !sw.liveWants.receivedDontHaveFromPeer(bestC, peers[i]) {
+				if !sw.bpm.PeerDoesNotHaveBlock(peers[i], bestC) {
 					peerHaves = append(peerHaves, peers[i])
 					peerHavesCnt++
 				}
@@ -409,15 +434,15 @@ func (sw *sessionWants) getPotentialGain(c cid.Cid, peers []peer.ID) (peer.ID, f
 	maxGain := -1.0
 
 	// Filter peers for those that we haven't yet sent a want-block to for this CID
-	candidates := sw.liveWants.wantBlockNotSentToPeers(c, peers)
+	candidates := sw.bsm.PeersCanSendWantBlock(c, peers)
 	for _, p := range candidates {
 		gain := 0.0
 
 		// If the peer sent us a HAVE or HAVE_NOT for the cid, adjust the
 		// potential for the peer / cid combination
-		if sw.liveWants.receivedHaveFromPeer(c, p) {
+		if sw.bpm.PeerHasBlock(p, c) {
 			gain += rcvdHavePotentialGain
-		} else if sw.liveWants.receivedDontHaveFromPeer(c, p) {
+		} else if sw.bpm.PeerDoesNotHaveBlock(p, c) {
 			gain -= rcvdHavePotentialGain
 		} else {
 			// TODO: Take into account peer's uniq / dup ratio
@@ -503,8 +528,8 @@ func (sw *sessionWants) IsWanted(c cid.Cid) bool {
 	return sw.unlockedIsWanted(c)
 }
 
-// FilterWanted filters the list so that it only contains keys for
-// blocks that the session is expecting to receive
+// FilterWanted filters the list of cids for those that the session is
+// expecting to receive
 func (sw *sessionWants) FilterWanted(ks []cid.Cid) []cid.Cid {
 	sw.RLock()
 	defer sw.RUnlock()
@@ -545,9 +570,9 @@ func (sw *sessionWants) unlockedIsWanted(c cid.Cid) bool {
 
 type liveInfo struct {
 	peerPotential map[peer.ID]float64
-	blockPresence map[peer.ID]bool
-	sentWantBlockTo []peer.ID
-	sentWantHaveTo []peer.ID
+	// blockPresence map[peer.ID]bool
+	// sentWantBlockTo []peer.ID
+	// sentWantHaveTo []peer.ID
 	sentAt time.Time
 }
 
@@ -557,32 +582,28 @@ func newLiveWantsInfo() liveWantsInfo {
 	return make(liveWantsInfo)
 }
 
-func (wi liveWantsInfo) clearLiveWant(c cid.Cid) {
+func (wi liveWantsInfo) removeLiveWant(c cid.Cid) {
 	delete(wi, c)
 }
 
-func (wi liveWantsInfo) getOrCreate(c cid.Cid) *liveInfo {
+func (wi liveWantsInfo) setSentAt(c cid.Cid, at time.Time) {
 	_, ok := wi[c]
-	if !ok {
+	if ok {
+		wi[c].sentAt = at
+	} else {
 		wi[c] = &liveInfo{
 			peerPotential: make(map[peer.ID]float64),
-			blockPresence: make(map[peer.ID]bool),
-			sentWantBlockTo: make([]peer.ID, 0),
-			sentWantHaveTo: make([]peer.ID, 0),
+			// blockPresence: make(map[peer.ID]bool),
 			sentAt: time.Time{},
 		}
 	}
-	return wi[c]
-}
-
-func (wi liveWantsInfo) setSentAt(c cid.Cid, at time.Time) {
-	li := wi.getOrCreate(c)
-	li.sentAt = at
-	wi[c] = li
 }
 
 func (wi liveWantsInfo) addWantPotential(c cid.Cid, p peer.ID, gain float64) {
-	li := wi.getOrCreate(c)
+	li, ok := wi[c]
+	if !ok {
+		panic("addWantPotential() should only ever be called after setSentAt()")
+	}
 	li.peerPotential[p] = gain
 }
 
@@ -600,90 +621,4 @@ func (wi liveWantsInfo) sumWantPotential(c cid.Cid) float64 {
 		}
 	}
 	return total
-}
-
-func (wi liveWantsInfo) updateBlockPresence(c cid.Cid, p peer.ID, present bool) {
-	li := wi.getOrCreate(c)
-	has, ok := li.blockPresence[p]
-	// Make sure not to change HAVE to DONT_HAVE
-	if ok && has {
-		return
-	}
-	li.blockPresence[p] = present
-}
-
-func (wi liveWantsInfo) receivedHaveFromPeer(c cid.Cid, p peer.ID) bool {
-	if li, ok := wi[c]; ok {
-		if has, pok := li.blockPresence[p]; pok && has {
-			return true
-		}
-	}
-	return false
-}
-
-func (wi liveWantsInfo) receivedDontHaveFromPeer(c cid.Cid, p peer.ID) bool {
-	if li, ok := wi[c]; ok {
-		if has, pok := li.blockPresence[p]; pok && !has {
-			return true
-		}
-	}
-	return false
-}
-
-func (wi liveWantsInfo) wasWantBlockSentToPeer(c cid.Cid, p peer.ID) bool {
-	li, ok := wi[c]
-	if !ok {
-		return false
-	}
-	for _, stp := range li.sentWantBlockTo {
-		if stp == p {
-			return true
-		}
-	}
-	return false
-}
-
-func (wi liveWantsInfo) wasWantHaveSentToPeer(c cid.Cid, p peer.ID) bool {
-	li, ok := wi[c]
-	if !ok {
-		return false
-	}
-	for _, stp := range li.sentWantHaveTo {
-		if stp == p {
-			return true
-		}
-	}
-	return false
-}
-
-func (wi liveWantsInfo) wantBlockNotSentToPeers(c cid.Cid, peers []peer.ID) []peer.ID {
-	li, ok := wi[c]
-	if !ok {
-		// fmt.Printf("      wantBlockNotSentToPeers no record\n")
-		return peers
-	}
-
-	ps := make([]peer.ID, 0, len(peers))
-	for _, p := range peers {
-		sentWantBlockToPeer := false
-		for _, stp := range li.sentWantBlockTo {
-			if p == stp {
-				sentWantBlockToPeer = true
-			}
-		}
-		if !sentWantBlockToPeer {
-			ps = append(ps, p)
-		}
-	}
-	return ps
-}
-
-func (wi liveWantsInfo) setWantBlockSentToPeer(c cid.Cid, p peer.ID) {
-	li := wi.getOrCreate(c)
-	li.sentWantBlockTo = append(li.sentWantBlockTo, p)
-}
-
-func (wi liveWantsInfo) setWantHaveSentToPeer(c cid.Cid, p peer.ID) {
-	li := wi.getOrCreate(c)
-	li.sentWantHaveTo = append(li.sentWantHaveTo, p)
 }

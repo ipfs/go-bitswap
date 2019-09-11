@@ -12,6 +12,7 @@ import (
 	bssrs "github.com/ipfs/go-bitswap/sessionrequestsplitter"
 	delay "github.com/ipfs/go-ipfs-delay"
 
+	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
 	decision "github.com/ipfs/go-bitswap/decision"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -22,6 +23,7 @@ import (
 	bspm "github.com/ipfs/go-bitswap/peermanager"
 	bspqm "github.com/ipfs/go-bitswap/providerquerymanager"
 	bssession "github.com/ipfs/go-bitswap/session"
+	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
 	bssm "github.com/ipfs/go-bitswap/sessionmanager"
 	bsspm "github.com/ipfs/go-bitswap/sessionpeermanager"
 	bswm "github.com/ipfs/go-bitswap/wantmanager"
@@ -115,15 +117,19 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		return bsmq.New(ctx, p, network)
 	}
 
-	wm := bswm.New(ctx, bspm.New(ctx, peerQueueFactory))
+	sim := bssim.New()
+	bpm := bsbpm.New()
+	pm := bspm.New(ctx, peerQueueFactory)
+	wm := bswm.New(ctx, pm, sim, bpm)
 	pqm := bspqm.New(ctx, network)
 
 	sessionFactory := func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter,
 		pb *bspb.PeerBroker,
+		bpm *bsbpm.BlockPresenceManager,
 		notif notifications.PubSub,
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D) bssm.Session {
-		return bssession.New(ctx, id, wm, pm, srs, pb, notif, provSearchDelay, rebroadcastDelay)
+		return bssession.New(ctx, id, wm, pm, srs, pb, bpm, notif, provSearchDelay, rebroadcastDelay)
 	}
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.PeerManager {
 		return bsspm.New(ctx, id, network.ConnectionManager(), pqm)
@@ -133,6 +139,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 	notif := notifications.New()
 	peerBroker := bspb.New(ctx, wm)
+	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, peerBroker, notif)
+	wm.SetSessionManager(sm)
 
 	bs := &Bitswap{
 		blockstore:       bstore,
@@ -142,8 +150,9 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
 		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
 		wm:               wm,
+		pm:               pm,
 		pqm:              pqm,
-		sm:               bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, sessionRequestSplitterFactory, peerBroker, notif),
+		sm:               sm,
 		notif:            notif,
 		counters:         new(counters),
 		dupMetric:        dupHist,
@@ -159,7 +168,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		option(bs)
 	}
 
-	bs.wm.Startup()
+	// bs.wm.Startup()
 	bs.pqm.Startup()
 	network.SetDelegate(bs)
 	peerBroker.Startup()
@@ -183,6 +192,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 type Bitswap struct {
 	// the wantlist tracks global wants for bitswap
 	wm *bswm.WantManager
+
+	pm *bspm.PeerManager
 
 	// the provider query manager manages requests to find providers
 	pqm *bspqm.ProviderQueryManager
@@ -297,13 +308,18 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	// If blocks came from the network
 	if from != "" {
 		// Split blocks into wanted blocks vs duplicates
-		wanted = make([]blocks.Block, 0, len(blks))
-		for _, b := range blks {
-			if bs.sm.IsWanted(b.Cid()) {
-				wanted = append(wanted, b)
-			} else {
-				log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
-			}
+		// wanted = make([]blocks.Block, 0, len(blks))
+		// for _, b := range blks {
+		// 	if bs.sm.IsWanted(b.Cid()) {
+		// 		wanted = append(wanted, b)
+		// 	} else {
+		// 		log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
+		// 	}
+		// }
+		var notWanted []blocks.Block
+		wanted, notWanted = bs.sm.FilterWanted(blks)
+		for _, b := range notWanted {
+			log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
 		}
 	}
 
@@ -333,9 +349,10 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 		}
 	}
 
-	// Send all block keys (including duplicates) to any sessions that want them.
-	// (The duplicates are needed by sessions for accounting purposes)
-	bs.sm.ReceiveFrom(from, allKs, haves, dontHaves)
+	// // Send all block keys (including duplicates) to any sessions that want them.
+	// // (The duplicates are needed by sessions for accounting purposes)
+	// bs.sm.ReceiveFrom(from, allKs, haves, dontHaves)
+	bs.wm.ReceiveFrom(ctx, from, allKs, haves, dontHaves)
 
 	// Send wanted block keys to decision engine
 	bs.engine.AddBlocks(wantedKs)
@@ -482,12 +499,7 @@ func (bs *Bitswap) Close() error {
 
 // GetWantlist returns the current local wantlist.
 func (bs *Bitswap) GetWantlist() []cid.Cid {
-	entries := bs.wm.CurrentWants()
-	out := make([]cid.Cid, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.Cid)
-	}
-	return out
+	return bs.pm.CurrentWants()
 }
 
 // IsOnline is needed to match go-ipfs-exchange-interface
