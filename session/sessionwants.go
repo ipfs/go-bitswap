@@ -23,30 +23,22 @@ type BlockSentManager interface {
 
 type sessionWants struct {
 	sync.RWMutex
-	toFetch *cidQueue
-	// liveWants map[cid.Cid]time.Time
+	toFetch   *cidQueue
 	liveWants liveWantsInfo
 	pastWants *cid.Set
 
-	bpm *bsbpm.BlockPresenceManager
-	bsm BlockSentManager
-	// wantPotential      map[cid.Cid]map[peer.ID]float64
-	// wantPeers          map[cid.Cid][]peer.ID
+	bpm                   *bsbpm.BlockPresenceManager
+	bsm                   BlockSentManager
 	potentialThresholdMgr *potentialThresholdManager
 
-	// blockPresence map[cid.Cid]map[peer.ID]bool
 	maxPeerHaves int
 }
 
 func newSessionWants(bpm *bsbpm.BlockPresenceManager, bsm BlockSentManager) sessionWants {
 	return sessionWants{
-		// liveWants:          make(map[cid.Cid]time.Time),
-		liveWants: newLiveWantsInfo(),
-		toFetch:   newCidQueue(),
-		pastWants: cid.NewSet(),
-		// wantPotential:      make(map[cid.Cid]map[peer.ID]float64),
-		// wantPeers:          make(map[cid.Cid][]peer.ID),
-		// blockPresence:      make(map[cid.Cid]map[peer.ID]bool),
+		liveWants:             newLiveWantsInfo(),
+		toFetch:               newCidQueue(),
+		pastWants:             cid.NewSet(),
 		bpm:                   bpm,
 		bsm:                   bsm,
 		potentialThresholdMgr: newPotentialThresholdManager(),
@@ -161,10 +153,6 @@ func (sw *sessionWants) PrepareBroadcast() []cid.Cid {
 	defer sw.Unlock()
 
 	live := make([]cid.Cid, 0, len(sw.liveWants))
-	// for _, c := range sw.toFetch.Cids() {
-	// 	live = append(live, c)
-	// 	sw.liveWants.setSentAt(c, now)
-	// }
 	for c := range sw.liveWants {
 		live = append(live, c)
 		sw.liveWants.setSentAt(c, now)
@@ -182,22 +170,6 @@ func (sw *sessionWants) CancelPending(keys []cid.Cid) {
 	}
 }
 
-// // ForEachUniqDup iterates over each of the given CIDs and calls isUniqFn
-// // if the session is expecting a block for the CID, or isDupFn if the session
-// // has already received the block.
-// func (sw *sessionWants) ForEachUniqDup(ks []cid.Cid, isUniqFn, isDupFn func()) {
-// 	sw.RLock()
-// 	defer sw.RUnlock()
-
-// 	for _, k := range ks {
-// 		if sw.unlockedIsWanted(k) {
-// 			isUniqFn()
-// 		} else if sw.pastWants.Has(k) {
-// 			isDupFn()
-// 		}
-// 	}
-// }
-
 func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 	sw.Lock()
 	defer sw.Unlock()
@@ -206,37 +178,6 @@ func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 		sw.toFetch.Push(k)
 	}
 }
-
-// func (sw *sessionWants) BlockInfoReceived(p peer.ID, haves []cid.Cid, dontHaves []cid.Cid) {
-// 	sw.Lock()
-// 	defer sw.Unlock()
-
-// 	// For each HAVE
-// 	for _, c := range haves {
-// 		// log.Warningf("      sesswants: info<-%s HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
-// 		// If we want this block, record that the peer has the block
-// 		// if sw.unlockedIsWanted(c) {
-// 		// 	sw.liveWants.updateBlockPresence(c, p, true)
-// 		// 	// log.Warningf("        updated block presence to HAVE\n")
-// 		// }
-// 	}
-
-// 	// For each DONT_HAVE
-// 	for _, c := range dontHaves {
-// 		// log.Warningf("      sesswants: info<-%s DONT_HAVE: %s (potential %.2f)\n", p, c.String()[2:8], sw.sumWantPotential(c))
-// 		// If we sent a want-block to this peer, decrease the want's potential by the
-// 		// corresponding amount
-// 		// if sw.liveWants.wasWantBlockSentToPeer(c, p) {
-// 			sw.liveWants.removeWantPotential(c, p)
-// 			// log.Warningf("        new potential:  %.2f\n", sw.sumWantPotential(c))
-// 		// }
-// 		// If we want this block, record that the peer does not have the block
-// 		// if sw.unlockedIsWanted(c) {
-// 		// 	sw.liveWants.updateBlockPresence(c, p, false)
-// 		// 	// log.Warningf("        updated block presence to DONT_HAVE\n")
-// 		// }
-// 	}
-// }
 
 func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, peer.ID, []peer.ID) {
 	now := time.Now()
@@ -254,15 +195,8 @@ func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, pee
 			sw.toFetch.Remove(c)
 			sw.liveWants.setSentAt(c, now)
 		}
-		// sw.liveWants.setWantBlockSentToPeer(c, p)
 		sw.liveWants.addWantPotential(c, p, potential)
 		wantHaves = sw.getPiggybackWantHaves(c, p)
-		// for _, whp := range wantHaves {
-		// 	sw.liveWants.setWantHaveSentToPeer(whp, p)
-		// }
-		// for _, php := range ph {
-		// 	sw.liveWants.setWantHaveSentToPeer(c, php)
-		// }
 	}
 
 	return c, wantHaves, p, ph
@@ -458,9 +392,6 @@ func (sw *sessionWants) getPotentialGain(c cid.Cid, peers []peer.ID) (peer.ID, f
 		}
 	}
 
-	// // Current total potential for the cid
-	// potential := sw.sumWantPotential(c)
-	// return potentialGain{c, potential, maxGain, maxPeer}
 	return maxPeer, maxGain
 }
 
@@ -569,10 +500,7 @@ func (sw *sessionWants) unlockedIsWanted(c cid.Cid) bool {
 
 type liveInfo struct {
 	peerPotential map[peer.ID]float64
-	// blockPresence map[peer.ID]bool
-	// sentWantBlockTo []peer.ID
-	// sentWantHaveTo []peer.ID
-	sentAt time.Time
+	sentAt        time.Time
 }
 
 type liveWantsInfo map[cid.Cid]*liveInfo
@@ -592,8 +520,7 @@ func (wi liveWantsInfo) setSentAt(c cid.Cid, at time.Time) {
 	} else {
 		wi[c] = &liveInfo{
 			peerPotential: make(map[peer.ID]float64),
-			// blockPresence: make(map[peer.ID]bool),
-			sentAt: time.Time{},
+			sentAt:        time.Time{},
 		}
 	}
 }
