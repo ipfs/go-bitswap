@@ -201,11 +201,6 @@ func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []c
 	// }
 }
 
-// IsWanted returns true if this session is waiting to receive the given Cid.
-func (s *Session) IsWanted(c cid.Cid) bool {
-	return s.sw.IsWanted(c)
-}
-
 func (s *Session) MatchWantPeer(ps []peer.ID) *bspbkr.SessionAsk {
 	// Check if the session is interested in any of the available peers
 	matches := make([]peer.ID, 0, len(ps))

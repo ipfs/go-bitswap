@@ -23,7 +23,6 @@ type Session interface {
 	exchange.Fetcher
 	ID() uint64
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
-	IsWanted(cid.Cid) bool
 	FilterWanted([]cid.Cid) []cid.Cid
 }
 
