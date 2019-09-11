@@ -20,7 +20,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-peertaskqueue v0.1.1
+	github.com/ipfs/go-peertaskqueue v0.1.1-0.20190911200145-3f68766572c5
 	github.com/jbenet/goprocess v0.1.3
 	github.com/libp2p/go-buffer-pool v0.0.2
 	github.com/libp2p/go-libp2p v0.1.1
@@ -38,5 +38,3 @@ require (
 	golang.org/x/text v0.3.2 // indirect
 	gopkg.in/yaml.v2 v2.2.2 // indirect
 )
-
-replace github.com/ipfs/go-peertaskqueue => ../go-peertaskqueue
