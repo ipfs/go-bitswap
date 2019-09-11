@@ -32,7 +32,7 @@ type sessionWants struct {
 	bsm BlockSentManager
 	// wantPotential      map[cid.Cid]map[peer.ID]float64
 	// wantPeers          map[cid.Cid][]peer.ID
-	potentialThreshold float64
+	potentialThresholdMgr *potentialThresholdManager
 
 	// blockPresence map[cid.Cid]map[peer.ID]bool
 	maxPeerHaves int
@@ -47,40 +47,15 @@ func newSessionWants(bpm *bsbpm.BlockPresenceManager, bsm BlockSentManager) sess
 		// wantPotential:      make(map[cid.Cid]map[peer.ID]float64),
 		// wantPeers:          make(map[cid.Cid][]peer.ID),
 		// blockPresence:      make(map[cid.Cid]map[peer.ID]bool),
-		bpm:                bpm,
-		bsm:                bsm,
-		potentialThreshold: 1.5,
-		maxPeerHaves:       16,
+		bpm:                   bpm,
+		bsm:                   bsm,
+		potentialThresholdMgr: newPotentialThresholdManager(),
+		maxPeerHaves:          16,
 	}
 }
 
 func (sw *sessionWants) String() string {
 	return fmt.Sprintf("%d past / %d pending / %d live", sw.pastWants.Len(), sw.toFetch.Len(), len(sw.liveWants))
-}
-
-func (sw *sessionWants) PotentialThreshold() float64 {
-	sw.RLock()
-	defer sw.RUnlock()
-
-	return sw.potentialThreshold
-}
-
-func (sw *sessionWants) IncrementPotentialThreshold() {
-	sw.Lock()
-	defer sw.Unlock()
-
-	sw.potentialThreshold++
-}
-
-func (sw *sessionWants) DecreasePotentialThreshold() {
-	sw.Lock()
-	defer sw.Unlock()
-
-	sw.potentialThreshold = sw.potentialThreshold * 0.9
-	if sw.potentialThreshold < 0.5 {
-		sw.potentialThreshold = 0.5
-	}
-	// log.Warningf("potentialThreshold: %f\n", sw.potentialThreshold)
 }
 
 // ReceiveFrom moves received block CIDs from live to past wants and
@@ -91,6 +66,13 @@ func (sw *sessionWants) ReceiveFrom(p peer.ID, ks []cid.Cid, dontHaves []cid.Cid
 
 	sw.Lock()
 	defer sw.Unlock()
+
+	// Only record uniqs / dups if the block came from the network
+	// (as opposed to coming from the local node)
+	if p != "" {
+		uniqKs, dupKs := sw.uniqDups(ks)
+		sw.potentialThresholdMgr.ReceivedBlocks(uniqKs, dupKs)
+	}
 
 	sw.dontHavesReceived(p, dontHaves)
 
@@ -123,6 +105,23 @@ func (sw *sessionWants) dontHavesReceived(p peer.ID, dontHaves []cid.Cid) {
 		// corresponding amount
 		sw.liveWants.removeWantPotential(c, p)
 	}
+}
+
+func (sw *sessionWants) uniqDups(ks []cid.Cid) ([]cid.Cid, []cid.Cid) {
+	uniqs := make([]cid.Cid, 0)
+	dups := make([]cid.Cid, 0)
+	for _, k := range ks {
+		if sw.unlockedIsWanted(k) {
+			uniqs = append(uniqs, k)
+		} else if sw.pastWants.Has(k) {
+			dups = append(dups, k)
+		}
+	}
+	return uniqs, dups
+}
+
+func (sw *sessionWants) IdleTimeout() {
+	sw.potentialThresholdMgr.IdleTimeout()
 }
 
 // GetNextWants adds any new wants to the list of CIDs to fetch, then moves as
@@ -183,21 +182,21 @@ func (sw *sessionWants) CancelPending(keys []cid.Cid) {
 	}
 }
 
-// ForEachUniqDup iterates over each of the given CIDs and calls isUniqFn
-// if the session is expecting a block for the CID, or isDupFn if the session
-// has already received the block.
-func (sw *sessionWants) ForEachUniqDup(ks []cid.Cid, isUniqFn, isDupFn func()) {
-	sw.RLock()
-	defer sw.RUnlock()
+// // ForEachUniqDup iterates over each of the given CIDs and calls isUniqFn
+// // if the session is expecting a block for the CID, or isDupFn if the session
+// // has already received the block.
+// func (sw *sessionWants) ForEachUniqDup(ks []cid.Cid, isUniqFn, isDupFn func()) {
+// 	sw.RLock()
+// 	defer sw.RUnlock()
 
-	for _, k := range ks {
-		if sw.unlockedIsWanted(k) {
-			isUniqFn()
-		} else if sw.pastWants.Has(k) {
-			isDupFn()
-		}
-	}
-}
+// 	for _, k := range ks {
+// 		if sw.unlockedIsWanted(k) {
+// 			isUniqFn()
+// 		} else if sw.pastWants.Has(k) {
+// 			isDupFn()
+// 		}
+// 	}
+// }
 
 func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 	sw.Lock()
@@ -350,7 +349,7 @@ func (sw *sessionWants) getBestPotentialLiveWant(peers []peer.ID) (cid.Cid, peer
 	for c := range sw.liveWants {
 		// Check if the want already has enough potential
 		potential := sw.liveWants.sumWantPotential(c)
-		if potential < sw.potentialThreshold {
+		if potential < sw.potentialThresholdMgr.PotentialThreshold() {
 			// log.Warningf("  %s: live want potential %.2f is below threshold %.2f", c.String()[2:6], potential, sw.potentialThreshold)
 			maxPeer, maxGain := sw.getPotentialGain(c, peers)
 			if maxPeer != "" {

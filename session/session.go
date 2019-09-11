@@ -91,7 +91,6 @@ type Session struct {
 	periodicSearchTimer *time.Timer
 	baseTickDelay       time.Duration
 	consecutiveTicks    int
-	recentWasUnique     []bool
 	initialSearchDelay  time.Duration
 	periodicSearchDelay delay.D
 	// identifiers
@@ -160,10 +159,10 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 		log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
 	}
 
-	// Record statistics only if the blocks came from the network
+	// Record response timing only if the blocks came from the network
 	// (blocks can also be received from the local node)
 	if len(interestedKs) > 0 && from != "" {
-		s.updateReceiveCounters(from, interestedKs)
+		s.pm.RecordPeerResponse(from, interestedKs)
 	}
 
 	if len(interestedKs) == 0 && len(dontHaves) == 0 {
@@ -327,9 +326,8 @@ func (s *Session) handleIdleTick(ctx context.Context) {
 
 	// If we have live wants
 	if s.sw.HasLiveWants() {
-		// Bump the potential threshold so that each CID will be sent as a
-		// want-block to more peers
-		s.sw.IncrementPotentialThreshold()
+		// Inform the potential threshold manager of the idle timeout
+		s.sw.IdleTimeout()
 		s.consecutiveTicks++
 	}
 }
@@ -369,51 +367,6 @@ func (s *Session) handleReceive(ks []cid.Cid) {
 	s.pm.RecordCancels(ks)
 
 	s.resetIdleTick()
-}
-
-func (s *Session) updateReceiveCounters(from peer.ID, keys []cid.Cid) {
-	maxRecent := 256
-
-	// TODO: If we sent a want-have but received a block, (because the block
-	// was small enough for the responder to send the block instead of a HAVE)
-	// don't count the block as a duplicate.
-
-	// Record unique vs duplicate blocks
-	s.sw.ForEachUniqDup(keys, func() {
-		s.srs.RecordUniqueBlock()
-		s.recentWasUnique = append(s.recentWasUnique, true)
-	}, func() {
-		s.srs.RecordDuplicateBlock()
-		s.recentWasUnique = append(s.recentWasUnique, false)
-	})
-
-	poplen := len(s.recentWasUnique) - maxRecent
-	if poplen > 0 {
-		s.recentWasUnique = s.recentWasUnique[poplen:]
-	}
-	// fmt.Println("recentWasUnique", s.recentWasUnique)
-	if len(s.recentWasUnique) > 16 {
-		unqCount := 1
-		dupCount := 1
-		for _, u := range s.recentWasUnique {
-			if u {
-				unqCount++
-			} else {
-				dupCount++
-			}
-		}
-		total := unqCount + dupCount
-		uniqTotalRatio := float64(unqCount) / float64(total)
-		log.Debugf("Ses%d: uniq / total: %d / %d = %f\n", s.id, unqCount, total, uniqTotalRatio)
-		if uniqTotalRatio < 0.8 {
-			s.sw.DecreasePotentialThreshold()
-		}
-	}
-
-	// Record response (to be able to time latency)
-	if len(keys) > 0 {
-		s.pm.RecordPeerResponse(from, keys)
-	}
 }
 
 // TODO: Move all peer management into s.pm (SessionPeerManager)

@@ -69,7 +69,6 @@ func (pm *PeerManager) ConnectedPeers() []peer.ID {
 
 // Connected is called to add a new peer to the pool, and send it an initial set
 // of wants.
-// func (pm *PeerManager) Connected(p peer.ID, initialWants *wantlist.SessionTrackedWantlist) {
 func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
 	pm.Lock()
 	defer pm.Unlock()
