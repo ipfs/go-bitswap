@@ -22,6 +22,8 @@ const (
 	maxRetries                 = 10
 	// maxPriority is the max priority as defined by the bitswap protocol
 	maxPriority = math.MaxInt32
+	// sendMessageDebounce is the debounce duration when calling sendMessage():
+	sendMessageDebounce = time.Millisecond
 )
 
 // MessageNetwork is any network that can connect peers and generate a message
@@ -109,23 +111,6 @@ func (mq *MessageQueue) addMessageEntries(addEntriesFn func()) {
 	}
 }
 
-// // AddMessage adds new entries to an outgoing message for a given session.
-// func (mq *MessageQueue) AddMessage(entries []bsmsg.Entry, ses uint64) {
-// 	if !mq.addEntries(entries, ses) {
-// 		return
-// 	}
-// 	select {
-// 	case mq.outgoingWork <- struct{}{}:
-// 	default:
-// 	}
-// }
-
-// AddWantlist adds a complete session tracked want list to a message queue
-// func (mq *MessageQueue) AddWantlist(initialWants *wantlist.SessionTrackedWantlist) {
-// 	initialWants.CopyWants(mq.wl)
-// 	mq.addWantlist()
-// }
-
 // SetRebroadcastInterval sets a new interval on which to rebroadcast the full wantlist
 func (mq *MessageQueue) SetRebroadcastInterval(delay time.Duration) {
 	mq.rebroadcastIntervalLk.Lock()
@@ -151,12 +136,15 @@ func (mq *MessageQueue) Shutdown() {
 }
 
 func (mq *MessageQueue) runQueue() {
+	debounceSendMessage := Debounce(sendMessageDebounce, mq.sendMessage)
+
 	for {
 		select {
 		case <-mq.rebroadcastTimer.C:
 			mq.rebroadcastWantlist()
 		case <-mq.outgoingWork:
-			mq.sendMessage()
+			// mq.sendMessage()
+			debounceSendMessage()
 		case <-mq.done:
 			if mq.sender != nil {
 				mq.sender.Close()
@@ -198,33 +186,6 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 
 	mq.addWantlist()
 }
-
-// func (mq *MessageQueue) addEntries(entries []bsmsg.Entry, ses uint64) bool {
-// 	var work bool
-// 	mq.nextMessageLk.Lock()
-// 	defer mq.nextMessageLk.Unlock()
-// 	// if we have no message held allocate a new one
-// 	if mq.nextMessage == nil {
-// 		mq.nextMessage = bsmsg.New(false)
-// 	}
-
-// 	for _, e := range entries {
-// 		if e.Cancel {
-// 			// Note: We don't want to actually send out a cancel message for
-// 			// want-have, only for want-block
-// 			if mq.wl.Remove(e.Cid, ses, e.WantType) && e.WantType == wantlist.WantType_Block {
-// 				work = true
-// 				mq.nextMessage.Cancel(e.Cid)
-// 			}
-// 		} else {
-// 			if mq.wl.Add(e.Cid, e.Priority, e.WantType, e.SendDontHave, ses) {
-// 				work = true
-// 				mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
-// 			}
-// 		}
-// 	}
-// 	return work
-// }
 
 func (mq *MessageQueue) extractOutgoingMessage() bsmsg.BitSwapMessage {
 	// grab outgoing message
