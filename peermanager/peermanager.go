@@ -4,9 +4,6 @@ import (
 	"context"
 	"sync"
 
-	// bsmsg "github.com/ipfs/go-bitswap/message"
-	// wantlist "github.com/ipfs/go-bitswap/wantlist"
-
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -16,12 +13,10 @@ var log = logging.Logger("bs:pmgr")
 
 // PeerQueue provides a queue of messages to be sent for a single peer.
 type PeerQueue interface {
-	// AddMessage(entries []bsmsg.Entry, ses uint64)
 	AddBroadcastWantHaves([]cid.Cid)
 	AddWants([]cid.Cid, []cid.Cid)
 	AddCancels([]cid.Cid)
 	Startup()
-	// AddWantlist(initialWants *wantlist.SessionTrackedWantlist)
 	Shutdown()
 }
 
@@ -83,7 +78,6 @@ func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
 
 	if pq.refcnt == 0 {
 		// Broadcast any live want-haves to the newly connected peers
-		// pq.pq.AddWantlist(initialWants)
 		pq.pq.AddBroadcastWantHaves(initialWantHaves)
 	}
 
@@ -141,24 +135,6 @@ func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
 		pqi.pq.AddCancels(ks)
 	}
 }
-
-// SendMessage is called to send a message to all or some peers in the pool;
-// if targets is nil, it sends to all.
-// func (pm *PeerManager) SendMessage(entries []bsmsg.Entry, targets []peer.ID, from uint64) {
-// 	pm.Lock()
-// 	defer pm.UnLock()
-
-// 	if len(targets) == 0 {
-// 		for _, p := range pm.peerQueues {
-// 			p.pq.AddMessage(entries, from)
-// 		}
-// 	} else {
-// 		for _, t := range targets {
-// 			pqi := pm.getOrCreate(t)
-// 			pqi.pq.AddMessage(entries, from)
-// 		}
-// 	}
-// }
 
 func (pm *PeerManager) PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid {
 	pm.RLock()
