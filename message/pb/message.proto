@@ -29,17 +29,17 @@ message Message {
     bytes data = 2;
   }
 
-  enum BlockInfoType {
+  enum BlockPresenceType {
     Have = 0;
     DontHave = 1;
   }
-  message BlockInfo {
+  message BlockPresence {
     bytes cid = 1;
-    BlockInfoType type = 2;
+    BlockPresenceType type = 2;
   }
 
   Wantlist wantlist = 1 [(gogoproto.nullable) = false];
   repeated bytes blocks = 2;		// used to send Blocks in bitswap 1.0.0
   repeated Block payload = 3 [(gogoproto.nullable) = false];		// used to send Blocks in bitswap 1.1.0
-  repeated BlockInfo blockInfos = 4 [(gogoproto.nullable) = false];
+  repeated BlockPresence blockPresences = 4 [(gogoproto.nullable) = false];
 }

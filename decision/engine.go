@@ -81,6 +81,8 @@ type Envelope struct {
 	Sent func()
 }
 
+// blockInfo is used internally to pass information to the PeerTaskQueue and
+// get it out on the other side
 type blockInfo struct {
 	sendDontHave bool
 	wantType     pb.Message_Wantlist_WantType

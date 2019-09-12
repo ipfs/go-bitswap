@@ -25,7 +25,7 @@ type BitSwapMessage interface {
 
 	// Blocks returns a slice of unique blocks.
 	Blocks() []blocks.Block
-	BlockInfos() []pb.Message_BlockInfo
+	BlockPresences() []pb.Message_BlockPresence
 	Haves() []cid.Cid
 	DontHaves() []cid.Cid
 
@@ -40,7 +40,7 @@ type BitSwapMessage interface {
 	Full() bool
 
 	AddBlock(blocks.Block)
-	AddBlockInfo(cid.Cid, pb.Message_BlockInfoType)
+	AddBlockPresence(cid.Cid, pb.Message_BlockPresenceType)
 	AddHave(cid.Cid)
 	AddDontHave(cid.Cid)
 	Exportable
@@ -58,10 +58,10 @@ type Exportable interface {
 }
 
 type impl struct {
-	full       bool
-	wantlist   map[cid.Cid]*Entry
-	blocks     map[cid.Cid]blocks.Block
-	blockInfos map[cid.Cid]pb.Message_BlockInfoType
+	full           bool
+	wantlist       map[cid.Cid]*Entry
+	blocks         map[cid.Cid]blocks.Block
+	blockPresences map[cid.Cid]pb.Message_BlockPresenceType
 }
 
 // New returns a new, empty bitswap message
@@ -71,10 +71,10 @@ func New(full bool) BitSwapMessage {
 
 func newMsg(full bool) *impl {
 	return &impl{
-		blocks:     make(map[cid.Cid]blocks.Block),
-		blockInfos: make(map[cid.Cid]pb.Message_BlockInfoType),
-		wantlist:   make(map[cid.Cid]*Entry),
-		full:       full,
+		blocks:         make(map[cid.Cid]blocks.Block),
+		blockPresences: make(map[cid.Cid]pb.Message_BlockPresenceType),
+		wantlist:       make(map[cid.Cid]*Entry),
+		full:           full,
 	}
 }
 
@@ -126,14 +126,14 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 		m.AddBlock(blk)
 	}
 
-	for _, bi := range pbm.GetBlockInfos() {
+	for _, bi := range pbm.GetBlockPresences() {
 		c, err := cid.Cast(bi.GetCid())
 		if err != nil {
 			return nil, err
 		}
 
 		t := bi.GetType()
-		m.AddBlockInfo(c, t)
+		m.AddBlockPresence(c, t)
 	}
 
 	return m, nil
@@ -144,7 +144,7 @@ func (m *impl) Full() bool {
 }
 
 func (m *impl) Empty() bool {
-	return len(m.blocks) == 0 && len(m.wantlist) == 0 && len(m.blockInfos) == 0
+	return len(m.blocks) == 0 && len(m.wantlist) == 0 && len(m.blockPresences) == 0
 }
 
 func (m *impl) Wantlist() []Entry {
@@ -163,25 +163,25 @@ func (m *impl) Blocks() []blocks.Block {
 	return bs
 }
 
-func (m *impl) BlockInfos() []pb.Message_BlockInfo {
-	bis := make([]pb.Message_BlockInfo, 0, len(m.blockInfos))
-	for c, t := range m.blockInfos {
-		bis = append(bis, pb.Message_BlockInfo{c.Bytes(), t})
+func (m *impl) BlockPresences() []pb.Message_BlockPresence {
+	bis := make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
+	for c, t := range m.blockPresences {
+		bis = append(bis, pb.Message_BlockPresence{c.Bytes(), t})
 	}
 	return bis
 }
 
 func (m *impl) Haves() []cid.Cid {
-	return m.getBlockInfoByType(pb.Message_Have)
+	return m.getBlockPresenceByType(pb.Message_Have)
 }
 
 func (m *impl) DontHaves() []cid.Cid {
-	return m.getBlockInfoByType(pb.Message_DontHave)
+	return m.getBlockPresenceByType(pb.Message_DontHave)
 }
 
-func (m *impl) getBlockInfoByType(t pb.Message_BlockInfoType) []cid.Cid {
+func (m *impl) getBlockPresenceByType(t pb.Message_BlockPresenceType) []cid.Cid {
 	cids := make([]cid.Cid, 0)
-	for c, bit := range m.blockInfos {
+	for c, bit := range m.blockPresences {
 		if bit == t {
 			cids = append(cids, c)
 		}
@@ -225,16 +225,16 @@ func (m *impl) AddBlock(b blocks.Block) {
 	m.blocks[b.Cid()] = b
 }
 
-func (m *impl) AddBlockInfo(c cid.Cid, t pb.Message_BlockInfoType) {
-	m.blockInfos[c] = t
+func (m *impl) AddBlockPresence(c cid.Cid, t pb.Message_BlockPresenceType) {
+	m.blockPresences[c] = t
 }
 
 func (m *impl) AddHave(c cid.Cid) {
-	m.AddBlockInfo(c, pb.Message_Have)
+	m.AddBlockPresence(c, pb.Message_Have)
 }
 
 func (m *impl) AddDontHave(c cid.Cid) {
-	m.AddBlockInfo(c, pb.Message_DontHave)
+	m.AddBlockPresence(c, pb.Message_DontHave)
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.
@@ -305,9 +305,9 @@ func (m *impl) ToProtoV1() *pb.Message {
 		})
 	}
 
-	pbm.BlockInfos = make([]pb.Message_BlockInfo, 0, len(m.blockInfos))
-	for c, t := range m.blockInfos {
-		pbm.BlockInfos = append(pbm.BlockInfos, pb.Message_BlockInfo{c.Bytes(), t})
+	pbm.BlockPresences = make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
+	for c, t := range m.blockPresences {
+		pbm.BlockPresences = append(pbm.BlockPresences, pb.Message_BlockPresence{c.Bytes(), t})
 	}
 
 	return pbm

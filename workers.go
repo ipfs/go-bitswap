@@ -66,12 +66,12 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					}))
 					outgoing.AddBlock(block)
 				}
-				for _, blockInfo := range envelope.Message.BlockInfos() {
-					c, err := cid.Cast(blockInfo.Cid)
+				for _, blockPresence := range envelope.Message.BlockPresences() {
+					c, err := cid.Cast(blockPresence.Cid)
 					if err != nil {
 						panic(err)
 					}
-					outgoing.AddBlockInfo(c, blockInfo.Type)
+					outgoing.AddBlockPresence(c, blockPresence.Type)
 				}
 				bs.engine.MessageSent(envelope.Peer, outgoing)
 
@@ -99,21 +99,21 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	msgSize := 0
 	msg := bsmsg.New(false)
 
-	for _, blockInfo := range env.Message.BlockInfos() {
-		c, err := cid.Cast(blockInfo.Cid)
+	for _, blockPresence := range env.Message.BlockPresences() {
+		c, err := cid.Cast(blockPresence.Cid)
 		if err != nil {
 			panic(err)
 		}
-		if blockInfo.Type == pb.Message_Have {
+		if blockPresence.Type == pb.Message_Have {
 			log.Infof("Sending HAVE %s to %s", c.String()[2:8], env.Peer)
-		} else if blockInfo.Type == pb.Message_DontHave {
+		} else if blockPresence.Type == pb.Message_DontHave {
 			log.Infof("Sending DONT_HAVE %s to %s", c.String()[2:8], env.Peer)
 		} else {
-			panic(fmt.Sprintf("unrecognized BlockInfo type %v", blockInfo.Type))
+			panic(fmt.Sprintf("unrecognized BlockPresence type %v", blockPresence.Type))
 		}
 		// TODO: should msgSize include len(c.Bytes()) + len(enum)?
 		// msgSize += len(block.RawData())
-		msg.AddBlockInfo(c, blockInfo.Type)
+		msg.AddBlockPresence(c, blockPresence.Type)
 	}
 	for _, block := range env.Message.Blocks() {
 		msgSize += len(block.RawData())
