@@ -157,8 +157,12 @@ func (pb *PeerBroker) checkMatch() {
 				gotWant = true
 				cnt++
 
+				// Send the best want-block to the best peer, and include any piggy-backed want-haves
+				// for this peer
 				pb.wantManager.WantBlocks(pb.ctx, ask.Peer, s.ID(), []cid.Cid{ask.Cid}, ask.WantHaves)
 
+				// Send want-haves to other peers in the session in case the best peer doesn't have
+				// the block (then if one of these peers has the block we can ask them for it)
 				for _, p := range ask.PeerHaves {
 					pb.wantManager.WantBlocks(pb.ctx, p, s.ID(), []cid.Cid{}, []cid.Cid{ask.Cid})
 				}

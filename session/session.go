@@ -28,8 +28,6 @@ const (
 // from given peers.
 type WantManager interface {
 	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
-	// WantBlocks(context.Context, []cid.Cid, []cid.Cid, bool, []peer.ID, uint64)
-	// CancelWants(context.Context, []cid.Cid, []peer.ID, uint64)
 	PeerCanSendWants(peer.ID, []cid.Cid) []cid.Cid
 	PeersCanSendWantBlock(cid.Cid, []peer.ID) []peer.ID
 	RemoveSession(context.Context, uint64)
@@ -38,6 +36,8 @@ type WantManager interface {
 // PeerManager provides an interface for tracking and optimize peers, and
 // requesting more when neccesary.
 type PeerManager interface {
+	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid)
+	Peers() *peer.Set
 	FindMorePeers(context.Context, cid.Cid)
 	GetOptimizedPeers() []bssd.OptimizedPeer
 	RecordPeerRequests([]peer.ID, []cid.Cid)
@@ -76,9 +76,8 @@ type Session struct {
 	pm  PeerManager
 	srs RequestSplitter
 
-	sw    sessionWants
-	pb    *bspbkr.PeerBroker
-	peers *peer.Set
+	sw sessionWants
+	pb *bspbkr.PeerBroker
 
 	latencyTrkr latencyTracker
 
@@ -120,7 +119,6 @@ func New(ctx context.Context,
 		srs:                 srs,
 		incoming:            make(chan op, 16),
 		pb:                  pb,
-		peers:               peer.NewSet(),
 		latencyTrkr:         latencyTracker{},
 		notif:               notif,
 		uuid:                loggables.Uuid("GetBlockRequest"),
@@ -154,10 +152,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
 	interestedHaves := s.sw.FilterInteresting(haves)
-	if len(interestedKs) > 0 || len(interestedHaves) > 0 && !s.peers.Contains(from) {
-		s.peers.Add(from)
-		log.Infof("Ses%d: Added peer %s to session: %d peers\n", s.id, from, s.peers.Size())
-	}
+	s.pm.ReceiveFrom(from, interestedKs, interestedHaves)
 
 	// Record response timing only if the blocks came from the network
 	// (blocks can also be received from the local node)
@@ -204,7 +199,7 @@ func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []c
 func (s *Session) MatchWantPeer(ps []peer.ID) *bspbkr.SessionAsk {
 	// Check if the session is interested in any of the available peers
 	matches := make([]peer.ID, 0, len(ps))
-	sessionPeers := s.allPeers()
+	sessionPeers := s.pm.Peers()
 	for _, p := range ps {
 		if sessionPeers.Contains(p) {
 			matches = append(matches, p)
@@ -364,15 +359,6 @@ func (s *Session) handleReceive(ks []cid.Cid) {
 	s.resetIdleTick()
 }
 
-// TODO: Move all peer management into s.pm (SessionPeerManager)
-func (s *Session) allPeers() *peer.Set {
-	ops := s.pm.GetOptimizedPeers()
-	for _, op := range ops {
-		s.peers.Add(op.Peer)
-	}
-	return s.peers
-}
-
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	if len(newks) > 0 {
 		s.sw.BlocksRequested(newks)
@@ -380,7 +366,7 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 
 	// If we have discovered some peers, signal the PeerBroker to ask us for
 	// blocks
-	if s.allPeers().Size() > 0 {
+	if s.pm.Peers().Size() > 0 {
 		// log.Warningf("Ses%d: WantAvailable()\n", s.id)
 		s.pb.WantAvailable()
 	} else {

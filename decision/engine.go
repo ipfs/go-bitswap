@@ -501,6 +501,9 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 	for _, block := range m.Blocks() {
 		l.SentBytes(len(block.RawData()))
 		l.wantList.Remove(block.Cid())
+		// TODO: I think this Remove() will cause the peerRequestQueue to
+		// freeze for a while (because it thinks Remove() is called for Cancel)
+		// Do we need to call this?
 		// e.peerRequestQueue.Remove(block.Cid(), p)
 	}
 }
