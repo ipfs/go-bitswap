@@ -210,24 +210,20 @@ func (s *Session) MatchWantPeer(ps []peer.ID) *bspbkr.SessionAsk {
 		return nil
 	}
 
-	c, wh, p, ph := s.sw.PopNextPending(matches)
-	if !c.Defined() {
+	// Get the best want / peer combination, given the available peers
+	ask := s.sw.PopNextPending(matches)
+	if ask == nil {
 		return nil
 	}
 
 	// Record request for each want sent to peer
-	s.pm.RecordPeerRequests([]peer.ID{p}, append(wh, c))
+	s.pm.RecordPeerRequests([]peer.ID{ask.Peer}, append(ask.WantHaves, ask.Cid))
 	// Record request for each want-have sent to other peers
-	for _, p := range ph {
-		s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{c})
+	for _, p := range ask.PeerHaves {
+		s.pm.RecordPeerRequests([]peer.ID{p}, []cid.Cid{ask.Cid})
 	}
 
-	return &bspbkr.SessionAsk{
-		Cid:       c,
-		WantHaves: wh,
-		PeerHaves: ph,
-		Peer:      p,
-	}
+	return ask
 }
 
 // GetBlock fetches a single block.

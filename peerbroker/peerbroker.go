@@ -102,13 +102,10 @@ func (pb *PeerBroker) UnregisterSource(s WantSource) {
 }
 
 func (pb *PeerBroker) PeerAvailable() {
-	// fmt.Println("PeerAvailable")
 	pb.signalMatchReady()
 }
 
 func (pb *PeerBroker) WantAvailable() {
-	// fmt.Println("WantAvailable")
-	// TODO: only ask given sessions
 	pb.signalMatchReady()
 }
 
@@ -147,16 +144,23 @@ func (pb *PeerBroker) run() {
 }
 
 func (pb *PeerBroker) checkMatch() {
+	// Keep looping while we have wants to send and peers with space in their
+	// request queue
 	gotWant := true
 	for gotWant {
 		gotWant = false
-		cnt := 0
+
+		// Loop over each registered session
 		for s := range pb.sources {
+			// Get peers with available space in their request queue
 			peers := pb.wantManager.AvailablePeers()
+
+			// Ask the session for its best want/peer combination, given
+			// the available peers
 			ask := s.MatchWantPeer(peers)
+
 			if ask != nil {
 				gotWant = true
-				cnt++
 
 				// Send the best want-block to the best peer, and include any piggy-backed want-haves
 				// for this peer

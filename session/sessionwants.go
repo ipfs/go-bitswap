@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
+	bspbkr "github.com/ipfs/go-bitswap/peerbroker"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -179,7 +180,7 @@ func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 	}
 }
 
-func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, peer.ID, []peer.ID) {
+func (sw *sessionWants) PopNextPending(peers []peer.ID) *bspbkr.SessionAsk {
 	now := time.Now()
 
 	sw.Lock()
@@ -188,18 +189,25 @@ func (sw *sessionWants) PopNextPending(peers []peer.ID) (cid.Cid, []cid.Cid, pee
 	var wantHaves []cid.Cid
 
 	c, p, potential, ph := sw.getBestPotentialLiveWant(peers)
-	if c.Defined() {
-		// log.Warningf("getBestPotentialLiveWant(%d peers): ->%s want-block %s (+%.2f: sum %.2f / threshold %.2f) %d peer-haves",
-		// 	len(peers), p, c.String()[2:8], potential, sw.liveWants.sumWantPotential(c), sw.potentialThreshold, len(ph))
-		if _, ok := sw.liveWants[c]; !ok {
-			sw.toFetch.Remove(c)
-			sw.liveWants.setSentAt(c, now)
-		}
-		sw.liveWants.addWantPotential(c, p, potential)
-		wantHaves = sw.getPiggybackWantHaves(c, p)
+	if !c.Defined() {
+		return nil
 	}
 
-	return c, wantHaves, p, ph
+	// log.Warningf("getBestPotentialLiveWant(%d peers): ->%s want-block %s (+%.2f: sum %.2f / threshold %.2f) %d peer-haves",
+	// 	len(peers), p, c.String()[2:8], potential, sw.liveWants.sumWantPotential(c), sw.potentialThreshold, len(ph))
+	if _, ok := sw.liveWants[c]; !ok {
+		sw.toFetch.Remove(c)
+		sw.liveWants.setSentAt(c, now)
+	}
+	sw.liveWants.addWantPotential(c, p, potential)
+	wantHaves = sw.getPiggybackWantHaves(c, p)
+
+	return &bspbkr.SessionAsk{
+		Cid:       c,
+		WantHaves: wantHaves,
+		PeerHaves: ph,
+		Peer:      p,
+	}
 }
 
 // When we send a want-block to a peer, we also include want-haves for other

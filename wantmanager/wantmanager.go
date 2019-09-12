@@ -44,7 +44,7 @@ type WantManager struct {
 	sim         *bssim.SessionInterestManager
 	bpm         *bsbpm.BlockPresenceManager
 	sm          *bssm.SessionManager
-	pbkr *bspbkr.PeerBroker
+	pbkr        *bspbkr.PeerBroker
 	// TODO: update wantlistGauge
 	wantlistGauge metrics.Gauge
 }
@@ -54,7 +54,7 @@ func New(ctx context.Context, peerHandler PeerHandler, sim *bssim.SessionInteres
 	wantlistGauge := metrics.NewCtx(ctx, "wantlist_total",
 		"Number of items in wantlist.").Gauge()
 	return &WantManager{
-		bcwl: bsswl.NewSessionWantlist(),
+		bcwl:          bsswl.NewSessionWantlist(),
 		peerHandler:   peerHandler,
 		sim:           sim,
 		bpm:           bpm,
