@@ -81,9 +81,9 @@ type Envelope struct {
 	Sent func()
 }
 
-// blockInfo is used internally to pass information to the PeerTaskQueue and
+// wantInfo is used internally to pass information to the PeerTaskQueue and
 // get it out on the other side
-type blockInfo struct {
+type wantInfo struct {
 	sendDontHave bool
 	wantType     pb.Message_Wantlist_WantType
 	size         int
@@ -217,7 +217,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		msg := bsmsg.New(true)
 		for _, entry := range nextTask.Tasks {
 			c := entry.Identifier.(cid.Cid)
-			info := entry.Info.(*blockInfo)
+			info := entry.Info.(*wantInfo)
 
 			if info.wantType == pb.Message_Wantlist_Have {
 				// Check if we have the block
@@ -357,7 +357,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 							Identifier:  entry.Cid,
 							Priority:    entry.Priority,
 							Replaceable: replaceable,
-							Info: &blockInfo{
+							Info: &wantInfo{
 								sendDontHave: true,
 								wantType:     entry.WantType,
 								size:         blockSize,
@@ -394,7 +394,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					Identifier:  entry.Cid,
 					Priority:    entry.Priority,
 					Replaceable: replaceable,
-					Info: &blockInfo{
+					Info: &wantInfo{
 						sendDontHave: entry.SendDontHave,
 						wantType:     wantType,
 						size:         blockSize,
@@ -456,7 +456,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 					Identifier:  entry.Cid,
 					Priority:    entry.Priority,
 					Replaceable: false,
-					Info: &blockInfo{
+					Info: &wantInfo{
 						sendDontHave: false,
 						wantType:     pb.Message_Wantlist_Block,
 						size:         blockSizes[k],
