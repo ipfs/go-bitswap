@@ -28,9 +28,9 @@ type PeerAvailabilityListener interface {
 }
 
 type WantManager interface {
+	SetPeerBroker(*PeerBroker)
 	WantBlocks(context.Context, peer.ID, uint64, []cid.Cid, []cid.Cid)
 	AvailablePeers() []peer.ID
-	RegisterPeerAvailabilityListener(PeerAvailabilityListener)
 }
 
 type message interface {
@@ -75,7 +75,7 @@ type PeerBroker struct {
 // New initializes a new PeerBroker for a given context.
 func New(ctx context.Context, wantManager WantManager) *PeerBroker {
 	ctx, cancel := context.WithCancel(ctx)
-	return &PeerBroker{
+	pb := &PeerBroker{
 		messages:    make(chan message, 16),
 		matchReady:  make(chan struct{}, 1),
 		ctx:         ctx,
@@ -83,6 +83,8 @@ func New(ctx context.Context, wantManager WantManager) *PeerBroker {
 		wantManager: wantManager,
 		sources:     make(map[WantSource]struct{}),
 	}
+	wantManager.SetPeerBroker(pb)
+	return pb
 }
 
 func (pb *PeerBroker) RegisterSource(s WantSource) {
@@ -119,7 +121,6 @@ func (pb *PeerBroker) signalMatchReady() {
 
 // Startup starts processing for the PeerBroker.
 func (pb *PeerBroker) Startup() {
-	pb.wantManager.RegisterPeerAvailabilityListener(pb)
 	go pb.run()
 }
 
