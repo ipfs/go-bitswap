@@ -8,14 +8,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-// TODO: Move WantTypeT to its own package
-type WantTypeT bool
-
-const (
-	WantType_Block = WantTypeT(false)
-	WantType_Have  = WantTypeT(true)
-)
-
 // Wantlist is a raw list of wanted blocks and their priorities
 type Wantlist struct {
 	set map[cid.Cid]Entry

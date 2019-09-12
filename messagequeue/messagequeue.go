@@ -8,8 +8,8 @@ import (
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
-	wantlist "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -69,7 +69,7 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := false
 		for i, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, maxPriority-i, wantlist.WantType_Have, sendDontHave)
+			mq.nextMessage.AddEntry(c, maxPriority-i, pb.Message_Wantlist_Have, sendDontHave)
 		}
 	})
 }
@@ -78,10 +78,10 @@ func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := true
 		for i, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, maxPriority-i, wantlist.WantType_Have, sendDontHave)
+			mq.nextMessage.AddEntry(c, maxPriority-i, pb.Message_Wantlist_Have, sendDontHave)
 		}
 		for i, c := range wantBlocks {
-			mq.nextMessage.AddEntry(c, maxPriority-len(wantHaves)-i, wantlist.WantType_Block, sendDontHave)
+			mq.nextMessage.AddEntry(c, maxPriority-len(wantHaves)-i, pb.Message_Wantlist_Block, sendDontHave)
 		}
 	})
 }
@@ -208,7 +208,7 @@ func (mq *MessageQueue) sendMessage() {
 	cwblocks := 0
 	cwhaves := 0
 	for _, e := range entries {
-		if e.WantType == wantlist.WantType_Have {
+		if e.WantType == pb.Message_Wantlist_Have {
 			if e.Cancel {
 				cwhaves++
 			} else {
@@ -241,13 +241,13 @@ func (mq *MessageQueue) sendMessage() {
 	// }
 	for _, e := range entries {
 		if e.Cancel {
-			if e.WantType == wantlist.WantType_Have {
+			if e.WantType == pb.Message_Wantlist_Have {
 				log.Debugf("->%s: CANCEL-have %s\n", mq.p, e.Cid.String()[2:8])
 			} else {
 				log.Debugf("->%s: CANCEL-block %s\n", mq.p, e.Cid.String()[2:8])
 			}
 		} else {
-			if e.WantType == wantlist.WantType_Have {
+			if e.WantType == pb.Message_Wantlist_Have {
 				log.Debugf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
 				// log.Warningf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
 			} else {

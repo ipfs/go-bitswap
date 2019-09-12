@@ -6,9 +6,9 @@ import (
 	"io"
 
 	pb "github.com/ipfs/go-bitswap/message/pb"
-	wantlist "github.com/ipfs/go-bitswap/wantlist"
-	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-bitswap/wantlist"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	pool "github.com/libp2p/go-buffer-pool"
 	msgio "github.com/libp2p/go-msgio"
@@ -30,7 +30,7 @@ type BitSwapMessage interface {
 	DontHaves() []cid.Cid
 
 	// AddEntry adds an entry to the Wantlist.
-	AddEntry(key cid.Cid, priority int, wantType wantlist.WantTypeT, sendDontHave bool)
+	AddEntry(key cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool)
 
 	Cancel(key cid.Cid)
 
@@ -86,7 +86,7 @@ type Entry struct {
 	wantlist.Entry
 	Cancel       bool
 	SendDontHave bool
-	WantType     wantlist.WantTypeT
+	WantType     pb.Message_Wantlist_WantType
 }
 
 func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
@@ -96,7 +96,7 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 		if err != nil {
 			return nil, fmt.Errorf("incorrectly formatted cid in wantlist: %s", err)
 		}
-		m.addEntry(c, int(e.Priority), e.Cancel, pb2go(e.WantType), e.SendDontHave)
+		m.addEntry(c, int(e.Priority), e.Cancel, e.WantType, e.SendDontHave)
 	}
 
 	// deprecated
@@ -190,21 +190,21 @@ func (m *impl) getBlockInfoByType(t pb.Message_BlockInfoType) []cid.Cid {
 }
 
 func (m *impl) Cancel(k cid.Cid) {
-	m.addEntry(k, 0, true, false, false)
+	m.addEntry(k, 0, true, pb.Message_Wantlist_Block, false)
 }
 
-func (m *impl) AddEntry(k cid.Cid, priority int, wantType wantlist.WantTypeT, sendDontHave bool) {
+func (m *impl) AddEntry(k cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) {
 	m.addEntry(k, priority, false, wantType, sendDontHave)
 }
 
-func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType wantlist.WantTypeT, sendDontHave bool) {
+func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Message_Wantlist_WantType, sendDontHave bool) {
 	e, exists := m.wantlist[c]
 	if exists {
 		e.Priority = priority
 		e.Cancel = cancel
 		e.SendDontHave = sendDontHave
 		// Want for a block overrides existing want for a HAVE
-		if wantType == wantlist.WantType_Block || e.WantType == wantlist.WantType_Have {
+		if wantType == pb.Message_Wantlist_Block || e.WantType == pb.Message_Wantlist_Have {
 			e.WantType = wantType
 		}
 		m.wantlist[c] = e
@@ -268,7 +268,7 @@ func (m *impl) ToProtoV0() *pb.Message {
 			Block:        e.Cid.Bytes(),
 			Priority:     int32(e.Priority),
 			Cancel:       e.Cancel,
-			WantType:     go2pb(e.WantType),
+			WantType:     e.WantType,
 			SendDontHave: e.SendDontHave,
 		})
 	}
@@ -290,7 +290,7 @@ func (m *impl) ToProtoV1() *pb.Message {
 			Block:        e.Cid.Bytes(),
 			Priority:     int32(e.Priority),
 			Cancel:       e.Cancel,
-			WantType:     go2pb(e.WantType),
+			WantType:     e.WantType,
 			SendDontHave: e.SendDontHave,
 		})
 	}
@@ -348,20 +348,4 @@ func (m *impl) Loggable() map[string]interface{} {
 		"blocks": blocks,
 		"wants":  m.Wantlist(),
 	}
-}
-
-func pb2go(wantType pb.Message_Wantlist_WantType) wantlist.WantTypeT {
-	wt := wantlist.WantType_Block
-	if wantType == pb.Message_Wantlist_Have {
-		wt = wantlist.WantType_Have
-	}
-	return wantlist.WantTypeT(wt)
-}
-
-func go2pb(wantType wantlist.WantTypeT) pb.Message_Wantlist_WantType {
-	wt := pb.Message_Wantlist_Block
-	if wantType == wantlist.WantType_Have {
-		wt = pb.Message_Wantlist_Have
-	}
-	return wt
 }

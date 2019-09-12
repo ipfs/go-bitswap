@@ -3,15 +3,13 @@ package decision
 
 import (
 	"context"
-	// "math/rand"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	bsmsg "github.com/ipfs/go-bitswap/message"
-	// pb "github.com/ipfs/go-bitswap/message/pb"
-	wantlist "github.com/ipfs/go-bitswap/wantlist"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
@@ -85,7 +83,7 @@ type Envelope struct {
 
 type blockInfo struct {
 	sendDontHave bool
-	wantType     wantlist.WantTypeT
+	wantType     pb.Message_Wantlist_WantType
 	size         int
 }
 
@@ -219,7 +217,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			c := entry.Identifier.(cid.Cid)
 			info := entry.Info.(*blockInfo)
 
-			if info.wantType == wantlist.WantType_Have {
+			if info.wantType == pb.Message_Wantlist_Have {
 				// Check if we have the block
 				has, err := e.bs.Has(c)
 				if err != nil {
@@ -350,7 +348,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					// TODO: Enqueue these before any blocks and give them highest priority
 					if entry.SendDontHave {
 						replaceable := true
-						if entry.WantType == wantlist.WantType_Block {
+						if entry.WantType == pb.Message_Wantlist_Block {
 							replaceable = false
 						}
 						activeEntries = append(activeEntries, peertask.Task{
@@ -370,7 +368,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 			} else {
 				// If the request is a want-have, and the block is small
 				// enough, treat the request as a want-block
-				wantHave := entry.WantType == wantlist.WantType_Have
+				wantHave := entry.WantType == pb.Message_Wantlist_Have
 				sendBlock := !wantHave || (wantHave && blockSize <= maxBlockSizeReplaceHasWithBlock)
 
 				// We have the block.
@@ -383,10 +381,10 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					msgSize = 0
 				}
 
-				wantType := wantlist.WantType_Have
+				wantType := pb.Message_Wantlist_Have
 				replaceable := true
 				if sendBlock {
-					wantType = wantlist.WantType_Block
+					wantType = pb.Message_Wantlist_Block
 					replaceable = false
 				}
 
@@ -458,7 +456,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 					Replaceable: false,
 					Info: &blockInfo{
 						sendDontHave: false,
-						wantType:     wantlist.WantType_Block,
+						wantType:     pb.Message_Wantlist_Block,
 						size:         blockSizes[k],
 					},
 				})
