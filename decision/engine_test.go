@@ -10,6 +10,7 @@ import (
 	"time"
 
 	message "github.com/ipfs/go-bitswap/message"
+	wantlist "github.com/ipfs/go-bitswap/wantlist"
 
 	blocks "github.com/ipfs/go-block-format"
 	ds "github.com/ipfs/go-datastore"
@@ -255,7 +256,7 @@ func partnerWants(e *Engine, keys []string, partner peer.ID) {
 	add := message.New(false)
 	for i, letter := range keys {
 		block := blocks.NewBlock([]byte(letter))
-		add.AddEntry(block.Cid(), len(keys)-i)
+		add.AddEntry(block.Cid(), len(keys)-i, wantlist.WantType_Block, true)
 	}
 	e.MessageReceived(partner, add)
 }

@@ -124,11 +124,10 @@ type Engine struct {
 	ledgerMap map[peer.ID]*ledger
 
 	ticker *time.Ticker
-	self   peer.ID
 }
 
 // NewEngine creates a new block sending engine for the given block store
-func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID) *Engine {
+func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
 	e := &Engine{
 		ledgerMap:  make(map[peer.ID]*ledger),
 		bs:         bs,
@@ -136,7 +135,6 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal: make(chan struct{}, 1),
 		ticker:     time.NewTicker(time.Millisecond * 100),
-		self:       self,
 	}
 	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
 	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
@@ -231,8 +229,6 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 
 				// If we have the block
 				if has {
-					// log.Debugf("%s: Have", c.String()[2:8])
-					// log.Warningf("    engine-%s: nextEnvelope - add HAVE %s", e.self, c.String()[2:8])
 					msg.AddHave(c)
 				} else if info.sendDontHave {
 					// If we don't have the block, and the remote peer asked for a DONT_HAVE
@@ -252,7 +248,6 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 						log.Errorf("tried to execute a task and errored fetching block: %s", err)
 					}
 				} else {
-					// log.Warningf("    engine-%s: nextEnvelope - add block %s", e.self, c.String()[2:8])
 					msg.AddBlock(block)
 				}
 			}
