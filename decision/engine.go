@@ -458,8 +458,9 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 			if entry, ok := l.WantListContains(k); ok {
 				work = true
 				e.peerRequestQueue.PushBlock(l.Partner, peertask.Task{
-					Identifier: entry.Cid,
-					Priority:   entry.Priority,
+					Identifier:  entry.Cid,
+					Priority:    entry.Priority,
+					Replaceable: false,
 					Info: &blockInfo{
 						sendDontHave: false,
 						wantType:     wantlist.WantType_Block,
