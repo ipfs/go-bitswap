@@ -520,7 +520,7 @@ func (wi liveWantsInfo) setSentAt(c cid.Cid, at time.Time) {
 	} else {
 		wi[c] = &liveInfo{
 			peerPotential: make(map[peer.ID]float64),
-			sentAt:        time.Time{},
+			sentAt:        at,
 		}
 	}
 }
