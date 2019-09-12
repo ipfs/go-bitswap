@@ -73,6 +73,10 @@ func AsyncGetBlocks(ctx context.Context, sessctx context.Context, keys []cid.Cid
 		return out, nil
 	}
 
+	// TODO: It's possible for a Session to miss a block if it requests the block
+	// after Bitswap already fetched it. May need to have an LRU of recently fetched blocks
+	// to cover this case
+
 	// Use a PubSub notifier to listen for incoming blocks for each key
 	remaining := cid.NewSet()
 	promise := notif.Subscribe(ctx, keys...)

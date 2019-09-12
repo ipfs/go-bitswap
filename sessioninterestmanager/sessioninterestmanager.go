@@ -1,15 +1,12 @@
-package wantmanager
+package sessioninterestmanager
 
 import (
-	"sync"
-
 	bsswl "github.com/ipfs/go-bitswap/sessionwantlist"
 
 	cid "github.com/ipfs/go-cid"
 )
 
 type SessionInterestManager struct {
-	sync.RWMutex
 	wants *bsswl.SessionWantlist
 }
 
@@ -20,14 +17,8 @@ func New() *SessionInterestManager {
 	}
 }
 
-func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
-	sim.Lock()
-	defer sim.Unlock()
-
-	// Record session want-haves
-	sim.wants.Add(wantHaves, ses)
-	// Record session want-blocks
-	sim.wants.Add(wantBlocks, ses)
+func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Cid) {
+	sim.wants.Add(ks, ses)
 }
 
 func (sim *SessionInterestManager) RemoveSessionInterest(ses uint64) []cid.Cid {
@@ -35,9 +26,6 @@ func (sim *SessionInterestManager) RemoveSessionInterest(ses uint64) []cid.Cid {
 }
 
 func (sim *SessionInterestManager) InterestedSessions(blocks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []uint64 {
-	sim.RLock()
-	defer sim.RUnlock()
-
 	ks := make([]cid.Cid, 0, len(blocks)+len(haves)+len(dontHaves))
 	for _, c := range blocks {
 		ks = append(ks, c)

@@ -94,9 +94,6 @@ func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Ci
 func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantHaves []cid.Cid) {
 	// log.Warningf("BroadcastWantHaves session%d: %s", ses, wantHaves)
 
-	// Record session interest
-	wm.sim.RecordSessionInterest(ses, []cid.Cid{}, wantHaves)
-
 	// Record broadcast wants
 	wm.bcwl.Add(wantHaves, ses)
 
@@ -106,9 +103,6 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 
 func (wm *WantManager) WantBlocks(ctx context.Context, p peer.ID, ses uint64, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	// log.Warningf("WantBlocks session%d from %s: want-blocks %s / want-haves %s", ses, p, wantBlocks, wantHaves)
-
-	// Record session interest
-	wm.sim.RecordSessionInterest(ses, wantBlocks, wantHaves)
 
 	// Send want-blocks and want-haves to peer
 	wm.peerHandler.SendWants(ctx, p, wantBlocks, wantHaves)
@@ -123,6 +117,10 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 
 	// Free up block presence tracking for keys that no session is interested
 	// in anymore
+	// TODO: Do these asynchronously:
+	// - wm.bpm.RemoveKeys(cancelKs)
+	// - wm.peerHandler.SendCancels(ctx, cancelKs)
+	// to cover the case where one thread removes keys while another is asking for those same keys
 	wm.bpm.RemoveKeys(cancelKs)
 
 	// Send CANCEL to all peers for blocks that no session is interested in anymore

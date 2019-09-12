@@ -10,6 +10,7 @@ import (
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	bspbkr "github.com/ipfs/go-bitswap/peerbroker"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
+	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -75,6 +76,7 @@ type Session struct {
 	wm  WantManager
 	pm  PeerManager
 	srs RequestSplitter
+	sim *bssim.SessionInterestManager
 
 	sw sessionWants
 	pb *bspbkr.PeerBroker
@@ -105,6 +107,7 @@ func New(ctx context.Context,
 	wm WantManager,
 	pm PeerManager,
 	srs RequestSplitter,
+	sim *bssim.SessionInterestManager,
 	pb *bspbkr.PeerBroker,
 	bpm *bsbpm.BlockPresenceManager,
 	notif notifications.PubSub,
@@ -117,6 +120,7 @@ func New(ctx context.Context,
 		wm:                  wm,
 		pm:                  pm,
 		srs:                 srs,
+		sim:                 sim,
 		incoming:            make(chan op, 16),
 		pb:                  pb,
 		latencyTrkr:         latencyTracker{},
@@ -338,8 +342,6 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 func (s *Session) handleShutdown() {
 	s.pb.UnregisterSource(s)
 	s.idleTick.Stop()
-	// live := s.sw.LiveWants()
-	// s.wm.CancelWants(s.ctx, live, nil, s.id)
 	s.wm.RemoveSession(s.ctx, s.id)
 }
 
@@ -357,6 +359,7 @@ func (s *Session) handleReceive(ks []cid.Cid) {
 
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	if len(newks) > 0 {
+		s.sim.RecordSessionInterest(s.id, newks)
 		s.sw.BlocksRequested(newks)
 	}
 

@@ -33,7 +33,7 @@ type sesTrk struct {
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter, pb *bspb.PeerBroker, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D) Session
+type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pb *bspb.PeerBroker, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D) Session
 
 // RequestSplitterFactory generates a new request splitter for a session.
 type RequestSplitterFactory func(ctx context.Context) bssession.RequestSplitter
@@ -88,7 +88,7 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 
 	pm := sm.peerManagerFactory(sessionctx, id)
 	srs := sm.requestSplitterFactory(sessionctx)
-	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.peerBroker, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay)
+	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerBroker, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay)
 	tracked := sesTrk{session, pm, srs}
 	sm.sessLk.Lock()
 	sm.sessions[id] = tracked
@@ -121,30 +121,6 @@ func (sm *SessionManager) GetNextSessionID() uint64 {
 	sm.sessID++
 	return sm.sessID
 }
-
-// ReceiveFrom receives block CIDs from a peer and dispatches to sessions.
-// func (sm *SessionManager) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-// 	sm.sessLk.Lock()
-// 	defer sm.sessLk.Unlock()
-
-// 	for _, s := range sm.sessions {
-// 		s.session.ReceiveFrom(from, ks, haves, dontHaves)
-// 	}
-// }
-
-// // IsWanted indicates whether any of the sessions are waiting to receive
-// // the block with the given CID.
-// func (sm *SessionManager) IsWanted(cid cid.Cid) bool {
-// 	sm.sessLk.RLock()
-// 	defer sm.sessLk.RUnlock()
-
-// 	for _, s := range sm.sessions {
-// 		if s.session.IsWanted(cid) {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
 
 func (sm *SessionManager) ReceiveFrom(p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []Session {
 	sessions := make([]Session, 0)

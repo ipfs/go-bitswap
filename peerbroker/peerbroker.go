@@ -143,6 +143,7 @@ func (pb *PeerBroker) run() {
 	}
 }
 
+// TODO: Use multiple threads
 func (pb *PeerBroker) checkMatch() {
 	// Keep looping while we have wants to send and peers with space in their
 	// request queue
