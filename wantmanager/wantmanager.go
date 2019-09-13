@@ -28,6 +28,7 @@ type PeerHandler interface {
 	SendCancels(context.Context, []cid.Cid)
 	PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid
 	PeersCanSendWantBlock(c cid.Cid, peers []peer.ID) []peer.ID
+	Trace()
 }
 
 type wantMessage interface {
@@ -125,6 +126,10 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 
 	// Send CANCEL to all peers for blocks that no session is interested in anymore
 	wm.peerHandler.SendCancels(ctx, cancelKs)
+}
+
+func (wm *WantManager) Trace() {
+	wm.peerHandler.Trace()
 }
 
 func (wm *WantManager) PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid {

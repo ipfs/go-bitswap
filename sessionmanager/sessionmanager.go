@@ -33,7 +33,7 @@ type sesTrk struct {
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pb *bspb.PeerBroker, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D) Session
+type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pb *bspb.PeerBroker, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
 
 // RequestSplitterFactory generates a new request splitter for a session.
 type RequestSplitterFactory func(ctx context.Context) bssession.RequestSplitter
@@ -60,11 +60,13 @@ type SessionManager struct {
 	// Session Index
 	sessIDLk sync.Mutex
 	sessID   uint64
+
+	self peer.ID
 }
 
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestManager *bssim.SessionInterestManager, peerManagerFactory PeerManagerFactory,
-	blockPresenceManager *bsbpm.BlockPresenceManager, requestSplitterFactory RequestSplitterFactory, peerBroker *bspb.PeerBroker, notif notifications.PubSub) *SessionManager {
+	blockPresenceManager *bsbpm.BlockPresenceManager, requestSplitterFactory RequestSplitterFactory, peerBroker *bspb.PeerBroker, notif notifications.PubSub, self peer.ID) *SessionManager {
 	return &SessionManager{
 		ctx:                    ctx,
 		sessionFactory:         sessionFactory,
@@ -75,6 +77,7 @@ func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestMana
 		peerBroker:             peerBroker,
 		notif:                  notif,
 		sessions:               make(map[uint64]sesTrk),
+		self: self,
 	}
 }
 
@@ -88,7 +91,7 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 
 	pm := sm.peerManagerFactory(sessionctx, id)
 	srs := sm.requestSplitterFactory(sessionctx)
-	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerBroker, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay)
+	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerBroker, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
 	tracked := sesTrk{session, pm, srs}
 	sm.sessLk.Lock()
 	sm.sessions[id] = tracked

@@ -119,7 +119,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	pm := bspm.New(ctx, peerQueueFactory)
+	pm := bspm.New(ctx, peerQueueFactory, network.Self())
 	wm := bswm.New(ctx, pm, sim, bpm)
 	pqm := bspqm.New(ctx, network)
 
@@ -129,8 +129,9 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		bpm *bsbpm.BlockPresenceManager,
 		notif notifications.PubSub,
 		provSearchDelay time.Duration,
-		rebroadcastDelay delay.D) bssm.Session {
-		return bssession.New(ctx, id, wm, pm, srs, sim, pb, bpm, notif, provSearchDelay, rebroadcastDelay)
+		rebroadcastDelay delay.D,
+		self peer.ID) bssm.Session {
+		return bssession.New(ctx, id, wm, pm, srs, sim, pb, bpm, notif, provSearchDelay, rebroadcastDelay, self)
 	}
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.PeerManager {
 		return bsspm.New(ctx, id, network.ConnectionManager(), pqm)
@@ -140,12 +141,13 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 	notif := notifications.New()
 	peerBroker := bspb.New(ctx, wm)
-	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, peerBroker, notif)
+	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, peerBroker, notif, network.Self())
 	wm.SetSessionManager(sm)
 
 	bs := &Bitswap{
 		blockstore:       bstore,
-		engine:           decision.NewEngine(ctx, bstore, network.ConnectionManager()), // TODO close the engine with Close() method
+		// TODO close the engine with Close() method
+		engine:           decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 0),
 		network:          network,
 		process:          px,
 		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
@@ -412,7 +414,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		// Process blocks
 		err := bs.receiveBlocksFrom(ctx, p, iblocks, incoming.Haves(), incoming.DontHaves())
 		if err != nil {
-			log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
+			// log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 			return
 		}
 	}

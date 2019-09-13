@@ -79,7 +79,7 @@ func (s *streamMessageSender) SendMsg(ctx context.Context, msg bsmsg.BitSwapMess
 }
 
 func (bsnet *impl) Self() peer.ID {
-	return ""
+	return bsnet.host.ID()
 }
 
 func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.BitSwapMessage) error {

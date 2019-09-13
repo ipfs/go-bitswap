@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	lu "github.com/ipfs/go-bitswap/logutil"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	cid "github.com/ipfs/go-cid"
@@ -31,6 +32,7 @@ const (
 type MessageNetwork interface {
 	ConnectTo(context.Context, peer.ID) error
 	NewMessageSender(context.Context, peer.ID) (bsnet.MessageSender, error)
+	Self() peer.ID
 }
 
 // MessageQueue implements queue of want messages to send to peers.
@@ -248,11 +250,9 @@ func (mq *MessageQueue) sendMessage() {
 			}
 		} else {
 			if e.WantType == pb.Message_Wantlist_Have {
-				log.Debugf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
-				// log.Warningf("->%s: want-have %s\n", mq.p, e.Cid.String()[2:8])
+				log.Debugf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			} else {
-				log.Debugf("->%s: want-block %s\n", mq.p, e.Cid.String()[2:8])
-				// log.Warningf("->%s: want-block %s\n", mq.p, e.Cid.String()[2:8])
+				log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			}
 		}
 	}

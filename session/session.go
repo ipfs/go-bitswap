@@ -11,6 +11,7 @@ import (
 	bspbkr "github.com/ipfs/go-bitswap/peerbroker"
 	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
+	lu "github.com/ipfs/go-bitswap/logutil"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -32,6 +33,7 @@ type WantManager interface {
 	PeerCanSendWants(peer.ID, []cid.Cid) []cid.Cid
 	PeersCanSendWantBlock(cid.Cid, []peer.ID) []peer.ID
 	RemoveSession(context.Context, uint64)
+	Trace()
 }
 
 // PeerManager provides an interface for tracking and optimize peers, and
@@ -98,6 +100,8 @@ type Session struct {
 	notif notifications.PubSub
 	uuid  logging.Loggable
 	id    uint64
+
+	self peer.ID
 }
 
 // New creates a new bitswap session whose lifetime is bounded by the
@@ -112,7 +116,8 @@ func New(ctx context.Context,
 	bpm *bsbpm.BlockPresenceManager,
 	notif notifications.PubSub,
 	initialSearchDelay time.Duration,
-	periodicSearchDelay delay.D) *Session {
+	periodicSearchDelay delay.D,
+	self peer.ID) *Session {
 	s := &Session{
 		sw:                  newSessionWants(bpm, wm),
 		tickDelayReqs:       make(chan time.Duration),
@@ -130,6 +135,7 @@ func New(ctx context.Context,
 		id:                  id,
 		initialSearchDelay:  initialSearchDelay,
 		periodicSearchDelay: periodicSearchDelay,
+		self: self,
 	}
 
 	pb.RegisterSource(s)
@@ -151,7 +157,7 @@ func (s *Session) FilterWanted(ks []cid.Cid) []cid.Cid {
 func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	interestedKs := s.sw.FilterInteresting(ks)
 
-	// s.logReceiveFrom(from, interestedKs, haves, dontHaves)
+	s.logReceiveFrom(from, interestedKs, haves, dontHaves)
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
@@ -182,22 +188,19 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 }
 
 func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	// wantedHaves := s.sw.FilterWanted(haves)
-	// wantedDontHaves := s.sw.FilterWanted(dontHaves)
 	// log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
 	// 	s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
 	for _, c := range interestedKs {
-		// log.Debugf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
-		log.Warningf("Ses%d<-%s: block %s\n", s.id, from, c.String()[2:8])
+		log.Debugf("Ses%d %s<-%s: block %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
 	}
 	wantedHaves := s.sw.FilterWanted(haves)
 	for _, c := range wantedHaves {
-		// log.Debugf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
-		log.Warningf("Ses%d<-%s: HAVE %s\n", s.id, from, c.String()[2:8])
+		log.Debugf("Ses%d %s<-%s: HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
 	}
-	// for _, c := range wantedDontHaves {
-	// 	log.Debugf("Ses%d<-%s: DONT_HAVE %s\n", s.id, from, c.String()[2:8])
-	// }
+	wantedDontHaves := s.sw.FilterWanted(dontHaves)
+	for _, c := range wantedDontHaves {
+		log.Debugf("Ses%d %s<-%s: DONT_HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
+	}
 }
 
 func (s *Session) MatchWantPeer(ps []peer.ID) *bspbkr.SessionAsk {
@@ -298,10 +301,10 @@ func (s *Session) run(ctx context.Context) {
 }
 
 func (s *Session) handleIdleTick(ctx context.Context) {
-	// log.Warningf("\n\n\nSes%d: idle tick\n", s.id)
-
 	live := s.sw.PrepareBroadcast()
-	log.Infof("Ses%d: broadcast %d keys\n", s.id, len(live))
+	log.Warningf("\n\n\n\n\nSes%d: broadcast %d keys\n\n\n\n\n", s.id, len(live))
+	s.wm.Trace()
+	// log.Infof("Ses%d: broadcast %d keys\n", s.id, len(live))
 
 	// Broadcast a want-have for the live wants to everyone we're connected to
 	s.pm.RecordPeerRequests(nil, live)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	lu "github.com/ipfs/go-bitswap/logutil"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
@@ -66,7 +67,7 @@ const (
 
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
-	maxBlockSizeReplaceHasWithBlock = 1024
+	// maxBlockSizeReplaceHasWithBlock = 1024
 )
 
 // Envelope contains a message for a Peer.
@@ -87,6 +88,10 @@ type wantInfo struct {
 	sendDontHave bool
 	wantType     pb.Message_Wantlist_WantType
 	size         int
+}
+
+func (wi *wantInfo) String() string {
+	return fmt.Sprintf("want-%s (%d bytes) sendDontHave: %t", wi.wantType, wi.size, wi.sendDontHave)
 }
 
 // PeerTagger covers the methods on the connection manager used by the decision
@@ -124,10 +129,18 @@ type Engine struct {
 	ledgerMap map[peer.ID]*ledger
 
 	ticker *time.Ticker
+
+	// TODO: make this an optional argument
+	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
+	// bytes up to which we will replace a want-have with a want-block
+	maxBlockSizeReplaceHasWithBlock int
+
+	self peer.ID
 }
 
 // NewEngine creates a new block sending engine for the given block store
-func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
+// func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID) *Engine {
+func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID, maxReplaceSize int) *Engine {
 	e := &Engine{
 		ledgerMap:  make(map[peer.ID]*ledger),
 		bs:         bs,
@@ -135,6 +148,8 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger)
 		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal: make(chan struct{}, 1),
 		ticker:     time.NewTicker(time.Millisecond * 100),
+		maxBlockSizeReplaceHasWithBlock: maxReplaceSize,
+		self:       "self",
 	}
 	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
 	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
@@ -297,11 +312,20 @@ func (e *Engine) Peers() []peer.ID {
 // MessageReceived performs book-keeping. Returns error if passed invalid
 // arguments.
 func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
-	// entries := m.Wantlist()
-	// fmt.Printf("Received message with %d entries\n", len(entries))
-	// for _, e := range entries {
-	// 	fmt.Printf("  %s: Cancel? %t / WantHave %t / SendDontHave %t\n", e.Cid.String()[2:8], e.Cancel, e.WantHave, e.SendDontHave)
-	// }
+	entries := m.Wantlist()
+
+	if len(entries) > 0 {
+		log.Debugf("engine-%s received message from %s with %d entries\n", lu.P(e.self), lu.P(p), len(entries))
+		for _, et := range entries {
+			if !et.Cancel {
+				if et.WantType == pb.Message_Wantlist_Have {
+					log.Debugf("  recv %s<-%s: want-have %s\n", lu.P(e.self), lu.P(p), lu.C(et.Cid))
+				} else {
+					log.Debugf("  recv %s<-%s: want-block %s\n", lu.P(e.self), lu.P(p), lu.C(et.Cid))
+				}
+			}
+		}
+	}
 
 	if m.Empty() {
 		log.Debugf("received empty message from %s", p)
@@ -334,10 +358,6 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 		if entry.Cancel {
 			log.Debugf("%s cancel %s", p, entry.Cid)
 			if l.CancelWant(entry.Cid) {
-				// taskId := fmt.Sprintf("h%s", entry.Cid.String())
-				// e.peerRequestQueue.Remove(taskId, p)
-				// taskId = fmt.Sprintf("b%s", entry.Cid.String())
-				// e.peerRequestQueue.Remove(taskId, p)
 				e.peerRequestQueue.Remove(entry.Cid, p)
 			}
 		} else {
@@ -349,14 +369,15 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				if err == bstore.ErrNotFound {
 					// TODO: Enqueue these before any blocks and give them highest priority
 					if entry.SendDontHave {
-						replaceable := true
+						newWorkExists = true
+						isBlock := false
 						if entry.WantType == pb.Message_Wantlist_Block {
-							replaceable = false
+							isBlock = true
 						}
 						activeEntries = append(activeEntries, peertask.Task{
 							Identifier:  entry.Cid,
 							Priority:    entry.Priority,
-							Replaceable: replaceable,
+							IsBlock:     isBlock,
 							Info: &wantInfo{
 								sendDontHave: true,
 								wantType:     entry.WantType,
@@ -371,7 +392,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				// If the request is a want-have, and the block is small
 				// enough, treat the request as a want-block
 				wantHave := entry.WantType == pb.Message_Wantlist_Have
-				sendBlock := !wantHave || (wantHave && blockSize <= maxBlockSizeReplaceHasWithBlock)
+				sendBlock := !wantHave || (wantHave && blockSize <= e.maxBlockSizeReplaceHasWithBlock)
 
 				// We have the block.
 				// Add entries to the send queue in groups such that the total
@@ -384,16 +405,21 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				}
 
 				wantType := pb.Message_Wantlist_Have
-				replaceable := true
+				isBlock := false
 				if sendBlock {
 					wantType = pb.Message_Wantlist_Block
-					replaceable = false
+					isBlock = true
 				}
 
+				if sendBlock {
+					// log.Warningf("  engine-%s put %s->queue as want-block\n", lu.P(e.self), lu.C(entry.Cid))
+				} else {
+					// log.Warningf("  engine-%s put %s->queue as want-have\n", lu.P(e.self), lu.C(entry.Cid))
+				}
 				activeEntries = append(activeEntries, peertask.Task{
 					Identifier:  entry.Cid,
 					Priority:    entry.Priority,
-					Replaceable: replaceable,
+					IsBlock:     isBlock,
 					Info: &wantInfo{
 						sendDontHave: entry.SendDontHave,
 						wantType:     wantType,
@@ -417,6 +443,8 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 }
 
 func (e *Engine) addBlocks(ks []cid.Cid) {
+	// TODO: send out HAVEs to peers that sent us a want-have for these blocks
+
 	// Get the set of blocks that are wanted by our peers
 	wantedKs := cid.NewSet()
 	for _, l := range e.ledgerMap {
@@ -455,7 +483,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 				e.peerRequestQueue.PushBlock(l.Partner, peertask.Task{
 					Identifier:  entry.Cid,
 					Priority:    entry.Priority,
-					Replaceable: false,
+					IsBlock:     true,
 					Info: &wantInfo{
 						sendDontHave: false,
 						wantType:     pb.Message_Wantlist_Block,

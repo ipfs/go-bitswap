@@ -92,6 +92,9 @@ func (sw *sessionWants) ReceiveFrom(p peer.ID, ks []cid.Cid, dontHaves []cid.Cid
 }
 
 func (sw *sessionWants) dontHavesReceived(p peer.ID, dontHaves []cid.Cid) {
+	// TODO: If there is a timeout for the want from the peer, remove the want
+	// potential so it can be sent again (and blacklist the peer?)
+
 	// For each DONT_HAVE
 	for _, c := range dontHaves {
 		// If we sent a want-block to this peer, decrease the want's potential by the

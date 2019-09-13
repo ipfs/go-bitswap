@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	lu "github.com/ipfs/go-bitswap/logutil"
+
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -38,15 +40,18 @@ type PeerManager struct {
 
 	createPeerQueue PeerQueueFactory
 	ctx             context.Context
+
+	self peer.ID
 }
 
 // New creates a new PeerManager, given a context and a peerQueueFactory.
-func New(ctx context.Context, createPeerQueue PeerQueueFactory) *PeerManager {
+func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *PeerManager {
 	return &PeerManager{
 		peerQueues:      make(map[peer.ID]*peerQueueInstance),
 		pwm:             newPeerWantManager(),
 		createPeerQueue: createPeerQueue,
 		ctx:             ctx,
+		self:            self,
 	}
 }
 
@@ -86,6 +91,9 @@ func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
 
 // Disconnected is called to remove a peer from the pool.
 func (pm *PeerManager) Disconnected(p peer.ID) {
+	// TODO: Need to inform sessions that had requested a want / want-block
+	// from peer so they can adjust their want potential
+
 	pm.Lock()
 	defer pm.Unlock()
 
@@ -165,4 +173,12 @@ func (pm *PeerManager) getOrCreate(p peer.ID) *peerQueueInstance {
 		pm.peerQueues[p] = pqi
 	}
 	return pqi
+}
+
+func (pm *PeerManager) Trace() {
+	var peers []string
+	for p := range pm.peerQueues {
+		peers = append(peers, lu.P(p))
+	}
+	log.Warningf("%s peer want manager\npeers %s\n%s\n", pm.self, peers, pm.pwm)
 }

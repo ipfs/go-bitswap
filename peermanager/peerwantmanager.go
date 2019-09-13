@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
+	lu "github.com/ipfs/go-bitswap/logutil"
+
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -180,12 +182,12 @@ func (pwm *peerWantManager) GetWantBlocks() []cid.Cid {
 func (pwm *peerWantManager) String() string {
 	var b bytes.Buffer
 	for p, ws := range pwm.peerWants {
-		b.WriteString(fmt.Sprintf("Peer %s: %d want-have / %d want-block:\n", p, ws.wantHaves.Len(), ws.wantBlocks.Len()))
+		b.WriteString(fmt.Sprintf("Peer %s: %d want-have / %d want-block:\n", lu.P(p), ws.wantHaves.Len(), ws.wantBlocks.Len()))
 		for _, c := range ws.wantHaves.Keys() {
-			b.WriteString(fmt.Sprintf("  want-have  %s\n", c.String()[2:8]))
+			b.WriteString(fmt.Sprintf("  want-have  %s\n", lu.C(c)))
 		}
 		for _, c := range ws.wantBlocks.Keys() {
-			b.WriteString(fmt.Sprintf("  want-block %s\n", c.String()[2:8]))
+			b.WriteString(fmt.Sprintf("  want-block %s\n", lu.C(c)))
 		}
 	}
 	return b.String()

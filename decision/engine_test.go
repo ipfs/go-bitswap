@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,11 +12,13 @@ import (
 
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
+	lu "github.com/ipfs/go-bitswap/logutil"
 
 	blocks "github.com/ipfs/go-block-format"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	testutil "github.com/libp2p/go-libp2p-core/test"
 )
@@ -69,8 +72,7 @@ func newEngine(ctx context.Context, idStr string) engineSet {
 		//Strategy: New(true),
 		PeerTagger: fpt,
 		Blockstore: bs,
-		Engine: NewEngine(ctx,
-			bs, fpt),
+		Engine: NewEngine(ctx, bs, fpt, 0),
 	}
 }
 
@@ -149,7 +151,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{})
+	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, 0)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -163,6 +165,477 @@ func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	if _, ok := <-e.Outbox(); ok {
 		t.Fatal("channel should be closed")
 	}
+}
+
+func TestPartnerWantHaveWantBlock(t *testing.T) {
+	alphabet := "abcdefghijklmnopqrstuvwxyz"
+	vowels := "aeiou"
+
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	for _, letter := range strings.Split(alphabet, "") {
+		block := blocks.NewBlock([]byte(letter))
+		if err := bs.Put(block); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	partner := testutil.RandPeerIDFatal(t)
+	// partnerWantBlocks(e, vowels, partner)
+
+	type testCaseEntry struct {
+		wantBlks string
+		wantHaves string
+		sendDontHave bool
+	}
+
+	type testCaseExp struct {
+		blks string
+		haves string
+		dontHaves string
+	}
+
+	type testCase struct {
+		only bool
+		wls []testCaseEntry
+		exp []testCaseExp
+	}
+
+	testCases := []testCase{
+		// Just send want-blocks
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: vowels,
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: vowels,
+				},
+			},
+		},
+
+		// Send want-blocks and want-haves
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: vowels,
+					wantHaves: "fgh",
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: vowels,
+					haves: "fgh",
+				},
+			},
+		},
+
+		// Send want-blocks and want-haves, with some want-haves that are not
+		// present, but without requesting DONT_HAVES
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: vowels,
+					wantHaves: "fgh123",
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: vowels,
+					haves: "fgh",
+				},
+			},
+		},
+
+		// Send want-blocks and want-haves, with some want-haves that are not
+		// present, and request DONT_HAVES
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: vowels,
+					wantHaves: "fgh123",
+					sendDontHave: true,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: vowels,
+					haves: "fgh",
+					dontHaves: "123",
+				},
+			},
+		},
+
+		// Send want-blocks and want-haves, with some want-blocks and want-haves that are not
+		// present, but without requesting DONT_HAVES
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "aeiou123",
+					wantHaves: "fgh456",
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "aeiou",
+					haves: "fgh",
+					dontHaves: "",
+				},
+			},
+		},
+
+		// Send want-blocks and want-haves, with some want-blocks and want-haves that are not
+		// present, and request DONT_HAVES
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "aeiou123",
+					wantHaves: "fgh456",
+					sendDontHave: true,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "aeiou",
+					haves: "fgh",
+					dontHaves: "123456",
+				},
+			},
+		},
+
+		// Send repeated want-blocks
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "ae",
+					sendDontHave: false,
+				},
+				testCaseEntry{
+					wantBlks: "io",
+					sendDontHave: false,
+				},
+				testCaseEntry{
+					wantBlks: "u",
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "ae",
+				},
+				testCaseExp{
+					blks: "io",
+				},
+				testCaseExp{
+					blks: "u",
+				},
+			},
+		},
+
+		// Send repeated want-blocks and want-haves
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "ae",
+					wantHaves: "jk",
+					sendDontHave: false,
+				},
+				testCaseEntry{
+					wantBlks: "io",
+					wantHaves: "lm",
+					sendDontHave: false,
+				},
+				testCaseEntry{
+					wantBlks: "u",
+					sendDontHave: false,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "ae",
+					haves: "jk",
+				},
+				testCaseExp{
+					blks: "io",
+					haves: "lm",
+				},
+				testCaseExp{
+					blks: "u",
+				},
+			},
+		},
+
+		// Send repeated want-blocks and want-haves, with some want-blocks and want-haves that are not
+		// present, and request DONT_HAVES
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "ae12",
+					wantHaves: "jk5",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "io34",
+					wantHaves: "lm",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "u",
+					wantHaves: "6",
+					sendDontHave: true,
+				},
+			},
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "ae",
+					haves: "jk",
+					dontHaves: "125",
+				},
+				testCaseExp{
+					blks: "io",
+					haves: "lm",
+					dontHaves: "34",
+				},
+				testCaseExp{
+					blks: "u",
+					dontHaves: "6",
+				},
+			},
+		},
+
+		// Send want-block then want-have for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+			},
+			// want-have should be ignored because there was already a
+			// want-block for the same CID in the queue
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "a",
+				},
+			},
+		},
+
+		// Send want-have then want-block for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantHaves: "b",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "b",
+					sendDontHave: true,
+				},
+			},
+			// want-block should overwrite existing want-have
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "b",
+				},
+			},
+		},
+
+		// Send want-block then want-block for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+			},
+			// second want-block should be ignored
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "a",
+				},
+			},
+		},
+
+		// Send want-have then want-have for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+			},
+			// second want-have should be ignored
+			exp: []testCaseExp{
+				testCaseExp{
+					haves: "a",
+				},
+			},
+		},
+	}
+
+	var onlyTestCases []testCase
+	for _, testCase := range testCases {
+		if testCase.only {
+			onlyTestCases = append(onlyTestCases, testCase)
+		}
+	}
+	if len(onlyTestCases) > 0 {
+		testCases = onlyTestCases
+	}
+
+	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, 0)
+	for i, testCase := range testCases {
+		t.Logf("Test case %d:", i)
+		for _, wl := range testCase.wls {
+			t.Logf("  want-blocks '%s' / want-haves '%s' / sendDontHave %t",
+				wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+			wantBlks := strings.Split(wl.wantBlks, "")
+			wantHaves := strings.Split(wl.wantHaves, "")
+			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partner)
+		}
+
+		for _, exp := range testCase.exp {
+			expBlks := strings.Split(exp.blks, "")
+			expHaves := strings.Split(exp.haves, "")
+			expDontHaves := strings.Split(exp.dontHaves, "")
+			env, err := checkOutput(t, e, expBlks, expHaves, expDontHaves)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env.Sent()
+		}
+	}
+}
+
+func checkOutput(t *testing.T, e *Engine, expBlks []string, expHaves []string, expDontHaves []string) (*Envelope, error) {
+	next := <-e.Outbox()
+	envelope := <-next
+
+	blks := envelope.Message.Blocks()
+	presences := envelope.Message.BlockPresences()
+
+	// Verify payload message length
+	if len(blks) != len(expBlks) {
+		blkDiff := formatBlocksDiff(blks, expBlks)
+		msg := fmt.Sprintf("Received %d blocks. Expected %d blocks:\n%s", len(blks), len(expBlks), blkDiff)
+		return nil, errors.New(msg)
+	}
+
+	// Verify block presences message length
+	expPresencesCount := len(expHaves) + len(expDontHaves)
+	if len(presences) != expPresencesCount {
+		presenceDiff := formatPresencesDiff(presences, expHaves, expDontHaves)
+		return nil, errors.New(fmt.Sprintf("Received %d BlockPresences. Expected %d BlockPresences:\n%s",
+			len(presences), expPresencesCount, presenceDiff))
+	}
+
+	// Verify payload message contents
+	for _, k := range expBlks {
+		found := false
+		expected := blocks.NewBlock([]byte(k))
+		for _, block := range blks {
+			if block.Cid().Equals(expected.Cid()) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, errors.New(formatBlocksDiff(blks, expBlks))
+		}
+	}
+
+	// Verify HAVEs
+	if err := checkPresence(presences, expHaves, pb.Message_Have); err != nil {
+		return nil, errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
+	}
+
+	// Verify DONT_HAVEs
+	if err := checkPresence(presences, expDontHaves, pb.Message_DontHave); err != nil {
+		return nil, errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
+	}
+
+	return envelope, nil
+}
+
+func checkPresence(presences []pb.Message_BlockPresence, expPresence []string, presenceType pb.Message_BlockPresenceType) error {
+	for _, k := range expPresence {
+		found := false
+		expected := blocks.NewBlock([]byte(k))
+		for _, p := range presences {
+			c, err := cid.Cast(p.GetCid())
+			if err != nil {
+				panic("could not parse cid")
+			}
+			if c.Equals(expected.Cid()) {
+				found = true
+				if p.GetType() != presenceType {
+					return errors.New("type mismatch")
+				}
+				break
+			}
+		}
+		if !found {
+			return errors.New("not found")
+		}
+	}
+	return nil
+}
+
+func formatBlocksDiff(blks []blocks.Block, expBlks []string) string {
+	var out bytes.Buffer
+	out.WriteString(fmt.Sprintf("Blocks (%d):\n", len(blks)))
+	for _, b := range blks {
+		out.WriteString(fmt.Sprintf("  %s: %s\n", l.C(b.Cid()), b.RawData()))
+	}
+	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expBlks)))
+	for _, k := range expBlks {
+		expected := blocks.NewBlock([]byte(k))
+		out.WriteString(fmt.Sprintf("  %s: %s\n", l.C(expected.Cid()), k))
+	}
+	return out.String()
+}
+
+func formatPresencesDiff(presences []pb.Message_BlockPresence, expHaves []string, expDontHaves []string) string {
+	var out bytes.Buffer
+	out.WriteString(fmt.Sprintf("BlockPresences (%d):\n", len(presences)))
+	for _, b := range presences {
+		c, err := cid.Cast(b.GetCid())
+		if err != nil {
+			panic(err)
+		}
+		t := "HAVE"
+		if b.GetType() == pb.Message_DontHave {
+			t = "DONT_HAVE"
+		}
+		out.WriteString(fmt.Sprintf("  %s - %s\n", l.C(c), t))
+	}
+	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expHaves) + len(expDontHaves)))
+	for _, k := range expHaves {
+		expected := blocks.NewBlock([]byte(k))
+		out.WriteString(fmt.Sprintf("  %s: %s - HAVE\n", l.C(expected.Cid()), k))
+	}
+	for _, k := range expDontHaves {
+		expected := blocks.NewBlock([]byte(k))
+		out.WriteString(fmt.Sprintf("  %s: %s - DONT_HAVE\n", l.C(expected.Cid()), k))
+	}
+	return out.String()
 }
 
 func TestPartnerWantsThenCancels(t *testing.T) {
@@ -206,7 +679,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := NewEngine(context.Background(), bs, &fakePeerTagger{})
+		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, 0)
 		for _, testcase := range testcases {
 			set := testcase[0]
 			cancels := testcase[1]
@@ -215,7 +688,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 
 			partner := testutil.RandPeerIDFatal(t)
 
-			partnerWants(e, set, partner)
+			partnerWantBlocks(e, set, partner)
 			partnerCancels(e, cancels, partner)
 		}
 		if err := checkHandledInOrder(t, e, expected); err != nil {
@@ -238,7 +711,7 @@ func TestTaggingPeers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	partnerWants(sanfrancisco.Engine, keys, seattle.Peer)
+	partnerWantBlocks(sanfrancisco.Engine, keys, seattle.Peer)
 	next := <-sanfrancisco.Engine.Outbox()
 	envelope := <-next
 
@@ -252,11 +725,28 @@ func TestTaggingPeers(t *testing.T) {
 		t.Fatal("Peers should be untagged but weren't")
 	}
 }
-func partnerWants(e *Engine, keys []string, partner peer.ID) {
+
+func partnerWantBlocks(e *Engine, keys []string, partner peer.ID) {
 	add := message.New(false)
 	for i, letter := range keys {
 		block := blocks.NewBlock([]byte(letter))
 		add.AddEntry(block.Cid(), len(keys)-i, pb.Message_Wantlist_Block, true)
+	}
+	e.MessageReceived(partner, add)
+}
+
+func partnerWantBlocksHaves(e *Engine, keys []string, wantHaves []string, sendDontHave bool, partner peer.ID) {
+	add := message.New(false)
+	priority := len(wantHaves) + len(keys)
+	for _, letter := range wantHaves {
+		block := blocks.NewBlock([]byte(letter))
+		add.AddEntry(block.Cid(), priority, pb.Message_Wantlist_Have, sendDontHave)
+		priority--
+	}
+	for _, letter := range keys {
+		block := blocks.NewBlock([]byte(letter))
+		add.AddEntry(block.Cid(), priority, pb.Message_Wantlist_Block, sendDontHave)
+		priority--
 	}
 	e.MessageReceived(partner, add)
 }
