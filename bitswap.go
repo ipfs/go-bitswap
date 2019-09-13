@@ -147,7 +147,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	bs := &Bitswap{
 		blockstore:       bstore,
 		// TODO close the engine with Close() method
-		engine:           decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 0),
+		engine:           decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 1024),
 		network:          network,
 		process:          px,
 		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
