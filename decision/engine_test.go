@@ -72,7 +72,7 @@ func newEngine(ctx context.Context, idStr string) engineSet {
 		//Strategy: New(true),
 		PeerTagger: fpt,
 		Blockstore: bs,
-		Engine: NewEngine(ctx, bs, fpt, 0),
+		Engine: NewEngine(ctx, bs, fpt, "", 0),
 	}
 }
 
@@ -151,7 +151,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, 0)
+	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, "", 0)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -500,7 +500,7 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, 0)
+	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "", 0)
 	for i, testCase := range testCases {
 		t.Logf("Test case %d:", i)
 		for _, wl := range testCase.wls {
@@ -602,12 +602,12 @@ func formatBlocksDiff(blks []blocks.Block, expBlks []string) string {
 	var out bytes.Buffer
 	out.WriteString(fmt.Sprintf("Blocks (%d):\n", len(blks)))
 	for _, b := range blks {
-		out.WriteString(fmt.Sprintf("  %s: %s\n", l.C(b.Cid()), b.RawData()))
+		out.WriteString(fmt.Sprintf("  %s: %s\n", lu.C(b.Cid()), b.RawData()))
 	}
 	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expBlks)))
 	for _, k := range expBlks {
 		expected := blocks.NewBlock([]byte(k))
-		out.WriteString(fmt.Sprintf("  %s: %s\n", l.C(expected.Cid()), k))
+		out.WriteString(fmt.Sprintf("  %s: %s\n", lu.C(expected.Cid()), k))
 	}
 	return out.String()
 }
@@ -624,16 +624,16 @@ func formatPresencesDiff(presences []pb.Message_BlockPresence, expHaves []string
 		if b.GetType() == pb.Message_DontHave {
 			t = "DONT_HAVE"
 		}
-		out.WriteString(fmt.Sprintf("  %s - %s\n", l.C(c), t))
+		out.WriteString(fmt.Sprintf("  %s - %s\n", lu.C(c), t))
 	}
 	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expHaves) + len(expDontHaves)))
 	for _, k := range expHaves {
 		expected := blocks.NewBlock([]byte(k))
-		out.WriteString(fmt.Sprintf("  %s: %s - HAVE\n", l.C(expected.Cid()), k))
+		out.WriteString(fmt.Sprintf("  %s: %s - HAVE\n", lu.C(expected.Cid()), k))
 	}
 	for _, k := range expDontHaves {
 		expected := blocks.NewBlock([]byte(k))
-		out.WriteString(fmt.Sprintf("  %s: %s - DONT_HAVE\n", l.C(expected.Cid()), k))
+		out.WriteString(fmt.Sprintf("  %s: %s - DONT_HAVE\n", lu.C(expected.Cid()), k))
 	}
 	return out.String()
 }
@@ -679,7 +679,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, 0)
+		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "", 0)
 		for _, testcase := range testcases {
 			set := testcase[0]
 			cancels := testcase[1]
