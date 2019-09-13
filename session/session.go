@@ -155,8 +155,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
-	interestedHaves := s.sw.FilterInteresting(haves)
-	s.pm.ReceiveFrom(from, interestedKs, interestedHaves)
+	s.pm.ReceiveFrom(from, interestedKs, dontHaves)
 
 	// Record response timing only if the blocks came from the network
 	// (blocks can also be received from the local node)
