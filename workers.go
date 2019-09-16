@@ -5,10 +5,12 @@ import (
 
 	engine "github.com/ipfs/go-bitswap/decision"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	"github.com/ipfs/go-bitswap/metrics"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
+	"go.opencensus.io/stats"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending
@@ -86,6 +88,8 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	// throughout the network stack
 	defer env.Sent()
 
+	stats.Record(ctx, metrics.BlocksSent.M(int64(len(env.Message.Blocks()))))
+
 	msgSize := 0
 	msg := bsmsg.New(false)
 	for _, block := range env.Message.Blocks() {
@@ -94,6 +98,7 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 		log.Infof("Sending block %s to %s", block, env.Peer)
 	}
 
+	stats.Record(ctx, metrics.BytesSent.M(float64(msgSize)))
 	bs.sentHistogram.Observe(float64(msgSize))
 	err := bs.network.SendMessage(ctx, env.Peer, msg)
 	if err != nil {

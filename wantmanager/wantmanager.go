@@ -5,11 +5,12 @@ import (
 	"math"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	bsmetrics "github.com/ipfs/go-bitswap/metrics"
 	wantlist "github.com/ipfs/go-bitswap/wantlist"
 	logging "github.com/ipfs/go-log"
+	"go.opencensus.io/stats"
 
 	cid "github.com/ipfs/go-cid"
-	metrics "github.com/ipfs/go-metrics-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -48,23 +49,19 @@ type WantManager struct {
 	ctx    context.Context
 	cancel func()
 
-	peerHandler   PeerHandler
-	wantlistGauge metrics.Gauge
+	peerHandler PeerHandler
 }
 
 // New initializes a new WantManager for a given context.
 func New(ctx context.Context, peerHandler PeerHandler) *WantManager {
 	ctx, cancel := context.WithCancel(ctx)
-	wantlistGauge := metrics.NewCtx(ctx, "wantlist_total",
-		"Number of items in wantlist.").Gauge()
 	return &WantManager{
-		wantMessages:  make(chan wantMessage, 10),
-		wl:            wantlist.NewSessionTrackedWantlist(),
-		bcwl:          wantlist.NewSessionTrackedWantlist(),
-		ctx:           ctx,
-		cancel:        cancel,
-		peerHandler:   peerHandler,
-		wantlistGauge: wantlistGauge,
+		wantMessages: make(chan wantMessage, 10),
+		wl:           wantlist.NewSessionTrackedWantlist(),
+		bcwl:         wantlist.NewSessionTrackedWantlist(),
+		ctx:          ctx,
+		cancel:       cancel,
+		peerHandler:  peerHandler,
 	}
 }
 
@@ -198,16 +195,15 @@ func (ws *wantSet) handle(wm *WantManager) {
 			if brdc {
 				wm.bcwl.Remove(e.Cid, ws.from)
 			}
-
 			if wm.wl.Remove(e.Cid, ws.from) {
-				wm.wantlistGauge.Dec()
+				// wm.wantlistGauge.Dec()
 			}
 		} else {
 			if brdc {
 				wm.bcwl.AddEntry(e.Entry, ws.from)
 			}
 			if wm.wl.AddEntry(e.Entry, ws.from) {
-				wm.wantlistGauge.Inc()
+				stats.Record(wm.ctx, bsmetrics.WantListSize.M(1))
 			}
 		}
 	}
