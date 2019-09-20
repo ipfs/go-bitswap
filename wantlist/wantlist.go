@@ -5,6 +5,8 @@ package wantlist
 import (
 	"sort"
 
+	pb "github.com/ipfs/go-bitswap/message/pb"
+
 	cid "github.com/ipfs/go-cid"
 )
 
@@ -17,6 +19,7 @@ type Wantlist struct {
 type Entry struct {
 	Cid      cid.Cid
 	Priority int
+	WantType pb.Message_Wantlist_WantType
 }
 
 // NewRefEntry creates a new reference tracked wantlist entry.
@@ -24,6 +27,7 @@ func NewRefEntry(c cid.Cid, p int) Entry {
 	return Entry{
 		Cid:      c,
 		Priority: p,
+		WantType: pb.Message_Wantlist_Block,
 	}
 }
 
@@ -46,32 +50,32 @@ func (w *Wantlist) Len() int {
 }
 
 // Add adds an entry in a wantlist from CID & Priority, if not already present.
-func (w *Wantlist) Add(c cid.Cid, priority int) bool {
-	if _, ok := w.set[c]; ok {
+func (w *Wantlist) Add(c cid.Cid, priority int, wantType pb.Message_Wantlist_WantType) bool {
+	e, ok := w.set[c]
+
+	// Adding want-have should not override want-block
+	if ok && e.WantType == pb.Message_Wantlist_Block || wantType == pb.Message_Wantlist_Have {
 		return false
 	}
 
 	w.set[c] = Entry{
 		Cid:      c,
 		Priority: priority,
+		WantType: wantType,
 	}
 
-	return true
-}
-
-// AddEntry adds an entry to a wantlist if not already present.
-func (w *Wantlist) AddEntry(e Entry) bool {
-	if _, ok := w.set[e.Cid]; ok {
-		return false
-	}
-	w.set[e.Cid] = e
 	return true
 }
 
 // Remove removes the given cid from the wantlist.
-func (w *Wantlist) Remove(c cid.Cid) bool {
-	_, ok := w.set[c]
+func (w *Wantlist) Remove(c cid.Cid, wantType pb.Message_Wantlist_WantType) bool {
+	e, ok := w.set[c]
 	if !ok {
+		return false
+	}
+
+	// Removing want-have should not remove want-block
+	if e.WantType == pb.Message_Wantlist_Block && wantType == pb.Message_Wantlist_Have {	
 		return false
 	}
 

@@ -52,6 +52,7 @@ type MessageQueue struct {
 	rebroadcastIntervalLk sync.RWMutex
 	rebroadcastInterval   time.Duration
 	rebroadcastTimer      *time.Timer
+	priority              int
 }
 
 // New creats a new MessageQueue.
@@ -64,14 +65,16 @@ func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
 		outgoingWork:        make(chan struct{}, 1),
 		done:                make(chan struct{}),
 		rebroadcastInterval: defaultRebroadcastInterval,
+		priority:            maxPriority,
 	}
 }
 
 func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := false
-		for i, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, maxPriority-i, pb.Message_Wantlist_Have, sendDontHave)
+		for _, c := range wantHaves {
+			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
+			mq.priority--
 		}
 	})
 }
@@ -79,11 +82,13 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := true
-		for i, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, maxPriority-i, pb.Message_Wantlist_Have, sendDontHave)
+		for _, c := range wantHaves {
+			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
+			mq.priority--
 		}
-		for i, c := range wantBlocks {
-			mq.nextMessage.AddEntry(c, maxPriority-len(wantHaves)-i, pb.Message_Wantlist_Block, sendDontHave)
+		for _, c := range wantBlocks {
+			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Block, sendDontHave)
+			mq.priority--
 		}
 	})
 }
@@ -237,22 +242,24 @@ func (mq *MessageQueue) sendMessage() {
 	if cwhaves > 0 {
 		detail += fmt.Sprintf(" %d cancel-have", cwhaves)
 	}
-	// log.Warningf("Sending message to %s with %d entries:%s\n", mq.p, len(entries), detail)
+	// log.Warningf("send %s->%s with %d entries:%s\n", lu.P(mq.network.Self()), lu.P(mq.p), len(entries), detail)
 	// for _, e := range entries {
 	// 	log.Debugf("  %s: Cancel? %t / WantHave %t / SendDontHave %t\n", e.Cid.String()[2:8], e.Cancel, e.WantHave, e.SendDontHave)
 	// }
 	for _, e := range entries {
 		if e.Cancel {
 			if e.WantType == pb.Message_Wantlist_Have {
-				log.Debugf("->%s: CANCEL-have %s\n", mq.p, e.Cid.String()[2:8])
+				// log.Warningf("send %s->%s: cancel-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			} else {
-				log.Debugf("->%s: CANCEL-block %s\n", mq.p, e.Cid.String()[2:8])
+				// log.Warningf("send %s->%s: cancel-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			}
 		} else {
 			if e.WantType == pb.Message_Wantlist_Have {
 				log.Debugf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+				// log.Warningf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			} else {
-				log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+				// log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+				// log.Warningf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			}
 		}
 	}

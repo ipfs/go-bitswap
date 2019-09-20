@@ -35,6 +35,7 @@ type BitSwapMessage interface {
 	Cancel(key cid.Cid)
 
 	Empty() bool
+	Size() int
 
 	// A full wantlist is an authoritative copy, a 'non-full' wantlist is a patch-set
 	Full() bool
@@ -86,7 +87,6 @@ type Entry struct {
 	wantlist.Entry
 	Cancel       bool
 	SendDontHave bool
-	WantType     pb.Message_Wantlist_WantType
 }
 
 func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
@@ -213,8 +213,8 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Messag
 			Entry: wantlist.Entry{
 				Cid:      c,
 				Priority: priority,
+				WantType: wantType,
 			},
-			WantType:     wantType,
 			SendDontHave: sendDontHave,
 			Cancel:       cancel,
 		}
@@ -222,6 +222,7 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Messag
 }
 
 func (m *impl) AddBlock(b blocks.Block) {
+	delete(m.blockPresences, b.Cid())
 	m.blocks[b.Cid()] = b
 }
 
@@ -235,6 +236,19 @@ func (m *impl) AddHave(c cid.Cid) {
 
 func (m *impl) AddDontHave(c cid.Cid) {
 	m.AddBlockPresence(c, pb.Message_DontHave)
+}
+
+func (m *impl) Size() int {
+	size := 0
+	for _, block := range m.blocks {
+		size += len(block.RawData())
+	}
+	for c := range m.blockPresences {
+		size += len(c.Bytes())
+		size += 1 // for type TODO: is type one byte?
+	}
+	// TODO: Include wantlist size
+	return size
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.

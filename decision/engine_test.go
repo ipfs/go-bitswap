@@ -72,7 +72,7 @@ func newEngine(ctx context.Context, idStr string) engineSet {
 		//Strategy: New(true),
 		PeerTagger: fpt,
 		Blockstore: bs,
-		Engine: NewEngine(ctx, bs, fpt, "", 0),
+		Engine: NewEngine(ctx, bs, fpt, "localhost", 0),
 	}
 }
 
@@ -151,7 +151,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, "", 0)
+	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, "localhost", 0)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -167,7 +167,7 @@ func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	}
 }
 
-func TestPartnerWantHaveWantBlock(t *testing.T) {
+func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 	alphabet := "abcdefghijklmnopqrstuvwxyz"
 	vowels := "aeiou"
 
@@ -326,13 +326,7 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "ae",
-				},
-				testCaseExp{
-					blks: "io",
-				},
-				testCaseExp{
-					blks: "u",
+					blks: "aeiou",
 				},
 			},
 		},
@@ -357,15 +351,8 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "ae",
-					haves: "jk",
-				},
-				testCaseExp{
-					blks: "io",
-					haves: "lm",
-				},
-				testCaseExp{
-					blks: "u",
+					blks: "aeiou",
+					haves: "jklm",
 				},
 			},
 		},
@@ -392,18 +379,9 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "ae",
-					haves: "jk",
-					dontHaves: "125",
-				},
-				testCaseExp{
-					blks: "io",
-					haves: "lm",
-					dontHaves: "34",
-				},
-				testCaseExp{
-					blks: "u",
-					dontHaves: "6",
+					blks: "aeiou",
+					haves: "jklm",
+					dontHaves: "123456",
 				},
 			},
 		},
@@ -500,7 +478,7 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "", 0)
+	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 	for i, testCase := range testCases {
 		t.Logf("Test case %d:", i)
 		for _, wl := range testCase.wls {
@@ -515,7 +493,10 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 			expBlks := strings.Split(exp.blks, "")
 			expHaves := strings.Split(exp.haves, "")
 			expDontHaves := strings.Split(exp.dontHaves, "")
-			env, err := checkOutput(t, e, expBlks, expHaves, expDontHaves)
+
+			next := <-e.Outbox()
+			env := <-next
+			err := checkOutput(t, e, env, expBlks, expHaves, expDontHaves)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -524,10 +505,193 @@ func TestPartnerWantHaveWantBlock(t *testing.T) {
 	}
 }
 
-func checkOutput(t *testing.T, e *Engine, expBlks []string, expHaves []string, expDontHaves []string) (*Envelope, error) {
-	next := <-e.Outbox()
-	envelope := <-next
+func TestPartnerWantHaveWantBlockActive(t *testing.T) {
+	alphabet := "abcdefghijklmnopqrstuvwxyz"
 
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	for _, letter := range strings.Split(alphabet, "") {
+		block := blocks.NewBlock([]byte(letter))
+		if err := bs.Put(block); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	partner := testutil.RandPeerIDFatal(t)
+	// partnerWantBlocks(e, vowels, partner)
+
+	type testCaseEntry struct {
+		wantBlks string
+		wantHaves string
+		sendDontHave bool
+	}
+
+	type testCaseExp struct {
+		blks string
+		haves string
+		dontHaves string
+	}
+
+	type testCase struct {
+		only bool
+		wls []testCaseEntry
+		exp []testCaseExp
+	}
+
+	testCases := []testCase{
+		// Send want-block then want-have for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+			},
+			// want-have should be ignored because there was already a
+			// want-block for the same CID in the queue
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "a",
+				},
+			},
+		},
+
+		// Send want-have then want-block for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantHaves: "b",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "b",
+					sendDontHave: true,
+				},
+			},
+			// want-have is active when want-block is added, so want-have
+			// should get sent, then want-block
+			exp: []testCaseExp{
+				testCaseExp{
+					haves: "b",
+				},
+				testCaseExp{
+					blks: "b",
+				},
+			},
+		},
+
+		// Send want-block then want-block for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantBlks: "a",
+					sendDontHave: true,
+				},
+			},
+			// second want-block should be ignored
+			exp: []testCaseExp{
+				testCaseExp{
+					blks: "a",
+				},
+			},
+		},
+
+		// Send want-have then want-have for same CID
+		testCase{
+			wls: []testCaseEntry{
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+				testCaseEntry{
+					wantHaves: "a",
+					sendDontHave: true,
+				},
+			},
+			// second want-have should be ignored
+			exp: []testCaseExp{
+				testCaseExp{
+					haves: "a",
+				},
+			},
+		},
+	}
+
+	var onlyTestCases []testCase
+	for _, testCase := range testCases {
+		if testCase.only {
+			onlyTestCases = append(onlyTestCases, testCase)
+		}
+	}
+	if len(onlyTestCases) > 0 {
+		testCases = onlyTestCases
+	}
+
+	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	var next (<-chan *Envelope)
+	getNextEnv := func(ctx context.Context) *Envelope {
+		if next == nil {
+			next = <-e.Outbox() // returns immediately
+		}
+
+		select {
+		case env, ok := <-next: // blocks till next envelope ready
+			next = nil
+			if !ok {
+				log.Warningf("got closed channel")
+				return nil
+			}
+			return env
+		case <-ctx.Done():
+			// log.Warningf("got timeout")
+		}
+		return nil
+	}
+
+	for i, testCase := range testCases {
+		envs := make([]*Envelope, 0)
+
+		t.Logf("Test case %d:", i)
+		for _, wl := range testCase.wls {
+			t.Logf("  want-blocks '%s' / want-haves '%s' / sendDontHave %t",
+				wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+			wantBlks := strings.Split(wl.wantBlks, "")
+			wantHaves := strings.Split(wl.wantHaves, "")
+			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partner)
+
+			ctx, _ := context.WithTimeout(context.Background(), 5 * time.Millisecond)
+			env := getNextEnv(ctx)
+			if env != nil {
+				envs = append(envs, env)
+			}
+		}
+
+		if len(envs) != len(testCase.exp) {
+			t.Fatalf("Expected %d envelopes but received %d", len(testCase.exp), len(envs))
+		}
+
+		for i, exp := range testCase.exp {
+			expBlks := strings.Split(exp.blks, "")
+			expHaves := strings.Split(exp.haves, "")
+			expDontHaves := strings.Split(exp.dontHaves, "")
+
+			err := checkOutput(t, e, envs[i], expBlks, expHaves, expDontHaves)
+			if err != nil {
+				t.Fatal(err)
+			}
+			envs[i].Sent()
+		}
+	}
+}
+
+func checkOutput(t *testing.T, e *Engine, envelope *Envelope, expBlks []string, expHaves []string, expDontHaves []string) error {
 	blks := envelope.Message.Blocks()
 	presences := envelope.Message.BlockPresences()
 
@@ -535,14 +699,14 @@ func checkOutput(t *testing.T, e *Engine, expBlks []string, expHaves []string, e
 	if len(blks) != len(expBlks) {
 		blkDiff := formatBlocksDiff(blks, expBlks)
 		msg := fmt.Sprintf("Received %d blocks. Expected %d blocks:\n%s", len(blks), len(expBlks), blkDiff)
-		return nil, errors.New(msg)
+		return errors.New(msg)
 	}
 
 	// Verify block presences message length
 	expPresencesCount := len(expHaves) + len(expDontHaves)
 	if len(presences) != expPresencesCount {
 		presenceDiff := formatPresencesDiff(presences, expHaves, expDontHaves)
-		return nil, errors.New(fmt.Sprintf("Received %d BlockPresences. Expected %d BlockPresences:\n%s",
+		return errors.New(fmt.Sprintf("Received %d BlockPresences. Expected %d BlockPresences:\n%s",
 			len(presences), expPresencesCount, presenceDiff))
 	}
 
@@ -557,21 +721,21 @@ func checkOutput(t *testing.T, e *Engine, expBlks []string, expHaves []string, e
 			}
 		}
 		if !found {
-			return nil, errors.New(formatBlocksDiff(blks, expBlks))
+			return errors.New(formatBlocksDiff(blks, expBlks))
 		}
 	}
 
 	// Verify HAVEs
 	if err := checkPresence(presences, expHaves, pb.Message_Have); err != nil {
-		return nil, errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
+		return errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
 	}
 
 	// Verify DONT_HAVEs
 	if err := checkPresence(presences, expDontHaves, pb.Message_DontHave); err != nil {
-		return nil, errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
+		return errors.New(formatPresencesDiff(presences, expHaves, expDontHaves))
 	}
 
-	return envelope, nil
+	return nil
 }
 
 func checkPresence(presences []pb.Message_BlockPresence, expPresence []string, presenceType pb.Message_BlockPresenceType) error {
@@ -679,7 +843,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "", 0)
+		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 		for _, testcase := range testcases {
 			set := testcase[0]
 			cancels := testcase[1]

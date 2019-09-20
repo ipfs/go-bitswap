@@ -73,6 +73,7 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					}
 					outgoing.AddBlockPresence(c, blockPresence.Type)
 				}
+				// TODO: Only record message as sent if there was no error?
 				bs.engine.MessageSent(envelope.Peer, outgoing)
 
 				bs.sendBlocks(ctx, envelope)
@@ -124,7 +125,8 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	bs.sentHistogram.Observe(float64(msgSize))
 	err := bs.network.SendMessage(ctx, env.Peer, msg)
 	if err != nil {
-		log.Infof("sendblock error: %s", err)
+		// log.Infof("sendblock error: %s", err)
+		log.Errorf("SendMessage error: %s. size: %d. block-presence length: %d", err, msg.Size(), len(env.Message.BlockPresences()))
 	}
 	log.Infof("Sent message to %s", env.Peer)
 }

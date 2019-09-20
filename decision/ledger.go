@@ -5,6 +5,7 @@ import (
 	"time"
 
 	wl "github.com/ipfs/go-bitswap/wantlist"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -79,14 +80,13 @@ func (l *ledger) ReceivedBytes(n int) {
 	l.Accounting.BytesRecv += uint64(n)
 }
 
-func (l *ledger) Wants(k cid.Cid, priority int) {
+func (l *ledger) Wants(k cid.Cid, priority int, wantType pb.Message_Wantlist_WantType) {
 	log.Debugf("peer %s wants %s", l.Partner, k)
-	l.wantList.Add(k, priority)
+	l.wantList.Add(k, priority, wantType)
 }
 
 func (l *ledger) CancelWant(k cid.Cid) bool {
-	// return l.wantList.Remove(k, false)
-	return l.wantList.Remove(k)
+	return l.wantList.Remove(k, pb.Message_Wantlist_Block)
 }
 
 func (l *ledger) WantListContains(k cid.Cid) (wl.Entry, bool) {
