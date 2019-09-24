@@ -24,7 +24,10 @@ import (
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
+	logging "github.com/ipfs/go-log"
 )
+
+var log = logging.Logger("bs:bnch")
 
 type fetchFunc func(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid)
 
@@ -117,10 +120,11 @@ var benches = []bench{
 func BenchmarkFixedDelay(b *testing.B) {
 	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
+	bstoreLatency := time.Duration(0)
 
 	for _, bch := range benches {
 		b.Run(bch.name, func(b *testing.B) {
-			subtestDistributeAndFetch(b, bch.nodeCount, bch.blockCount, fixedDelay, bch.distFn, bch.fetchFn)
+			subtestDistributeAndFetch(b, bch.nodeCount, bch.blockCount, fixedDelay, bstoreLatency, bch.distFn, bch.fetchFn)
 		})
 	}
 
@@ -129,11 +133,15 @@ func BenchmarkFixedDelay(b *testing.B) {
 	printResults(benchmarkLog)
 }
 
+const datacenterSpeed = 5 * time.Millisecond
 const fastSpeed = 60 * time.Millisecond
 const mediumSpeed = 200 * time.Millisecond
 const slowSpeed = 800 * time.Millisecond
 const superSlowSpeed = 4000 * time.Millisecond
+const datacenterDistribution = 3 * time.Millisecond
 const distribution = 20 * time.Millisecond
+const datacenterBandwidth = 125000000.0
+const datacenterBandwidthDeviation = 3000000.0
 const fastBandwidth = 1250000.0
 const fastBandwidthDeviation = 300000.0
 const mediumBandwidth = 500000.0
@@ -141,6 +149,7 @@ const mediumBandwidthDeviation = 80000.0
 const slowBandwidth = 100000.0
 const slowBandwidthDeviation = 16500.0
 const stdBlockSize = 8000
+const largeBlockSize = 256 * 1024
 
 func BenchmarkRealWorld(b *testing.B) {
 	benchmarkLog = nil
@@ -165,22 +174,46 @@ func BenchmarkRealWorld(b *testing.B) {
 		0.3, 0.3, distribution, randomGen)
 	slowNetworkDelay := delay.Delay(fastSpeed, slowNetworkDelayGenerator)
 	slowBandwidthGenerator := tn.VariableRateLimitGenerator(slowBandwidth, slowBandwidthDeviation, randomGen)
+	bstoreLatency := time.Duration(0)
 
 	b.Run("200Nodes-AllToAll-BigBatch-FastNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, fastNetworkDelay, fastBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+		subtestDistributeAndFetchRateLimited(b, 300, 200, fastNetworkDelay, fastBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
 	})
 	b.Run("200Nodes-AllToAll-BigBatch-AverageVariableSpeedNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, averageNetworkDelay, averageBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+		subtestDistributeAndFetchRateLimited(b, 300, 200, averageNetworkDelay, averageBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
 	})
 	b.Run("200Nodes-AllToAll-BigBatch-SlowVariableSpeedNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, slowNetworkDelay, slowBandwidthGenerator, stdBlockSize, allToAll, batchFetchAll)
+		subtestDistributeAndFetchRateLimited(b, 300, 200, slowNetworkDelay, slowBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
 	})
 	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
 	_ = ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
 	printResults(benchmarkLog)
 }
 
-func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, df distFunc, ff fetchFunc) {
+func BenchmarkDatacenter(b *testing.B) {
+	benchmarkLog = nil
+	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
+	var randomGen *rand.Rand = nil
+	if err == nil {
+		randomGen = rand.New(rand.NewSource(benchmarkSeed))
+	}
+
+	datacenterNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
+		fastSpeed-datacenterSpeed, (fastSpeed-datacenterSpeed) / 2,
+		0.0, 0.0, datacenterDistribution, randomGen)
+	datacenterNetworkDelay := delay.Delay(datacenterSpeed, datacenterNetworkDelayGenerator)
+	datacenterBandwidthGenerator := tn.VariableRateLimitGenerator(datacenterBandwidth, datacenterBandwidthDeviation, randomGen)
+	bstoreLatency := time.Millisecond * 25
+
+	b.Run("3Nodes-Overlap3-UnixfsFetch", func(b *testing.B) {
+		subtestDistributeAndFetchRateLimited(b, 3, 100, datacenterNetworkDelay, datacenterBandwidthGenerator, largeBlockSize, bstoreLatency, allToAll, unixfsFileFetch)
+	})
+	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
+	_ = ioutil.WriteFile("tmp/rb-benchmark.json", out, 0666)
+	printResults(benchmarkLog)
+}
+
+func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
 		// fmt.Println("\n\n\n\nStarting bench")
 		start := time.Now()
@@ -192,12 +225,12 @@ func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, d
 
 		instances := ig.Instances(numnodes)
 		blocks := bg.Blocks(numblks)
-		runDistribution(b, instances, blocks, df, ff, start)
+		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
 		ig.Close()
 	}
 }
 
-func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, df distFunc, ff fetchFunc) {
+func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
 		start := time.Now()
 		net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
@@ -207,26 +240,33 @@ func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d
 
 		instances := ig.Instances(numnodes)
 		blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
-
-		runDistribution(b, instances, blocks, df, ff, start)
+		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
 	}
 }
 
-func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, df distFunc, ff fetchFunc, start time.Time) {
-
+func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc, start time.Time) {
 	numnodes := len(instances)
-
 	fetcher := instances[numnodes-1]
 
-	df(b, instances[:numnodes-1], blocks)
+	// Distribute blocks to seed nodes
+	seeds := instances[:numnodes-1]
+	df(b, seeds, blocks)
+	
+	// Set the blockstore latency on seed nodes
+	if bstoreLatency > 0 {
+		for _, i := range seeds {
+			i.SetBlockstoreLatency(bstoreLatency)
+		}
+	}
 
+	// Fetch blocks (from seed nodes to leech nodes)
 	var ks []cid.Cid
 	for _, blk := range blocks {
 		ks = append(ks, blk.Cid())
 	}
-
 	ff(b, fetcher.Exchange, ks)
 
+	// Collect statistics
 	st, err := fetcher.Exchange.Stat()
 	if err != nil {
 		b.Fatal(err)

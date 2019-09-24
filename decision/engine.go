@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	blocks "github.com/ipfs/go-block-format"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	lu "github.com/ipfs/go-bitswap/logutil"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -72,7 +71,9 @@ const (
 	// bytes up to which we will replace a want-have with a want-block
 	// maxBlockSizeReplaceHasWithBlock = 1024
 
-	taskWorkerCount = 1
+	taskWorkerCount = 8
+
+	blockstoreWorkerCount = 32
 )
 
 // Envelope contains a message for a Peer.
@@ -112,7 +113,7 @@ type Engine struct {
 	// taskWorker goroutine
 	outbox chan (<-chan *Envelope)
 
-	bs bstore.Blockstore
+	bsm *blockstoreManager
 
 	peerTagger PeerTagger
 
@@ -123,8 +124,8 @@ type Engine struct {
 
 	ticker *time.Ticker
 
-	taskWorkerCount int
 	taskWorkerLock sync.Mutex
+	taskWorkerCount int
 
 	// TODO: make this an optional argument
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
@@ -139,7 +140,7 @@ type Engine struct {
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID, maxReplaceSize int) *Engine {
 	e := &Engine{
 		ledgerMap:  make(map[peer.ID]*ledger),
-		bs:         bs,
+		bsm:        newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
 		peerTagger: peerTagger,
 		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal: make(chan struct{}, 1),
@@ -158,6 +159,9 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 }
 
 func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	// Start up blockstore manager
+	e.bsm.start(ctx, px)
+
 	// Start up workers to handle requests from other nodes for the data on this node
 	for i := 0; i < e.taskWorkerCount; i++ {
 		i := i
@@ -284,7 +288,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			for _, t := range blockTasks {
 				blockCids.Add(t.Identifier.(cid.Cid))
 			}
-			blks := e.getBlocks(blockCids.Keys())
+			blks := e.bsm.getBlocks(blockCids.Keys())
 
 			for _, t := range blockTasks {
 				c := t.Identifier.(cid.Cid)
@@ -421,7 +425,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	for _, entry := range wants {
 		wantKs.Add(entry.Cid)
 	}
-	blockSizes := e.getBlockSizes(wantKs.Keys())
+	blockSizes := e.bsm.getBlockSizes(wantKs.Keys())
 
 	// Get the ledger for the peer
 	l := e.findOrCreate(p)
@@ -565,7 +569,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 	}
 
 	// Get the size of each wanted block
-	blockSizes := e.getBlockSizes(wantedKs.Keys())
+	blockSizes := e.bsm.getBlockSizes(wantedKs.Keys())
 
 	// Add any wanted blocks to the request queue for each peer
 	work := false
@@ -670,62 +674,6 @@ func (e *Engine) PeerDisconnected(p peer.ID) {
 func (e *Engine) sendAsBlock(wantType pb.Message_Wantlist_WantType, blockSize int) bool {
 	isWantBlock := wantType == pb.Message_Wantlist_Block
 	return isWantBlock || blockSize <= e.maxBlockSizeReplaceHasWithBlock
-}
-
-func (e *Engine) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
-	res := make(map[cid.Cid]int)
-	var lk sync.Mutex
-
-	wg := sync.WaitGroup{}
-	for _, k := range ks {
-		wg.Add(1)
-		go func(c cid.Cid) {
-			defer wg.Done()
-
-			size, err := e.bs.GetSize(c)
-			if err != nil {
-				if err != bstore.ErrNotFound {
-					log.Warningf("blockstore.GetSize(%s) error: %s", c, err)
-				}
-				size = 0
-			}
-
-			lk.Lock()
-			res[c] = size
-			lk.Unlock()
-		}(k)
-	}
-	wg.Wait()
-
-	return res
-}
-
-func (e *Engine) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
-	res := make(map[cid.Cid]blocks.Block)
-	var lk sync.Mutex
-
-	wg := sync.WaitGroup{}
-	for _, k := range ks {
-		wg.Add(1)
-		go func(c cid.Cid) {
-			defer wg.Done()
-
-			blk, err := e.bs.Get(c)
-			if err != nil {
-				blk = nil
-				if err != bstore.ErrNotFound {
-					log.Warningf("blockstore.Get(%s) error: %s", c, err)
-				}
-			}
-
-			lk.Lock()
-			res[c] = blk
-			lk.Unlock()
-		}(k)
-	}
-	wg.Wait()
-
-	return res
 }
 
 func (e *Engine) numBytesSentTo(p peer.ID) uint64 {
