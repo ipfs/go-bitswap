@@ -143,11 +143,12 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	peerBroker := bspb.New(ctx, wm)
 	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, peerBroker, notif, network.Self())
 	wm.SetSessionManager(sm)
+	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 1024)
 
 	bs := &Bitswap{
 		blockstore:       bstore,
 		// TODO close the engine with Close() method
-		engine:           decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 1024),
+		engine:           engine,
 		network:          network,
 		process:          px,
 		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
@@ -178,6 +179,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 
 	// Start up bitswaps async worker routines
 	bs.startWorkers(ctx, px)
+	engine.StartWorkers(ctx, px)
 
 	// bind the context and process.
 	// do it over here to avoid closing before all setup is done.

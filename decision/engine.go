@@ -19,6 +19,7 @@ import (
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	process "github.com/jbenet/goprocess"
 )
 
 // TODO consider taking responsibility for other types of requests. For
@@ -70,6 +71,8 @@ const (
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
 	// maxBlockSizeReplaceHasWithBlock = 1024
+
+	taskWorkerCount = 1
 )
 
 // Envelope contains a message for a Peer.
@@ -120,6 +123,9 @@ type Engine struct {
 
 	ticker *time.Ticker
 
+	taskWorkerCount int
+	taskWorkerLock sync.Mutex
+
 	// TODO: make this an optional argument
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
@@ -139,6 +145,7 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		workSignal: make(chan struct{}, 1),
 		ticker:     time.NewTicker(time.Millisecond * 100),
 		maxBlockSizeReplaceHasWithBlock: maxReplaceSize,
+		taskWorkerCount: taskWorkerCount,
 		self:       self,
 	}
 	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
@@ -146,8 +153,18 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
 		peertaskqueue.IgnoreFreezing(true))
-	go e.taskWorker(ctx)
+	// go e.taskWorker(ctx)
 	return e
+}
+
+func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	// Start up workers to handle requests from other nodes for the data on this node
+	for i := 0; i < e.taskWorkerCount; i++ {
+		i := i
+		px.Go(func(px process.Process) {
+			e.taskWorker(ctx, i)
+		})
+	}
 }
 
 func (e *Engine) onPeerAdded(p peer.ID) {
@@ -183,8 +200,8 @@ func (e *Engine) LedgerForPeer(p peer.ID) *Receipt {
 	}
 }
 
-func (e *Engine) taskWorker(ctx context.Context) {
-	defer close(e.outbox) // because taskWorker uses the channel exclusively
+func (e *Engine) taskWorker(ctx context.Context, id int) {
+	defer e.taskWorkerExit()
 	for {
 		oneTimeUse := make(chan *Envelope, 1) // buffer to prevent blocking
 		select {
@@ -201,6 +218,16 @@ func (e *Engine) taskWorker(ctx context.Context) {
 		}
 		oneTimeUse <- envelope // buffered. won't block
 		close(oneTimeUse)
+	}
+}
+
+func (e *Engine) taskWorkerExit() {
+	e.taskWorkerLock.Lock()
+	defer e.taskWorkerLock.Unlock()
+
+	e.taskWorkerCount--
+	if e.taskWorkerCount == 0 {
+		close(e.outbox)	
 	}
 }
 
@@ -272,7 +299,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 					}
 				} else {
 					// Add the block to the message
-					// log.Warningf("  make evlp %s->%s block %s", lu.P(e.self), lu.P(p), lu.C(c))
+					// log.Warningf("  make evlp %s->%s block %s (%d bytes)", lu.P(e.self), lu.P(p), lu.C(c), len(blk.RawData()))
 					msg.AddBlock(blk)
 				}
 			}
