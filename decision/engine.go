@@ -419,8 +419,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	}()
 
 	// Get block sizes
-	wantlist := m.Wantlist()
-	wants, cancels := e.splitWantsCancels(wantlist)
+	wants, cancels := e.splitWantsCancels(entries)
 	wantKs := cid.NewSet()
 	for _, entry := range wants {
 		wantKs.Add(entry.Cid)
@@ -450,6 +449,8 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
+		l.Wants(c, entry.Priority, entry.WantType)
+
 		// If the block was not found
 		if blockSizes[c] == 0 {
 			// Only add the task to the queue if the requester wants a DONT_HAVE
@@ -460,13 +461,11 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					isWantBlock = true
 				}
 
-				l.Wants(entry.Cid, entry.Priority, entry.WantType)
-
-				if isWantBlock {
-					// log.Warningf("  put rq %s->%s %s as want-block (not found)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
-				} else {
-					// log.Warningf("  put rq %s->%s %s as want-have (not found)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
-				}
+				// if isWantBlock {
+				// 	log.Warningf("  put rq %s->%s %s as want-block (not found)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
+				// } else {
+				// 	log.Warningf("  put rq %s->%s %s as want-have (not found)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
+				// }
 
 				activeEntries = append(activeEntries, peertask.Task{
 					Identifier:     c,
@@ -477,27 +476,23 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					SendDontHave:   entry.SendDontHave,
 				})
 			}
+			// log.Warningf("  not putting rq %s->%s %s (not found, SendDontHave false)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
 		} else {
 			// The block was found, add it to the queue
 			newWorkExists = true
 
 			size := blockSizes[c]
 			isWantBlock := e.sendAsBlock(entry.WantType, size)
-			wantType := entry.WantType
-			if isWantBlock {
-				wantType = pb.Message_Wantlist_Block
-			} else {
+
+			// if isWantBlock {
+			// 	log.Warningf("  put rq %s->%s %s as want-block (%d bytes)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid), size)
+			// } else {
+			// 	log.Warningf("  put rq %s->%s %s as want-have (%d bytes)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid), size)
+			// }
+
+			if !isWantBlock {
 				size = e.getBlockPresenceSize(c)
 			}
-
-			l.Wants(entry.Cid, entry.Priority, wantType)
-
-			if isWantBlock {
-				// log.Warningf("  put rq %s->%s %s as want-block (%d bytes)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid), size)
-			} else {
-				// log.Warningf("  put rq %s->%s %s as want-have (%d bytes)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid), size)
-			}
-
 			activeEntries = append(activeEntries, peertask.Task{
 				Identifier:     c,
 				Priority:       entry.Priority,
@@ -531,11 +526,11 @@ func (e *Engine) getBlockPresenceSize(c cid.Cid) int {
 func (e *Engine) splitWantsCancels(es []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Entry) {
 	var wants []bsmsg.Entry
 	var cancels []bsmsg.Entry
-	for _, e := range es {
-		if e.Cancel {
-			cancels = append(cancels, e)
+	for _, et := range es {
+		if et.Cancel {
+			cancels = append(cancels, et)
 		} else {
-			wants = append(wants, e)
+			wants = append(wants, et)
 		}
 	}
 	return wants, cancels
@@ -552,6 +547,7 @@ func (e *Engine) filterCancels(es []bsmsg.Entry) []bsmsg.Entry {
 }
 
 func (e *Engine) addBlocks(ks []cid.Cid) {
+	// log.Warningf("  add blocks %s: %d candidate blocks\n", lu.P(e.self), len(ks))
 	// Get the set of blocks that are wanted by our peers
 	wantedKs := cid.NewSet()
 	for _, l := range e.ledgerMap {
@@ -564,6 +560,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 		l.lk.Unlock()
 	}
 
+	// log.Warningf("  add blocks %s: %d / %d wanted blocks\n", lu.P(e.self), wantedKs.Len(), len(ks))
 	if wantedKs.Len() == 0 {
 		return
 	}
@@ -574,20 +571,35 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 	// Add any wanted blocks to the request queue for each peer
 	work := false
 	for _, l := range e.ledgerMap {
+		l.lk.Lock()
 		for _, k := range wantedKs.Keys() {
 			if entry, ok := l.WantListContains(k); ok {
 				work = true
+
 				size := blockSizes[k]
+				isWantBlock := e.sendAsBlock(entry.WantType, size)
+
+				// if isWantBlock {
+				// 	log.Warningf("  add-block put rq %s->%s %s as want-block (%d bytes)\n", lu.P(e.self), lu.P(l.Partner), lu.C(k), size)
+				// } else {
+				// 	log.Warningf("  add-block rq %s->%s %s as want-have (%d bytes)\n", lu.P(e.self), lu.P(l.Partner), lu.C(k), size)
+				// }
+
+				if !isWantBlock {
+					size = e.getBlockPresenceSize(k)
+				}
+
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
 					Identifier:     entry.Cid,
 					Priority:       entry.Priority,
 					Size:           size,
-					IsWantBlock:    e.sendAsBlock(entry.WantType, size),
+					IsWantBlock:    isWantBlock,
 					IsDontHave:     false,
 					SendDontHave:   false,
 				})
 			}
 		}
+		l.lk.Unlock()
 	}
 
 	if work {
