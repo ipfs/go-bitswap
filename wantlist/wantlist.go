@@ -54,7 +54,7 @@ func (w *Wantlist) Add(c cid.Cid, priority int, wantType pb.Message_Wantlist_Wan
 	e, ok := w.set[c]
 
 	// Adding want-have should not override want-block
-	if ok && e.WantType == pb.Message_Wantlist_Block || wantType == pb.Message_Wantlist_Have {
+	if ok && (e.WantType == pb.Message_Wantlist_Block || wantType == pb.Message_Wantlist_Have) {
 		return false
 	}
 
