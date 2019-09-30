@@ -71,7 +71,7 @@ const (
 	// bytes up to which we will replace a want-have with a want-block
 	// maxBlockSizeReplaceHasWithBlock = 1024
 
-	taskWorkerCount = 8
+	taskWorkerCount = 1
 
 	blockstoreWorkerCount = 128
 )
