@@ -45,7 +45,7 @@ type ledger struct {
 	// don't drop the reference to this ledger in multi-connection scenarios
 	ref int
 
-	lk sync.Mutex
+	lk sync.RWMutex
 }
 
 // Receipt is a summary of the ledger for a given peer

@@ -13,6 +13,7 @@ import (
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
+	blocks "github.com/ipfs/go-block-format"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-peertaskqueue"
@@ -71,7 +72,7 @@ const (
 	// bytes up to which we will replace a want-have with a want-block
 	// maxBlockSizeReplaceHasWithBlock = 1024
 
-	taskWorkerCount = 1
+	taskWorkerCount = 8
 
 	blockstoreWorkerCount = 128
 )
@@ -118,7 +119,7 @@ type Engine struct {
 	peerTagger PeerTagger
 
 	tag  string
-	lock sync.Mutex // protects the fields immediatly below
+	lock sync.RWMutex // protects the fields immediatly below
 	// ledgerMap lists Ledgers by their Partner key.
 	ledgerMap map[peer.ID]*ledger
 
@@ -378,8 +379,8 @@ func (e *Engine) Outbox() <-chan (<-chan *Envelope) {
 
 // Peers returns a slice of Peers with whom the local node has active sessions.
 func (e *Engine) Peers() []peer.ID {
-	e.lock.Lock()
-	defer e.lock.Unlock()
+	e.lock.RLock()
+	defer e.lock.RUnlock()
 
 	response := make([]peer.ID, 0, len(e.ledgerMap))
 
@@ -430,28 +431,39 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 
 	// Get the ledger for the peer
 	l := e.findOrCreate(p)
-	l.lk.Lock()
-	defer l.lk.Unlock()
 
 	// If the peer is sending a full wantlist, replace the ledger's wantlist
 	if m.Full() {
+		l.lk.Lock()
 		l.wantList = wl.New()
+		l.lk.Unlock()
 	}
 
 	var activeEntries []peertask.Task
 
 	// Remove cancelled blocks from the queue
-	for _, entry := range cancels {
-		log.Debugf("%s cancel %s", p, entry.Cid)
-		if l.CancelWant(entry.Cid) {
-			e.peerRequestQueue.Remove(entry.Cid, p)
+	if len(cancels) > 0 {
+		l.lk.Lock()
+		for _, entry := range cancels {
+			log.Debugf("%s cancel %s", p, entry.Cid)
+			if l.CancelWant(entry.Cid) {
+				e.peerRequestQueue.Remove(entry.Cid, p)
+			}
 		}
+		l.lk.Unlock()
+	}
+
+	if len(wants) > 0 {
+		l.lk.Lock()
+		for _, entry := range wants {
+			l.Wants(entry.Cid, entry.Priority, entry.WantType)
+		}
+		l.lk.Unlock()
 	}
 
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
-		l.Wants(c, entry.Priority, entry.WantType)
 
 		// If the block was not found
 		if blockSizes[c] == 0 {
@@ -514,9 +526,14 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 
 	// Record how many bytes were received in the ledger
 	// TODO: Record wantlist bytes as well?
-	for _, block := range m.Blocks() {
-		log.Debugf("got block %s %d bytes", block, len(block.RawData()))
-		l.ReceivedBytes(len(block.RawData()))
+	blks := m.Blocks()
+	if len(blks) > 0 {
+		l.lk.Lock()
+		for _, block := range blks {
+			log.Debugf("got block %s %d bytes", block, len(block.RawData()))
+			l.ReceivedBytes(len(block.RawData()))
+		}
+		l.lk.Unlock()
 	}
 }
 
@@ -549,33 +566,27 @@ func (e *Engine) filterCancels(es []bsmsg.Entry) []bsmsg.Entry {
 	return res
 }
 
-func (e *Engine) addBlocks(ks []cid.Cid) {
-	// log.Warningf("  add blocks %s: %d candidate blocks\n", lu.P(e.self), len(ks))
-	// Get the set of blocks that are wanted by our peers
-	wantedKs := cid.NewSet()
-	for _, l := range e.ledgerMap {
-		l.lk.Lock()
-		for _, k := range ks {
-			if _, ok := l.WantListContains(k); ok {
-				wantedKs.Add(k)
-			}
-		}
-		l.lk.Unlock()
-	}
-
-	// log.Warningf("  add blocks %s: %d / %d wanted blocks\n", lu.P(e.self), wantedKs.Len(), len(ks))
-	if wantedKs.Len() == 0 {
+// AddBlocks is called when new blocks are received and added to a block store,
+// meaning there may be peers who want those blocks, so we should send the blocks
+// to them.
+func (e *Engine) AddBlocks(blks []blocks.Block) {
+	if len(blks) == 0 {
 		return
 	}
 
-	// Get the size of each wanted block
-	blockSizes := e.bsm.getBlockSizes(wantedKs.Keys())
+	blockSizes := make(map[cid.Cid]int)
+	for _, blk := range blks {
+		blockSizes[blk.Cid()] = len(blk.RawData())
+	}
 
-	// Add any wanted blocks to the request queue for each peer
 	work := false
+	e.lock.RLock()
 	for _, l := range e.ledgerMap {
-		l.lk.Lock()
-		for _, k := range wantedKs.Keys() {
+		l.lk.RLock()
+
+		for _, b := range blks {
+			k := b.Cid()
+
 			if entry, ok := l.WantListContains(k); ok {
 				work = true
 
@@ -592,6 +603,7 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 				if !isWantBlock {
 					entrySize = e.getBlockPresenceSize(k)
 				}
+
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
 					Identifier:     entry.Cid,
 					Priority:       entry.Priority,
@@ -602,22 +614,13 @@ func (e *Engine) addBlocks(ks []cid.Cid) {
 				})
 			}
 		}
-		l.lk.Unlock()
+		l.lk.RUnlock()
 	}
+	e.lock.RUnlock()
 
 	if work {
 		e.signalNewWork()
 	}
-}
-
-// AddBlocks is called when new blocks are received and added to a block store,
-// meaning there may be peers who want those blocks, so we should send the blocks
-// to them.
-func (e *Engine) AddBlocks(ks []cid.Cid) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-
-	e.addBlocks(ks)
 }
 
 // TODO add contents of m.WantList() to my local wantlist? NB: could introduce
@@ -703,9 +706,20 @@ func (e *Engine) numBytesReceivedFrom(p peer.ID) uint64 {
 
 // ledger lazily instantiates a ledger
 func (e *Engine) findOrCreate(p peer.ID) *ledger {
+	// Take a read lock (as it's less expensive) to check if we have a ledger
+	// for the peer
+	e.lock.RLock()
+	l, ok := e.ledgerMap[p]
+	e.lock.RUnlock()
+	if ok {
+		return l
+	}
+
+	// There's no ledger, so take a write lock, then check again and create the
+	// ledger if necessary
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	l, ok := e.ledgerMap[p]
+	l, ok = e.ledgerMap[p]
 	if !ok {
 		l = newLedger(p)
 		e.ledgerMap[p] = l

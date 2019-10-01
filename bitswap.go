@@ -312,15 +312,6 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 
 	// If blocks came from the network
 	if from != "" {
-		// Split blocks into wanted blocks vs duplicates
-		// wanted = make([]blocks.Block, 0, len(blks))
-		// for _, b := range blks {
-		// 	if bs.sm.IsWanted(b.Cid()) {
-		// 		wanted = append(wanted, b)
-		// 	} else {
-		// 		log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
-		// 	}
-		// }
 		var notWanted []blocks.Block
 		wanted, notWanted = bs.sm.FilterWanted(blks)
 		for _, b := range notWanted {
@@ -329,10 +320,12 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	}
 
 	// Put wanted blocks into blockstore
-	err := bs.blockstore.PutMany(wanted)
-	if err != nil {
-		log.Errorf("Error writing %d blocks to datastore: %s", len(wanted), err)
-		return err
+	if len(wanted) > 0 {
+		err := bs.blockstore.PutMany(wanted)
+		if err != nil {
+			log.Errorf("Error writing %d blocks to datastore: %s", len(wanted), err)
+			return err
+		}
 	}
 
 	// NOTE: There exists the possiblity for a race condition here.  If a user
@@ -346,21 +339,12 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 		allKs = append(allKs, b.Cid())
 	}
 
-	wantedKs := allKs
-	if len(blks) != len(wanted) {
-		wantedKs = make([]cid.Cid, 0, len(wanted))
-		for _, b := range wanted {
-			wantedKs = append(wantedKs, b.Cid())
-		}
-	}
-
-	// // Send all block keys (including duplicates) to any sessions that want them.
-	// // (The duplicates are needed by sessions for accounting purposes)
-	// bs.sm.ReceiveFrom(from, allKs, haves, dontHaves)
+	// Send all block keys (including duplicates) to any sessions that want them.
+	// (The duplicates are needed by sessions for accounting purposes)
 	bs.wm.ReceiveFrom(ctx, from, allKs, haves, dontHaves)
 
 	// Send wanted block keys to decision engine
-	bs.engine.AddBlocks(wantedKs)
+	bs.engine.AddBlocks(wanted)
 
 	// Publish the block to any Bitswap clients that had requested blocks.
 	// (the sessions use this pubsub mechanism to inform clients of incoming
@@ -371,9 +355,9 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 
 	// If the reprovider is enabled, send wanted blocks to reprovider
 	if bs.provideEnabled {
-		for _, k := range wantedKs {
+		for _, blk := range wanted {
 			select {
-			case bs.newBlocks <- k:
+			case bs.newBlocks <- blk.Cid():
 				// send block off to be reprovided
 			case <-bs.process.Closing():
 				return bs.process.Close()
@@ -412,9 +396,11 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		}
 	}
 
-	if len(iblocks) > 0 || len(incoming.Haves()) > 0 || len(incoming.DontHaves()) > 0 {
+	haves := incoming.Haves()
+	dontHaves := incoming.DontHaves()
+	if len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0 {
 		// Process blocks
-		err := bs.receiveBlocksFrom(ctx, p, iblocks, incoming.Haves(), incoming.DontHaves())
+		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves)
 		if err != nil {
 			// log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 			return
