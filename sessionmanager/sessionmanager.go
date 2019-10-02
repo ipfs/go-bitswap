@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 
@@ -23,7 +22,6 @@ type Session interface {
 	exchange.Fetcher
 	ID() uint64
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
-	FilterWanted([]cid.Cid) []cid.Cid
 }
 
 type sesTrk struct {
@@ -128,51 +126,17 @@ func (sm *SessionManager) GetNextSessionID() uint64 {
 func (sm *SessionManager) ReceiveFrom(p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []Session {
 	sessions := make([]Session, 0)
 
-	sm.sessLk.Lock()
-	defer sm.sessLk.Unlock()
-
 	// Notify each session that is interested in the blocks / HAVEs / DONT_HAVEs
 	for _, id := range sm.sessionInterestManager.InterestedSessions(blks, haves, dontHaves) {
-		if sess, ok := sm.sessions[id]; ok {
+		sm.sessLk.RLock()
+		sess, ok := sm.sessions[id]
+		sm.sessLk.RUnlock()
+
+		if ok {
 			sess.session.ReceiveFrom(p, blks, haves, dontHaves)
 			sessions = append(sessions, sess.session)
 		}
 	}
 
 	return sessions
-}
-
-func (sm *SessionManager) FilterWanted(blks []blocks.Block) ([]blocks.Block, []blocks.Block) {
-	// Ask each session that is interested in the blocks if they are expecting
-	// to receive the blocks
-	ks := make([]cid.Cid, 0, len(blks))
-	for _, b := range blks {
-		ks = append(ks, b.Cid())
-	}
-
-	wanted := cid.NewSet()
-
-	sm.sessLk.Lock()
-	defer sm.sessLk.Unlock()
-
-	for _, id := range sm.sessionInterestManager.InterestedSessions(ks, []cid.Cid{}, []cid.Cid{}) {
-		if sess, ok := sm.sessions[id]; ok {
-			ws := sess.session.FilterWanted(ks)
-			for _, c := range ws {
-				wanted.Add(c)
-			}
-		}
-	}
-
-	wantedBlks := make([]blocks.Block, 0, wanted.Len())
-	notWantedBlks := make([]blocks.Block, 0, len(blks)-wanted.Len())
-	for _, b := range blks {
-		if wanted.Has(b.Cid()) {
-			wantedBlks = append(wantedBlks, b)
-		} else {
-			notWantedBlks = append(notWantedBlks, b)
-		}
-	}
-
-	return wantedBlks, notWantedBlks
 }

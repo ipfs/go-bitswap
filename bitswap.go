@@ -157,6 +157,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		pm:               pm,
 		pqm:              pqm,
 		sm:               sm,
+		sim:              sim,
 		notif:            notif,
 		counters:         new(counters),
 		dupMetric:        dupHist,
@@ -234,8 +235,12 @@ type Bitswap struct {
 	allMetric     metrics.Histogram
 	sentHistogram metrics.Histogram
 
-	// the sessionmanager manages tracking sessions
+	// the SessionManager routes requests to interested sessions
 	sm *bssm.SessionManager
+
+	// the SessionInterestManager keeps track of which sessions are interested
+	// in which CIDs
+	sim *bssim.SessionInterestManager
 
 	// whether or not to make provide announcements
 	provideEnabled bool
@@ -313,7 +318,7 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	// If blocks came from the network
 	if from != "" {
 		var notWanted []blocks.Block
-		wanted, notWanted = bs.sm.FilterWanted(blks)
+		wanted, notWanted = bs.sim.SplitWantedUnwanted(blks)
 		for _, b := range notWanted {
 			log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
 		}

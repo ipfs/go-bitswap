@@ -55,6 +55,12 @@ func (sw *sessionWants) String() string {
 // measures latency. It returns the CIDs of blocks that were actually
 // wanted (as opposed to duplicates) and the total latency for all incoming blocks.
 func (sw *sessionWants) ReceiveFrom(p peer.ID, ks []cid.Cid, dontHaves []cid.Cid) ([]cid.Cid, time.Duration) {
+	wanted := make([]cid.Cid, 0, len(ks))
+	totalLatency := time.Duration(0)
+	if len(ks) == 0 && len(dontHaves) == 0 {
+		return wanted, totalLatency
+	}
+
 	now := time.Now()
 
 	sw.Lock()
@@ -69,8 +75,6 @@ func (sw *sessionWants) ReceiveFrom(p peer.ID, ks []cid.Cid, dontHaves []cid.Cid
 
 	sw.dontHavesReceived(p, dontHaves)
 
-	totalLatency := time.Duration(0)
-	wanted := make([]cid.Cid, 0, len(ks))
 	for _, c := range ks {
 		if sw.unlockedIsWanted(c) {
 			wanted = append(wanted, c)
@@ -185,11 +189,10 @@ func (sw *sessionWants) BlocksRequested(newWants []cid.Cid) {
 
 func (sw *sessionWants) PopNextPending(peers []peer.ID) *bspbkr.SessionAsk {
 	now := time.Now()
+	var wantHaves []cid.Cid
 
 	sw.Lock()
 	defer sw.Unlock()
-
-	var wantHaves []cid.Cid
 
 	c, p, potential, ph := sw.getBestPotentialLiveWant(peers)
 	if !c.Defined() {

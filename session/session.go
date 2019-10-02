@@ -149,19 +149,17 @@ func (s *Session) ID() uint64 {
 	return s.id
 }
 
-func (s *Session) FilterWanted(ks []cid.Cid) []cid.Cid {
-	return s.sw.FilterWanted(ks)
-}
-
 // ReceiveFrom receives incoming blocks from the given peer.
 func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	interestedKs := s.sw.FilterInteresting(ks)
-
-	s.logReceiveFrom(from, interestedKs, haves, dontHaves)
+	interestedKs := s.sim.FilterSessionInterested(s.id, ks)
+	// s.logReceiveFrom(from, interestedKs, haves, dontHaves)
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
-	interestedHaves := s.sw.FilterInteresting(haves)
+	// interestedHaves := s.sw.FilterInteresting(haves)
+	interestedHaves := s.sim.FilterSessionInterested(s.id, haves)
+
+	// TODO: Do I need to do this on a per-session basis? Can I just move this to the want manager?
 	s.pm.ReceiveFrom(from, interestedKs, interestedHaves)
 
 	// Record response timing only if the blocks came from the network
@@ -175,11 +173,16 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	}
 
 	wanted, totalLatency := s.sw.ReceiveFrom(from, ks, dontHaves)
+
 	s.latencyTrkr.receiveUpdate(len(wanted), totalLatency)
 
 	if len(wanted) == 0 {
 		return
 	}
+
+	// Inform the SessionInterestManager that this session is no longer
+	// expecting to receive the wanted keys
+	s.sim.RemoveSessionWants(s.id, wanted)
 
 	select {
 	case s.incoming <- op{op: opReceive, keys: wanted}:
