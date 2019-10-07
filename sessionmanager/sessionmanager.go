@@ -10,7 +10,6 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
 	notifications "github.com/ipfs/go-bitswap/notifications"
-	bspb "github.com/ipfs/go-bitswap/peerbroker"
 	bssession "github.com/ipfs/go-bitswap/session"
 	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
@@ -26,18 +25,18 @@ type Session interface {
 
 type sesTrk struct {
 	session Session
-	pm      bssession.PeerManager
+	pm      bssession.SessionPeerManager
 	srs     bssession.RequestSplitter
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pb *bspb.PeerBroker, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
+type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
 
 // RequestSplitterFactory generates a new request splitter for a session.
 type RequestSplitterFactory func(ctx context.Context) bssession.RequestSplitter
 
 // PeerManagerFactory generates a new peer manager for a session.
-type PeerManagerFactory func(ctx context.Context, id uint64) bssession.PeerManager
+type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPeerManager
 
 // SessionManager is responsible for creating, managing, and dispatching to
 // sessions.
@@ -48,7 +47,7 @@ type SessionManager struct {
 	peerManagerFactory     PeerManagerFactory
 	blockPresenceManager   *bsbpm.BlockPresenceManager
 	requestSplitterFactory RequestSplitterFactory
-	peerBroker             *bspb.PeerBroker
+	peerManager            bssession.PeerManager
 	notif                  notifications.PubSub
 
 	// Sessions
@@ -64,7 +63,7 @@ type SessionManager struct {
 
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestManager *bssim.SessionInterestManager, peerManagerFactory PeerManagerFactory,
-	blockPresenceManager *bsbpm.BlockPresenceManager, requestSplitterFactory RequestSplitterFactory, peerBroker *bspb.PeerBroker, notif notifications.PubSub, self peer.ID) *SessionManager {
+	blockPresenceManager *bsbpm.BlockPresenceManager, requestSplitterFactory RequestSplitterFactory, peerManager bssession.PeerManager, notif notifications.PubSub, self peer.ID) *SessionManager {
 	return &SessionManager{
 		ctx:                    ctx,
 		sessionFactory:         sessionFactory,
@@ -72,10 +71,10 @@ func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestMana
 		peerManagerFactory:     peerManagerFactory,
 		blockPresenceManager:   blockPresenceManager,
 		requestSplitterFactory: requestSplitterFactory,
-		peerBroker:             peerBroker,
+		peerManager:            peerManager,
 		notif:                  notif,
 		sessions:               make(map[uint64]sesTrk),
-		self: self,
+		self:                   self,
 	}
 }
 
@@ -89,7 +88,7 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 
 	pm := sm.peerManagerFactory(sessionctx, id)
 	srs := sm.requestSplitterFactory(sessionctx)
-	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerBroker, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
+	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
 	tracked := sesTrk{session, pm, srs}
 	sm.sessLk.Lock()
 	sm.sessions[id] = tracked

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
-	bspbkr "github.com/ipfs/go-bitswap/peerbroker"
 	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
 	bssm "github.com/ipfs/go-bitswap/sessionmanager"
 	bsswl "github.com/ipfs/go-bitswap/sessionwantlist"
@@ -21,6 +20,7 @@ var log = logging.Logger("bitswap")
 // managed by the WantManager.
 type PeerHandler interface {
 	AvailablePeers() []peer.ID
+	ConnectedPeers() []peer.ID
 	Disconnected(p peer.ID)
 	Connected(p peer.ID, initialWants []cid.Cid)
 	BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid)
@@ -45,7 +45,6 @@ type WantManager struct {
 	sim         *bssim.SessionInterestManager
 	bpm         *bsbpm.BlockPresenceManager
 	sm          *bssm.SessionManager
-	pbkr        *bspbkr.PeerBroker
 	// TODO: update wantlistGauge
 	wantlistGauge metrics.Gauge
 }
@@ -67,29 +66,16 @@ func (wm *WantManager) SetSessionManager(sm *bssm.SessionManager) {
 	wm.sm = sm
 }
 
-func (wm *WantManager) SetPeerBroker(pbkr *bspbkr.PeerBroker) {
-	wm.pbkr = pbkr
-}
-
 func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	// log.Warningf("ReceiveFrom %s: blocks %s / haves %s / dontHaves %s", p, blks, haves, dontHaves)
-
+	// Record block presence for HAVE / DONT_HAVE
+	wm.bpm.ReceiveFrom(p, haves, dontHaves)
 	// Inform interested sessions
 	// sessions := wm.sm.ReceiveFrom(p, blks, haves, dontHaves)
 	_ = wm.sm.ReceiveFrom(p, blks, haves, dontHaves)
-
 	// Remove received blocks from broadcast wantlist
 	wm.bcwl.RemoveKeys(blks)
-
-	// Record block presence for HAVE / DONT_HAVE
-	wm.bpm.ReceiveFrom(p, haves, dontHaves)
-
 	// Send CANCEL to all peers with want-have / want-block
 	wm.peerHandler.SendCancels(ctx, blks)
-
-	// Inform PeerBroker
-	// wm.pbkr.WantAvailable(sessions)
-	wm.pbkr.WantAvailable()
 }
 
 func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantHaves []cid.Cid) {
@@ -103,8 +89,6 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 }
 
 func (wm *WantManager) WantBlocks(ctx context.Context, p peer.ID, ses uint64, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
-	// log.Warningf("WantBlocks session%d from %s: want-blocks %s / want-haves %s", ses, p, wantBlocks, wantHaves)
-
 	// Send want-blocks and want-haves to peer
 	wm.peerHandler.SendWants(ctx, p, wantBlocks, wantHaves)
 }
@@ -125,6 +109,7 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 	wm.bpm.RemoveKeys(cancelKs)
 
 	// Send CANCEL to all peers for blocks that no session is interested in anymore
+	// TODO: may not be worth sending cancels: test performance
 	wm.peerHandler.SendCancels(ctx, cancelKs)
 }
 
@@ -149,9 +134,6 @@ func (wm *WantManager) Connected(p peer.ID) {
 	// Tell the peer handler that there is a new connection and give it the
 	// list of outstanding broadcast wants
 	wm.peerHandler.Connected(p, wm.bcwl.Keys())
-
-	// Tell the PeerBroker that there is a new peer
-	wm.pbkr.PeerAvailable()
 }
 
 // Disconnected is called when a peer is disconnected

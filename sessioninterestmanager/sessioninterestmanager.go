@@ -9,14 +9,14 @@ import (
 
 type SessionInterestManager struct {
 	interested *bsswl.SessionWantlist
-	wanted *bsswl.SessionWantlist
+	wanted     *bsswl.SessionWantlist
 }
 
 // New initializes a new SessionInterestManager.
 func New() *SessionInterestManager {
 	return &SessionInterestManager{
 		interested: bsswl.NewSessionWantlist(),
-		wanted: bsswl.NewSessionWantlist(),
+		wanted:     bsswl.NewSessionWantlist(),
 	}
 }
 
@@ -34,8 +34,12 @@ func (sim *SessionInterestManager) RemoveSessionWants(ses uint64, wants []cid.Ci
 	sim.wanted.RemoveSessionKeys(ses, wants)
 }
 
-func (sim *SessionInterestManager) FilterSessionInterested(ses uint64, ks []cid.Cid) []cid.Cid {
-	return sim.interested.SessionHas(ses, ks).Keys()
+func (sim *SessionInterestManager) FilterSessionInterested(ses uint64, ksets ...[]cid.Cid) [][]cid.Cid {
+	kres := make([][]cid.Cid, len(ksets))
+	for i, ks := range ksets {
+		kres[i] = sim.interested.SessionHas(ses, ks).Keys()
+	}
+	return kres
 }
 
 func (sim *SessionInterestManager) SplitWantedUnwanted(blks []blocks.Block) ([]blocks.Block, []blocks.Block) {

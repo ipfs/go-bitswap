@@ -66,7 +66,7 @@ func New(ctx context.Context, id uint64, tagger PeerTagger, providerFinder PeerP
 		tagger:           tagger,
 		providerFinder:   providerFinder,
 		peers:            peer.NewSet(),
-		peerMessages:     make(chan peerMessage, 16),
+		peerMessages:     make(chan peerMessage, 128),
 		activePeers:      make(map[peer.ID]*peerData),
 		broadcastLatency: newLatencyTracker(),
 		timeoutDuration:  defaultTimeoutDuration,
@@ -78,11 +78,13 @@ func New(ctx context.Context, id uint64, tagger PeerTagger, providerFinder PeerP
 	return spm
 }
 
-func (spm *SessionPeerManager) ReceiveFrom(p peer.ID, ks []cid.Cid, haves []cid.Cid) {
+func (spm *SessionPeerManager) ReceiveFrom(p peer.ID, ks []cid.Cid, haves []cid.Cid) bool {
 	if len(ks) > 0 || len(haves) > 0 && !spm.peers.Contains(p) {
 		log.Infof("Added peer %s to session: %d peers\n", p, spm.peers.Size())
 		spm.peers.Add(p)
+		return true
 	}
+	return false
 }
 
 func (spm *SessionPeerManager) Peers() *peer.Set {

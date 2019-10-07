@@ -5,7 +5,7 @@ package bitswap
 import (
 	"context"
 	"errors"
-	// "fmt"
+
 	"sync"
 	"time"
 
@@ -19,7 +19,6 @@ import (
 	bsmq "github.com/ipfs/go-bitswap/messagequeue"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	notifications "github.com/ipfs/go-bitswap/notifications"
-	bspb "github.com/ipfs/go-bitswap/peerbroker"
 	bspm "github.com/ipfs/go-bitswap/peermanager"
 	bspqm "github.com/ipfs/go-bitswap/providerquerymanager"
 	bssession "github.com/ipfs/go-bitswap/session"
@@ -123,30 +122,29 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	wm := bswm.New(ctx, pm, sim, bpm)
 	pqm := bspqm.New(ctx, network)
 
-	sessionFactory := func(ctx context.Context, id uint64, pm bssession.PeerManager, srs bssession.RequestSplitter,
+	sessionFactory := func(ctx context.Context, id uint64, spm bssession.SessionPeerManager, srs bssession.RequestSplitter,
 		sim *bssim.SessionInterestManager,
-		pb *bspb.PeerBroker,
+		pm bssession.PeerManager,
 		bpm *bsbpm.BlockPresenceManager,
 		notif notifications.PubSub,
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D,
 		self peer.ID) bssm.Session {
-		return bssession.New(ctx, id, wm, pm, srs, sim, pb, bpm, notif, provSearchDelay, rebroadcastDelay, self)
+		return bssession.New(ctx, id, wm, spm, srs, sim, pm, bpm, notif, provSearchDelay, rebroadcastDelay, self)
 	}
-	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.PeerManager {
+	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(ctx, id, network.ConnectionManager(), pqm)
 	}
 	sessionRequestSplitterFactory := func(ctx context.Context) bssession.RequestSplitter {
 		return bssrs.New(ctx)
 	}
 	notif := notifications.New()
-	peerBroker := bspb.New(ctx, wm)
-	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, peerBroker, notif, network.Self())
+	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, sessionRequestSplitterFactory, pm, notif, network.Self())
 	wm.SetSessionManager(sm)
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 1024)
 
 	bs := &Bitswap{
-		blockstore:       bstore,
+		blockstore: bstore,
 		// TODO close the engine with Close() method
 		engine:           engine,
 		network:          network,
@@ -176,7 +174,6 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	// bs.wm.Startup()
 	bs.pqm.Startup()
 	network.SetDelegate(bs)
-	peerBroker.Startup()
 
 	// Start up bitswaps async worker routines
 	bs.startWorkers(ctx, px)
@@ -407,7 +404,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		// Process blocks
 		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves)
 		if err != nil {
-			// log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
+			log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
 			return
 		}
 	}

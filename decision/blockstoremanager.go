@@ -15,16 +15,16 @@ type blockstoreManager struct {
 	bs bstore.Blockstore
 	// workerLock sync.Mutex
 	workerCount int
-	jobs chan func()
+	jobs        chan func()
 }
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
 // and number of workers
 func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount int) *blockstoreManager {
 	return &blockstoreManager{
-		bs: bs,
+		bs:          bs,
 		workerCount: workerCount,
-		jobs: make(chan func(), 1),
+		jobs:        make(chan func(), 1),
 	}
 }
 
@@ -50,18 +50,21 @@ func (bsm *blockstoreManager) worker(ctx context.Context, id int) {
 }
 
 func (bsm *blockstoreManager) addJob(job func()) {
-	bsm.jobs <-job
+	bsm.jobs <- job
 }
 
 func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
 	res := make(map[cid.Cid]int)
+	if len(ks) == 0 {
+		return res
+	}
+
 	var lk sync.Mutex
 
 	wg := sync.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
-		// go func(c cid.Cid) {
 		bsm.addJob(func() {
 			defer wg.Done()
 
@@ -76,7 +79,6 @@ func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
 			lk.Lock()
 			res[c] = size
 			lk.Unlock()
-		// }(k)
 		})
 	}
 	wg.Wait()
@@ -86,13 +88,16 @@ func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
 
 func (bsm *blockstoreManager) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
 	res := make(map[cid.Cid]blocks.Block)
+	if len(ks) == 0 {
+		return res
+	}
+
 	var lk sync.Mutex
 
 	wg := sync.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
-		// go func(c cid.Cid) {
 		bsm.addJob(func() {
 			defer wg.Done()
 
@@ -107,7 +112,6 @@ func (bsm *blockstoreManager) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
 			lk.Lock()
 			res[c] = blk
 			lk.Unlock()
-		// }(k)
 		})
 	}
 	wg.Wait()
