@@ -244,7 +244,7 @@ func (m *impl) Size() int {
 		size += len(block.RawData())
 	}
 	for c := range m.blockPresences {
-		BlockPresenceSize(c)
+		size += BlockPresenceSize(c)
 	}
 	// TODO: Include wantlist size
 	return size
