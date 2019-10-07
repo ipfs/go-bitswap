@@ -8,18 +8,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	bsmsg "github.com/ipfs/go-bitswap/message"
 	lu "github.com/ipfs/go-bitswap/logutil"
+	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
-	cid "github.com/ipfs/go-cid"
 	blocks "github.com/ipfs/go-block-format"
+	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	process "github.com/jbenet/goprocess"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 // TODO consider taking responsibility for other types of requests. For
@@ -125,7 +125,7 @@ type Engine struct {
 
 	ticker *time.Ticker
 
-	taskWorkerLock sync.Mutex
+	taskWorkerLock  sync.Mutex
 	taskWorkerCount int
 
 	// TODO: make this an optional argument
@@ -140,15 +140,15 @@ type Engine struct {
 // func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID) *Engine {
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID, maxReplaceSize int) *Engine {
 	e := &Engine{
-		ledgerMap:  make(map[peer.ID]*ledger),
-		bsm:        newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
-		peerTagger: peerTagger,
-		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
-		workSignal: make(chan struct{}, 1),
-		ticker:     time.NewTicker(time.Millisecond * 100),
+		ledgerMap:                       make(map[peer.ID]*ledger),
+		bsm:                             newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
+		peerTagger:                      peerTagger,
+		outbox:                          make(chan (<-chan *Envelope), outboxChanBuffer),
+		workSignal:                      make(chan struct{}, 1),
+		ticker:                          time.NewTicker(time.Millisecond * 100),
 		maxBlockSizeReplaceHasWithBlock: maxReplaceSize,
-		taskWorkerCount: taskWorkerCount,
-		self:       self,
+		taskWorkerCount:                 taskWorkerCount,
+		self:                            self,
 	}
 	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
 	e.peerRequestQueue = peertaskqueue.New(
@@ -232,7 +232,7 @@ func (e *Engine) taskWorkerExit() {
 
 	e.taskWorkerCount--
 	if e.taskWorkerCount == 0 {
-		close(e.outbox)	
+		close(e.outbox)
 	}
 }
 
@@ -240,7 +240,7 @@ func (e *Engine) taskWorkerExit() {
 // context is cancelled before the next Envelope can be created.
 func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 
-// log.Warningf("  nextEnvelope() %s\n", lu.P(e.self))
+	// log.Warningf("  nextEnvelope() %s\n", lu.P(e.self))
 
 	for {
 		// Pop some tasks off the request queue (up to the maximum message size)
@@ -258,13 +258,13 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 				// log.Warningf("  %s tick: thawing round (%d tasks)", lu.P(e.self), len(nextTasks))
 			}
 		}
-blkCount := 0
-presenceCount := 0
+		blkCount := 0
+		presenceCount := 0
 
 		var msgTasks []peertask.Task
 		msg := bsmsg.New(true)
 		for len(nextTasks) > 0 {
-// log.Warningf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
+			// log.Warningf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -298,7 +298,7 @@ presenceCount := 0
 			for _, t := range blockTasks {
 				c := t.Identifier.(cid.Cid)
 				blk := blks[c]
-blkCount++
+				blkCount++
 				// If the block was not found (it has been removed)
 				if blk == nil {
 					// If the client requested DONT_HAVE, add it to the message
@@ -325,7 +325,7 @@ blkCount++
 			continue
 		}
 
-// log.Warningf("  sending message %s->%s (%d blks / %d presences / %d bytes)\n", lu.P(e.self), lu.P(p), blkCount, presenceCount, msg.Size())
+		// log.Warningf("  sending message %s->%s (%d blks / %d presences / %d bytes)\n", lu.P(e.self), lu.P(p), blkCount, presenceCount, msg.Size())
 		return &Envelope{
 			Peer:    p,
 			Message: msg,
@@ -482,12 +482,12 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				// }
 
 				activeEntries = append(activeEntries, peertask.Task{
-					Identifier:     c,
-					Priority:       entry.Priority,
-					EntrySize:      e.getBlockPresenceSize(c),
-					BlockSize:      0,
-					IsWantBlock:    isWantBlock,
-					SendDontHave:   entry.SendDontHave,
+					Identifier:   c,
+					Priority:     entry.Priority,
+					EntrySize:    e.getBlockPresenceSize(c),
+					BlockSize:    0,
+					IsWantBlock:  isWantBlock,
+					SendDontHave: entry.SendDontHave,
 				})
 			}
 			// log.Warningf("  not putting rq %s->%s %s (not found, SendDontHave false)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
@@ -509,12 +509,12 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				entrySize = e.getBlockPresenceSize(c)
 			}
 			activeEntries = append(activeEntries, peertask.Task{
-				Identifier:     c,
-				Priority:       entry.Priority,
-				EntrySize:      entrySize,
-				BlockSize:      blockSize,
-				IsWantBlock:    isWantBlock,
-				SendDontHave:   entry.SendDontHave,
+				Identifier:   c,
+				Priority:     entry.Priority,
+				EntrySize:    entrySize,
+				BlockSize:    blockSize,
+				IsWantBlock:  isWantBlock,
+				SendDontHave: entry.SendDontHave,
 			})
 		}
 	}
@@ -539,8 +539,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 
 // Get the size of a HAVE / HAVE_NOT entry
 func (e *Engine) getBlockPresenceSize(c cid.Cid) int {
-	// TODO: Check that this is the actual size when put on the wire and update here if not
-	return len(c.Bytes()) + 1
+	return bsmsg.BlockPresenceSize(c)
 }
 
 func (e *Engine) splitWantsCancels(es []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Entry) {
@@ -605,12 +604,12 @@ func (e *Engine) AddBlocks(blks []blocks.Block) {
 				}
 
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
-					Identifier:     entry.Cid,
-					Priority:       entry.Priority,
-					EntrySize:      entrySize,
-					BlockSize:      blockSize,
-					IsWantBlock:    isWantBlock,
-					SendDontHave:   false,
+					Identifier:   entry.Cid,
+					Priority:     entry.Priority,
+					EntrySize:    entrySize,
+					BlockSize:    blockSize,
+					IsWantBlock:  isWantBlock,
+					SendDontHave: false,
 				})
 			}
 		}

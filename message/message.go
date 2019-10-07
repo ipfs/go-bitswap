@@ -244,11 +244,15 @@ func (m *impl) Size() int {
 		size += len(block.RawData())
 	}
 	for c := range m.blockPresences {
-		size += len(c.Bytes())
-		size += 1 // for type TODO: is type one byte?
+		BlockPresenceSize(c)
 	}
 	// TODO: Include wantlist size
 	return size
+}
+
+func BlockPresenceSize(c cid.Cid) int {
+	// TODO: is type actually one byte when we the message is marshalled?
+	return len(c.Bytes()) + 1
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.
