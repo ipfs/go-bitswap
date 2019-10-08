@@ -55,14 +55,6 @@ type SessionPeerManager interface {
 	RecordCancels([]cid.Cid)
 }
 
-// RequestSplitter provides an interface for splitting
-// a request for Cids up among peers.
-type RequestSplitter interface {
-	SplitRequest([]bssd.OptimizedPeer, []cid.Cid) []bssd.PartialRequest
-	RecordDuplicateBlock()
-	RecordUniqueBlock()
-}
-
 type opType int
 
 const (
@@ -84,7 +76,6 @@ type Session struct {
 	ctx  context.Context
 	wm   WantManager
 	sprm SessionPeerManager
-	srs  RequestSplitter
 	sim  *bssim.SessionInterestManager
 
 	sw  sessionWants
@@ -117,9 +108,7 @@ func New(ctx context.Context,
 	id uint64,
 	wm WantManager,
 	sprm SessionPeerManager,
-	srs RequestSplitter,
 	sim *bssim.SessionInterestManager,
-	// pb *bspbkr.PeerBroker,
 	pm PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
 	notif notifications.PubSub,
@@ -132,7 +121,6 @@ func New(ctx context.Context,
 		ctx:                 ctx,
 		wm:                  wm,
 		sprm:                sprm,
-		srs:                 srs,
 		sim:                 sim,
 		incoming:            make(chan op, 128),
 		latencyTrkr:         latencyTracker{},
@@ -165,7 +153,6 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 
 	// Add any newly discovered peers that have blocks we're interested in to
 	// the peer set
-	// TODO: Do I need to do this on a per-session basis? Can I just move this to the want manager?
 	isNewPeer := s.sprm.ReceiveFrom(from, ks, haves)
 
 	// Record response timing only if the blocks came from the network
@@ -174,14 +161,16 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 		s.sprm.RecordPeerResponse(from, ks)
 	}
 
+	// Update want potential
 	s.spm.Update(from, ks, haves, dontHaves, isNewPeer)
 
 	if len(ks) == 0 {
 		return
 	}
 
+	// Record which blocks have been received and figure out the total latency
+	// for fetching the blocks
 	wanted, totalLatency := s.sw.BlocksReceived(ks)
-
 	s.latencyTrkr.receiveUpdate(len(wanted), totalLatency)
 
 	if len(wanted) == 0 {

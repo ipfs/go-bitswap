@@ -23,17 +23,8 @@ type Session interface {
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
 }
 
-type sesTrk struct {
-	session Session
-	pm      bssession.SessionPeerManager
-	srs     bssession.RequestSplitter
-}
-
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, srs bssession.RequestSplitter, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
-
-// RequestSplitterFactory generates a new request splitter for a session.
-type RequestSplitterFactory func(ctx context.Context) bssession.RequestSplitter
+type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
 
 // PeerManagerFactory generates a new peer manager for a session.
 type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPeerManager
@@ -46,13 +37,12 @@ type SessionManager struct {
 	sessionInterestManager *bssim.SessionInterestManager
 	peerManagerFactory     PeerManagerFactory
 	blockPresenceManager   *bsbpm.BlockPresenceManager
-	requestSplitterFactory RequestSplitterFactory
 	peerManager            bssession.PeerManager
 	notif                  notifications.PubSub
 
 	// Sessions
 	sessLk   sync.RWMutex
-	sessions map[uint64]sesTrk
+	sessions map[uint64]Session
 
 	// Session Index
 	sessIDLk sync.Mutex
@@ -63,17 +53,16 @@ type SessionManager struct {
 
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestManager *bssim.SessionInterestManager, peerManagerFactory PeerManagerFactory,
-	blockPresenceManager *bsbpm.BlockPresenceManager, requestSplitterFactory RequestSplitterFactory, peerManager bssession.PeerManager, notif notifications.PubSub, self peer.ID) *SessionManager {
+	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, notif notifications.PubSub, self peer.ID) *SessionManager {
 	return &SessionManager{
 		ctx:                    ctx,
 		sessionFactory:         sessionFactory,
 		sessionInterestManager: sessionInterestManager,
 		peerManagerFactory:     peerManagerFactory,
 		blockPresenceManager:   blockPresenceManager,
-		requestSplitterFactory: requestSplitterFactory,
 		peerManager:            peerManager,
 		notif:                  notif,
-		sessions:               make(map[uint64]sesTrk),
+		sessions:               make(map[uint64]Session),
 		self:                   self,
 	}
 }
@@ -87,30 +76,28 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 	sessionctx, cancel := context.WithCancel(ctx)
 
 	pm := sm.peerManagerFactory(sessionctx, id)
-	srs := sm.requestSplitterFactory(sessionctx)
-	session := sm.sessionFactory(sessionctx, id, pm, srs, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
-	tracked := sesTrk{session, pm, srs}
+	session := sm.sessionFactory(sessionctx, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
 	sm.sessLk.Lock()
-	sm.sessions[id] = tracked
+	sm.sessions[id] = session
 	sm.sessLk.Unlock()
 	go func() {
 		defer cancel()
 		select {
 		case <-sm.ctx.Done():
-			sm.removeSession(tracked)
+			sm.removeSession(id)
 		case <-ctx.Done():
-			sm.removeSession(tracked)
+			sm.removeSession(id)
 		}
 	}()
 
 	return session
 }
 
-func (sm *SessionManager) removeSession(st sesTrk) {
+func (sm *SessionManager) removeSession(sesid uint64) {
 	sm.sessLk.Lock()
 	defer sm.sessLk.Unlock()
 
-	delete(sm.sessions, st.session.ID())
+	delete(sm.sessions, sesid)
 }
 
 // GetNextSessionID returns the next sequential identifier for a session.
@@ -132,8 +119,8 @@ func (sm *SessionManager) ReceiveFrom(p peer.ID, blks []cid.Cid, haves []cid.Cid
 		sm.sessLk.RUnlock()
 
 		if ok {
-			sess.session.ReceiveFrom(p, blks, haves, dontHaves)
-			sessions = append(sessions, sess.session)
+			sess.ReceiveFrom(p, blks, haves, dontHaves)
+			sessions = append(sessions, sess)
 		}
 	}
 
