@@ -127,7 +127,7 @@ func New(ctx context.Context,
 	periodicSearchDelay delay.D,
 	self peer.ID) *Session {
 	s := &Session{
-		sw:                  newSessionWants(bpm),
+		sw:                  newSessionWants(),
 		tickDelayReqs:       make(chan time.Duration),
 		ctx:                 ctx,
 		wm:                  wm,
@@ -180,7 +180,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 		return
 	}
 
-	wanted, totalLatency := s.sw.ReceiveFrom(from, ks)
+	wanted, totalLatency := s.sw.BlocksReceived(ks)
 
 	s.latencyTrkr.receiveUpdate(len(wanted), totalLatency)
 
@@ -204,12 +204,10 @@ func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []c
 	for _, c := range interestedKs {
 		log.Debugf("Ses%d %s<-%s: block %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
 	}
-	wantedHaves := s.sw.FilterWanted(haves)
-	for _, c := range wantedHaves {
+	for _, c := range haves {
 		log.Debugf("Ses%d %s<-%s: HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
 	}
-	wantedDontHaves := s.sw.FilterWanted(dontHaves)
-	for _, c := range wantedDontHaves {
+	for _, c := range dontHaves {
 		log.Debugf("Ses%d %s<-%s: DONT_HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
 	}
 }
@@ -355,12 +353,14 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 		s.spm.Add(newks)
 	}
 
+	// If we have discovered peers already, the SessionPotentialManager will
+	// send wants to them
 	if s.sprm.Peers().Size() > 0 {
 		return
 	}
 
 	// No peers discovered yet, broadcast some want-haves
-	ks := s.sw.GetNextWants(broadcastLiveWantsLimit, nil)
+	ks := s.sw.GetNextWants(broadcastLiveWantsLimit)
 	if len(ks) > 0 {
 		log.Infof("Ses%d: No peers - broadcasting %d want HAVE requests\n", s.id, len(ks))
 		s.sprm.RecordPeerRequests(nil, ks)
