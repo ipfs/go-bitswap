@@ -16,7 +16,11 @@ func C(c cid.Cid) string {
 func P(p peer.ID) string {
 	if p != "" {
 		str := p.String()
-		return str[len(str)-6:]
+		limit := 6
+		if len(str) < limit {
+			limit = len(str)
+		}
+		return str[len(str)-limit:]
 	}
 	return "<undef peer>"
 }

@@ -186,7 +186,6 @@ func TestClearThenSetNegative(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	wp := newWantPotential(cids[0], 0)
 
-	// updatePotential(XNuiKn, 0.5)
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
 		t.Fatal("wrong best peer")
@@ -195,7 +194,6 @@ func TestClearThenSetNegative(t *testing.T) {
 		t.Fatal("wrong best potential")
 	}
 
-	// clearPotential(XNuiKn)
 	gain := wp.clearPeerPotential(peers[0])
 	if gain != 0.5 {
 		t.Fatal("wrong gain")
@@ -207,7 +205,6 @@ func TestClearThenSetNegative(t *testing.T) {
 		t.Fatal("wrong best potential")
 	}
 
-	// updatePotential(49xSKq, 0.5)
 	wp.setPeerPotential(peers[1], 0.5)
 	if wp.bestPeer != peers[1] {
 		t.Fatal("wrong best peer")
@@ -216,7 +213,6 @@ func TestClearThenSetNegative(t *testing.T) {
 		t.Fatal("wrong best potential")
 	}
 
-	// updatePotential(XNuiKn, -0.8)
 	wp.setPeerPotential(peers[0], -0.8)
 	if wp.bestPeer != peers[1] {
 		t.Fatal("wrong best peer")

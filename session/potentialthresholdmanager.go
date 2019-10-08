@@ -22,6 +22,12 @@ const (
 	minBlockCount = 16
 )
 
+type PotentialThresholdManager interface {
+	PotentialThreshold() float64
+	IdleTimeout()
+	ReceivedBlocks(uniqs []cid.Cid, dups []cid.Cid)
+}
+
 type potentialThresholdManager struct {
 	sync.RWMutex
 	potentialThreshold float64
