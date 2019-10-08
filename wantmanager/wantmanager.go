@@ -19,15 +19,11 @@ var log = logging.Logger("bitswap")
 // PeerHandler sends changes out to the network as they get added to the wantlist
 // managed by the WantManager.
 type PeerHandler interface {
-	AvailablePeers() []peer.ID
-	ConnectedPeers() []peer.ID
 	Disconnected(p peer.ID)
 	Connected(p peer.ID, initialWants []cid.Cid)
 	BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid)
 	SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid)
 	SendCancels(context.Context, []cid.Cid)
-	PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid
-	PeersCanSendWantBlock(c cid.Cid, peers []peer.ID) []peer.ID
 	Trace()
 }
 
@@ -88,11 +84,6 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 	wm.peerHandler.BroadcastWantHaves(ctx, wantHaves)
 }
 
-func (wm *WantManager) WantBlocks(ctx context.Context, p peer.ID, ses uint64, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
-	// Send want-blocks and want-haves to peer
-	wm.peerHandler.SendWants(ctx, p, wantBlocks, wantHaves)
-}
-
 func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 	// Remove session's interest in the given blocks
 	cancelKs := wm.sim.RemoveSessionInterest(ses)
@@ -115,18 +106,6 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 
 func (wm *WantManager) Trace() {
 	wm.peerHandler.Trace()
-}
-
-func (wm *WantManager) PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid {
-	return wm.peerHandler.PeerCanSendWants(p, wants)
-}
-
-func (wm *WantManager) PeersCanSendWantBlock(c cid.Cid, peers []peer.ID) []peer.ID {
-	return wm.peerHandler.PeersCanSendWantBlock(c, peers)
-}
-
-func (wm *WantManager) AvailablePeers() []peer.ID {
-	return wm.peerHandler.AvailablePeers()
 }
 
 // Connected is called when a new peer is connected

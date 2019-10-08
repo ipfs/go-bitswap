@@ -30,8 +30,6 @@ const (
 // from given peers.
 type WantManager interface {
 	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
-	PeerCanSendWants(peer.ID, []cid.Cid) []cid.Cid
-	PeersCanSendWantBlock(cid.Cid, []peer.ID) []peer.ID
 	RemoveSession(context.Context, uint64)
 	Trace()
 }
@@ -312,7 +310,6 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 	s.sprm.FindMorePeers(ctx, randomWant)
 
 	// TODO: When this returns, trigger PeerBroker
-	// s.wm.WantBlocks(ctx, nil, []cid.Cid{randomWant}, false, nil, s.id)
 	s.wm.BroadcastWantHaves(ctx, s.id, []cid.Cid{randomWant})
 
 	s.periodicSearchTimer.Reset(s.periodicSearchDelay.NextWaitTime())

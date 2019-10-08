@@ -164,20 +164,6 @@ func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
 	}
 }
 
-func (pm *PeerManager) PeerCanSendWants(p peer.ID, wants []cid.Cid) []cid.Cid {
-	pm.RLock()
-	defer pm.RUnlock()
-
-	return pm.pwm.PeerCanSendWants(p, wants)
-}
-
-func (pm *PeerManager) PeersCanSendWantBlock(c cid.Cid, peers []peer.ID) []peer.ID {
-	pm.RLock()
-	defer pm.RUnlock()
-
-	return pm.pwm.PeersCanSendWantBlock(c, peers)
-}
-
 func (pm *PeerManager) CurrentWants() []cid.Cid {
 	pm.RLock()
 	defer pm.RUnlock()
