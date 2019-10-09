@@ -69,8 +69,8 @@ func (bpm *BlockPresenceManager) PeerDoesNotHaveBlock(p peer.ID, c cid.Cid) bool
 }
 
 func (bpm *BlockPresenceManager) RemoveKeys(ks []cid.Cid) {
-	bpm.RLock()
-	defer bpm.RUnlock()
+	bpm.Lock()
+	defer bpm.Unlock()
 
 	for _, c := range ks {
 		delete(bpm.presence, c)
