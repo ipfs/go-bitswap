@@ -2,24 +2,25 @@ package session
 
 import (
 	"fmt"
-	// "math/rand"
-	// "sort"
+	"math"
 	"sync"
-	// "time"
-
-	// bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
 
 	cid "github.com/ipfs/go-cid"
-	// peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 const (
-	initialPotentialThreshold = 1.5
 	minPotentialThreshold     = 0.5
+	maxPotentialThreshold     = 0.8
+	initialPotentialThreshold = maxPotentialThreshold
 	// The number of recent blocks to keep track of uniq / dups for
-	maxRecent = 256
+	maxPotentialThresholdRecent = 256
 	// Start calculating potential threshold after we have this many blocks
-	minBlockCount = 16
+	minPotentialThresholdBlockCount = 8
+	// If the ratio of duplicates / total blocks
+	// - is under low watermark: jump to maxPotentialThreshold
+	// - is over high watermark: drop to minPotentialThreshold
+	dupRatioLowWatermark  = 0.05
+	dupRatioHighWatermark = 0.2
 )
 
 type PotentialThresholdManager interface {
@@ -49,16 +50,20 @@ func (ptm *potentialThresholdManager) PotentialThreshold() float64 {
 }
 
 func (ptm *potentialThresholdManager) IdleTimeout() {
-	ptm.potentialThreshold++
+	ptm.potentialThreshold = maxPotentialThreshold
 }
 
 func (ptm *potentialThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid.Cid) {
-	// TODO: If we sent a want-have but received a block, (because the block
-	// was small enough for the responder to send the block instead of a HAVE)
-	// don't count the block as a duplicate.
+	// If there are too many received blocks to fit into the running average,
+	// add them proportionally
+	total := float64(len(uniqs) + len(dups))
+	if len(uniqs) > 0 && len(dups) > 0 && total > maxPotentialThresholdRecent {
+		uniqRatio := int(math.Floor(float64(len(uniqs)) * maxPotentialThresholdRecent / total))
+		dupRatio := int(math.Floor(float64(len(dups)) * maxPotentialThresholdRecent / total))
+		uniqs = uniqs[:uniqRatio]
+		dups = dups[:dupRatio]
+	}
 
-	// TODO: Handle case where we receive a lot of uniques and a lot of dups
-	// (ie more than maxRecent)
 	// Record unique vs duplicate blocks
 	for range uniqs {
 		ptm.recentWasUnique = append(ptm.recentWasUnique, true)
@@ -67,14 +72,14 @@ func (ptm *potentialThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid
 		ptm.recentWasUnique = append(ptm.recentWasUnique, false)
 	}
 
-	poplen := len(ptm.recentWasUnique) - maxRecent
+	poplen := len(ptm.recentWasUnique) - maxPotentialThresholdRecent
 	if poplen > 0 {
 		ptm.recentWasUnique = ptm.recentWasUnique[poplen:]
 	}
 
-	if len(ptm.recentWasUnique) > minBlockCount {
-		unqCount := 1
-		dupCount := 1
+	if len(ptm.recentWasUnique) > minPotentialThresholdBlockCount {
+		unqCount := 0
+		dupCount := 0
 		for _, u := range ptm.recentWasUnique {
 			if u {
 				unqCount++
@@ -83,18 +88,11 @@ func (ptm *potentialThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid
 			}
 		}
 		total := unqCount + dupCount
-		uniqTotalRatio := float64(unqCount) / float64(total)
-		// log.Debugf("uniq / total: %d / %d = %f\n", unqCount, total, uniqTotalRatio)
-		if uniqTotalRatio < 0.8 {
-			ptm.decreasePotentialThreshold()
+		dupTotalRatio := float64(dupCount) / float64(total)
+		if dupTotalRatio < dupRatioLowWatermark {
+			ptm.potentialThreshold = maxPotentialThreshold
+		} else if dupTotalRatio > dupRatioHighWatermark {
+			ptm.potentialThreshold = minPotentialThreshold
 		}
 	}
-}
-
-func (ptm *potentialThresholdManager) decreasePotentialThreshold() {
-	ptm.potentialThreshold = ptm.potentialThreshold * 0.9
-	if ptm.potentialThreshold < minPotentialThreshold {
-		ptm.potentialThreshold = minPotentialThreshold
-	}
-	// log.Warningf("potentialThreshold: %f\n", ptm.potentialThreshold)
 }
