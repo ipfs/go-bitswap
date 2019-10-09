@@ -10,7 +10,6 @@ import (
 	lu "github.com/ipfs/go-bitswap/logutil"
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	bspm "github.com/ipfs/go-bitswap/peermanager"
-	bssd "github.com/ipfs/go-bitswap/sessiondata"
 	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -47,7 +46,6 @@ type SessionPeerManager interface {
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid) bool
 	Peers() *peer.Set
 	FindMorePeers(context.Context, cid.Cid)
-	GetOptimizedPeers() []bssd.OptimizedPeer
 	RecordPeerRequests([]peer.ID, []cid.Cid)
 	RecordPeerResponse(peer.ID, []cid.Cid)
 	RecordCancels([]cid.Cid)
