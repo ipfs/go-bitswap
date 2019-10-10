@@ -90,8 +90,16 @@ func (ptm *potentialThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid
 		total := unqCount + dupCount
 		dupTotalRatio := float64(dupCount) / float64(total)
 		if dupTotalRatio < dupRatioLowWatermark {
+			if ptm.potentialThreshold != maxPotentialThreshold {
+				// ptm.log.log("threshold-up: %.2f (dup %d / total %d = %.2f which is < %.2f so ↑ threshold to %.2f",
+				// 	ptm.potentialThreshold, dupCount, total, dupTotalRatio, dupRatioLowWatermark, maxPotentialThreshold)
+			}
 			ptm.potentialThreshold = maxPotentialThreshold
 		} else if dupTotalRatio > dupRatioHighWatermark {
+			if ptm.potentialThreshold != minPotentialThreshold {
+				// ptm.log.log("threshold-dn: %.2f (dup %d / total %d = %.2f which is > %.2f so ↓ threshold to %.2f",
+				// 	ptm.potentialThreshold, dupCount, total, dupTotalRatio, dupRatioHighWatermark, minPotentialThreshold)
+			}
 			ptm.potentialThreshold = minPotentialThreshold
 		}
 	}

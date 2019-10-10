@@ -8,7 +8,7 @@ import (
 
 func TestEmptyWantPotential(t *testing.T) {
 	cids := testutil.GenerateCids(1)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	if wp.Index() != 0 {
 		t.Fatal("expected zero index")
@@ -27,7 +27,7 @@ func TestEmptyWantPotential(t *testing.T) {
 func TestSetPeerPotential(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
@@ -66,7 +66,7 @@ func TestSetPeerPotential(t *testing.T) {
 func TestSetPeerPotentialBestLower(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.8)
 	if wp.bestPeer != peers[0] {
@@ -96,7 +96,7 @@ func TestSetPeerPotentialBestLower(t *testing.T) {
 func TestSetPeerPotentialNegative(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
@@ -118,7 +118,7 @@ func TestSetPeerPotentialNegative(t *testing.T) {
 func TestSetSamePeerPotential(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
@@ -140,7 +140,7 @@ func TestSetSamePeerPotential(t *testing.T) {
 func TestSetSamePeerPotentialZero(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
@@ -162,7 +162,7 @@ func TestSetSamePeerPotentialZero(t *testing.T) {
 func TestSetSamePeerPotentialNegative(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
@@ -176,7 +176,7 @@ func TestSetSamePeerPotentialNegative(t *testing.T) {
 	if wp.bestPeer != "" {
 		t.Fatal("wrong best peer")
 	}
-	if wp.bestPotential != -0.8 {
+	if wp.bestPotential != 0 {
 		t.Fatal("wrong best potential")
 	}
 }
@@ -184,7 +184,7 @@ func TestSetSamePeerPotentialNegative(t *testing.T) {
 func TestClearThenSetNegative(t *testing.T) {
 	cids := testutil.GenerateCids(1)
 	peers := testutil.GeneratePeers(2)
-	wp := newWantPotential(cids[0], 0)
+	wp := newWantPotential(newPeerResponseTracker(), cids[0], 0)
 
 	wp.setPeerPotential(peers[0], 0.5)
 	if wp.bestPeer != peers[0] {
