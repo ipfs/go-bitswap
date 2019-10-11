@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
 	"sort"
 
 	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
@@ -44,12 +43,12 @@ type sessionPotentialManager struct {
 	pastWants      *cid.Set
 	queue          pq.PQ
 	availablePeers map[peer.ID]bool
+	peerRspTrkr    *peerResponseTracker
 
 	pm                    PeerManager
 	bpm                   *bsbpm.BlockPresenceManager
 	potentialThresholdMgr PotentialThresholdManager
-
-	onSend onSendFn
+	onSend                onSendFn
 }
 
 func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager, ptm PotentialThresholdManager, onSend onSendFn) sessionPotentialManager {
@@ -61,6 +60,7 @@ func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPres
 		wants:          make(map[cid.Cid]*wantPotential),
 		pastWants:      cid.NewSet(),
 		availablePeers: make(map[peer.ID]bool),
+		peerRspTrkr:    newPeerResponseTracker(),
 
 		pm:                    pm,
 		bpm:                   bpm,
@@ -238,7 +238,7 @@ func (spm *sessionPotentialManager) trackPotential(c cid.Cid) {
 		return
 	}
 
-	wp := newWantPotential(c, len(spm.wants))
+	wp := newWantPotential(spm.peerRspTrkr, c, len(spm.wants))
 	spm.wants[c] = wp
 
 	for p, isAvailable := range spm.availablePeers {
@@ -276,9 +276,14 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 
 		// For each received block
 		for _, c := range upd.ks {
-			// Move the want to the set of past wants
+			// Remove the want
 			removed := spm.removeWant(c)
 			if removed != nil {
+				// Inform the peer tracker that this peer was the first to send
+				// us the block
+				spm.peerRspTrkr.receivedBlockFrom(upd.from)
+
+				// Save the want in the set of past wants
 				spm.pastWants.Add(c)
 
 				// We're just going to remove this want the next time it's
@@ -652,14 +657,16 @@ type wantPotential struct {
 	sentPotential float64
 	bestPotential float64
 	bestPeer      peer.ID
+	peerRspTrkr   *peerResponseTracker
 }
 
-func newWantPotential(c cid.Cid, startIndex int) *wantPotential {
+func newWantPotential(prt *peerResponseTracker, c cid.Cid, startIndex int) *wantPotential {
 	return &wantPotential{
-		startIndex: startIndex,
-		want:       c,
-		byPeer:     make(map[peer.ID]float64),
-		sent:       make(map[peer.ID]float64),
+		startIndex:  startIndex,
+		want:        c,
+		byPeer:      make(map[peer.ID]float64),
+		sent:        make(map[peer.ID]float64),
+		peerRspTrkr: prt,
 	}
 }
 
@@ -696,16 +703,40 @@ func (wp *wantPotential) calculateBestPeer() {
 	// Recalculate the best peer
 	wp.bestPeer = ""
 	wp.bestPotential = 0
+
+	// Find the peer with the highest potential, recording how many peers
+	// share the highest potential
+	countWithBest := 0
 	for p, potential := range wp.byPeer {
-		isBest := potential > wp.bestPotential || (potential == wp.bestPotential && rand.Intn(2) == 0)
-		if wp.bestPeer == "" || isBest {
+		if potential > wp.bestPotential {
+			countWithBest = 1
 			wp.bestPotential = potential
 			wp.bestPeer = p
+		} else if potential == wp.bestPotential {
+			countWithBest++
 		}
 	}
+
+	// If no peer has a potential greater than 0, bail out
 	if wp.bestPotential <= 0 {
 		wp.bestPeer = ""
+		return
 	}
+
+	// If there was only one peer with the best potential, we're done
+	if countWithBest <= 1 {
+		return
+	}
+
+	// There were multiple peers with the best potential, so choose one of
+	// them to be the best
+	var peersWithBest []peer.ID
+	for p, potential := range wp.byPeer {
+		if potential == wp.bestPotential {
+			peersWithBest = append(peersWithBest, p)
+		}
+	}
+	wp.bestPeer = wp.peerRspTrkr.choose(peersWithBest)
 }
 
 // Order by

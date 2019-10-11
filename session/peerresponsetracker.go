@@ -34,23 +34,23 @@ func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
 		return ""
 	}
 
+	// rand makes a syscall so get it outside the lock
 	rnd := rand.Float64()
-	total := 0
-	var candidates []peer.ID
 
 	prt.RLock()
 	defer prt.RUnlock()
 
+	// Find the total received blocks for all candidate peers
+	total := 0
 	for _, p := range peers {
-		if count, ok := prt.firstResponder[p]; ok {
-			total += count + 1
-			candidates = append(candidates, p)
-		}
+		total += prt.getPeerCount(p)
 	}
 
+	// Choose one of the peers with a chance proportional to the number
+	// of blocks received from that peer
 	counted := 0.0
-	for _, p := range candidates {
-		counted += float64(prt.firstResponder[p]+1) / float64(total)
+	for _, p := range peers {
+		counted += float64(prt.getPeerCount(p)) / float64(total)
 		if counted > rnd {
 			// log.Warningf("  chose %s from %s (%d) / %s (%d) with pivot %.2f",
 			// 	lu.P(p), lu.P(peers[0]), prt.firstResponder[peers[0]], lu.P(peers[1]), prt.firstResponder[peers[1]], rnd)
@@ -62,4 +62,15 @@ func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
 	// log.Warningf("  chose random (indx %d) %s from %s (%d) / %s (%d) with pivot %.2f",
 	// 	index, lu.P(peers[index]), lu.P(peers[0]), prt.firstResponder[peers[0]], lu.P(peers[1]), prt.firstResponder[peers[1]], rnd)
 	return peers[index]
+}
+
+func (prt *peerResponseTracker) getPeerCount(p peer.ID) int {
+	count, ok := prt.firstResponder[p]
+	if ok {
+		return count
+	}
+
+	// Make sure there is always at least a small chance a new peer
+	// will be chosen
+	return 1
 }
