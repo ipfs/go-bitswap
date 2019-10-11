@@ -200,11 +200,20 @@ func (m *impl) AddEntry(k cid.Cid, priority int, wantType pb.Message_Wantlist_Wa
 func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Message_Wantlist_WantType, sendDontHave bool) {
 	e, exists := m.wantlist[c]
 	if exists {
-		e.Priority = priority
-		e.Cancel = cancel
-		e.SendDontHave = sendDontHave
-		// Want for a block overrides existing want for a HAVE
-		if wantType == pb.Message_Wantlist_Block || e.WantType == pb.Message_Wantlist_Have {
+		// Only change priority if want is of the same type
+		if e.WantType == wantType {
+			e.Priority = priority
+		}
+		// Only change from "dont cancel" to "do cancel"
+		if cancel {
+			e.Cancel = cancel
+		}
+		// Only change from "dont send" to "do send" DONT_HAVE
+		if sendDontHave {
+			e.SendDontHave = sendDontHave
+		}
+		// want-block overrides existing want-have
+		if wantType == pb.Message_Wantlist_Block && e.WantType == pb.Message_Wantlist_Have {
 			e.WantType = wantType
 		}
 		m.wantlist[c] = e

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	bsmsg "github.com/ipfs/go-bitswap/message"
 	lu "github.com/ipfs/go-bitswap/logutil"
+	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	cid "github.com/ipfs/go-cid"
@@ -195,6 +195,8 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 }
 
 func (mq *MessageQueue) extractOutgoingMessage() bsmsg.BitSwapMessage {
+	// TODO: If necessary, split up outgoing message so it's not too big
+
 	// grab outgoing message
 	mq.nextMessageLk.Lock()
 	message := mq.nextMessage
@@ -258,7 +260,7 @@ func (mq *MessageQueue) sendMessage() {
 				log.Debugf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 				// log.Warningf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			} else {
-				// log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+				log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 				// log.Warningf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
 			}
 		}
