@@ -40,7 +40,7 @@ type sessionPotentialManager struct {
 	sendTrigger    chan struct{}
 	sentPotential  map[cid.Cid]float64
 	wants          map[cid.Cid]*wantPotential
-	pastWants      *cid.Set
+	sentWantBlocks map[peer.ID]*cid.Set
 	queue          pq.PQ
 	availablePeers map[peer.ID]bool
 	peerRspTrkr    *peerResponseTracker
@@ -58,7 +58,7 @@ func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPres
 		sendTrigger:    make(chan struct{}, 1),
 		sentPotential:  make(map[cid.Cid]float64),
 		wants:          make(map[cid.Cid]*wantPotential),
-		pastWants:      cid.NewSet(),
+		sentWantBlocks: make(map[peer.ID]*cid.Set),
 		availablePeers: make(map[peer.ID]bool),
 		peerRspTrkr:    newPeerResponseTracker(),
 
@@ -251,9 +251,9 @@ func (spm *sessionPotentialManager) trackPotential(c cid.Cid) {
 }
 
 func (spm *sessionPotentialManager) processUpdates(updates []update) {
+	hits := 0
+	misses := 0
 	changed := cid.NewSet()
-	uniqs := cid.NewSet()
-	dups := cid.NewSet()
 	for _, upd := range updates {
 		// TODO: If there is a timeout for the want from the peer, remove the want
 		// potential so it can be sent again (and blacklist the peer?)
@@ -265,6 +265,12 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 			// Update the want potential for the peer
 			spm.updatePotential(c, upd.from)
 			changed.Add(c)
+
+			// If the DONT_HAVE is in response to a want-block then we
+			// count it as a miss (could also be in response to want-have)
+			if spm.haveSentWantBlockTo(upd.from, c) {
+				misses++
+			}
 		}
 
 		// For each HAVE
@@ -283,9 +289,6 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 				// us the block
 				spm.peerRspTrkr.receivedBlockFrom(upd.from)
 
-				// Save the want in the set of past wants
-				spm.pastWants.Add(c)
-
 				// We're just going to remove this want the next time it's
 				// popped from the queue, but we want to update its position
 				// so as to move it to the front of the queue (so it gets
@@ -293,20 +296,19 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 				spm.queue.Update(removed.Index())
 			}
 
-			// Only record uniqs / dups if the block came from the network
-			// (as opposed to coming from the local node)
-			if upd.from != "" {
-				if removed != nil {
-					uniqs.Add(c)
-				} else if spm.pastWants.Has(c) {
-					dups.Add(c)
-				}
+			// If the block came from the network (as opposed to being added by
+			// the local node) and we sent a want-block for it (note that the
+			// remote peer will send a block in response to want-have if the
+			// block is small enough)
+			if upd.from != "" && spm.haveSentWantBlockTo(upd.from, c) {
+				// Count it as a hit
+				hits++
 			}
 		}
 	}
 
 	// Update the potential threshold
-	spm.potentialThresholdMgr.ReceivedBlocks(uniqs.Keys(), dups.Keys())
+	spm.potentialThresholdMgr.Received(hits, misses)
 
 	// For each want that changed
 	for _, c := range changed.Keys() {
@@ -464,7 +466,8 @@ func (spm *sessionPotentialManager) sendWants(sends map[peer.ID]*allWants) {
 	for p, snd := range sends {
 		// fmt.Printf(" send %d wants to %s\n", snd.wantBlocks.Len(), lu.P(p))
 		// Add the sent potential and clear the want potential for the want
-		for _, c := range snd.wantBlocks.Keys() {
+		wblks := snd.wantBlocks.Keys()
+		for _, c := range wblks {
 			sentWantBlocks.Add(c)
 		}
 
@@ -477,10 +480,14 @@ func (spm *sessionPotentialManager) sendWants(sends map[peer.ID]*allWants) {
 		// Note that the PeerManager ensures that we don't sent duplicate
 		// want-haves / want-blocks to a peer, and that want-blocks take
 		// precedence over want-haves.
-		wblks := snd.wantBlocks.Keys()
 		whaves := snd.wantHaves.Keys()
 		spm.pm.SendWants(spm.ctx, p, wblks, whaves)
+
+		// Inform the session that we've sent the wants
 		spm.onSend(p, wblks, whaves)
+
+		// Record which peers we send want-block to
+		spm.addSentWantBlocksTo(p, wblks)
 	}
 
 	// For each changed want
@@ -498,11 +505,28 @@ func (spm *sessionPotentialManager) getPiggybackWantHaves(p peer.ID, wantBlocks 
 	var whs []cid.Cid
 	for c := range spm.wants {
 		// Don't send want-have if we're already sending a want-block
-		if !wantBlocks.Has(c) {
+		// (or have previously)
+		if !wantBlocks.Has(c) && !spm.haveSentWantBlockTo(p, c) {
 			whs = append(whs, c)
 		}
 	}
 	return whs
+}
+
+func (spm *sessionPotentialManager) addSentWantBlocksTo(p peer.ID, ks []cid.Cid) {
+	if _, ok := spm.sentWantBlocks[p]; !ok {
+		spm.sentWantBlocks[p] = cid.NewSet()
+	}
+	for _, c := range ks {
+		spm.sentWantBlocks[p].Add(c)
+	}
+}
+
+func (spm *sessionPotentialManager) haveSentWantBlockTo(p peer.ID, c cid.Cid) bool {
+	if ks, ok := spm.sentWantBlocks[p]; ok {
+		return ks.Has(c)
+	}
+	return false
 }
 
 func (spm *sessionPotentialManager) addPeer(p peer.ID) {

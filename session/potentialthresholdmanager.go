@@ -4,35 +4,28 @@ import (
 	"fmt"
 	"math"
 	"sync"
-
-	cid "github.com/ipfs/go-cid"
 )
 
 const (
 	minPotentialThreshold     = 0.5
 	maxPotentialThreshold     = 0.8
 	initialPotentialThreshold = maxPotentialThreshold
-	// The number of recent blocks to keep track of uniq / dups for
+	// The number of recent blocks to keep track of hits and misses for
 	maxPotentialThresholdRecent = 256
 	// Start calculating potential threshold after we have this many blocks
-	minPotentialThresholdBlockCount = 8
-	// If the ratio of duplicates / total blocks
-	// - is under low watermark: jump to maxPotentialThreshold
-	// - is over high watermark: drop to minPotentialThreshold
-	dupRatioLowWatermark  = 0.05
-	dupRatioHighWatermark = 0.2
+	minPotentialThresholdItemCount = 8
 )
 
 type PotentialThresholdManager interface {
 	PotentialThreshold() float64
 	IdleTimeout()
-	ReceivedBlocks(uniqs []cid.Cid, dups []cid.Cid)
+	Received(hits int, misses int)
 }
 
 type potentialThresholdManager struct {
 	sync.RWMutex
 	potentialThreshold float64
-	recentWasUnique    []bool
+	recentWasHit       []bool
 }
 
 func newPotentialThresholdManager() *potentialThresholdManager {
@@ -53,54 +46,60 @@ func (ptm *potentialThresholdManager) IdleTimeout() {
 	ptm.potentialThreshold = maxPotentialThreshold
 }
 
-func (ptm *potentialThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid.Cid) {
-	// If there are too many received blocks to fit into the running average,
+func (ptm *potentialThresholdManager) Received(hits int, misses int) {
+	// If there are too many received items to fit into the running average,
 	// add them proportionally
-	total := float64(len(uniqs) + len(dups))
-	if len(uniqs) > 0 && len(dups) > 0 && total > maxPotentialThresholdRecent {
-		uniqRatio := int(math.Floor(float64(len(uniqs)) * maxPotentialThresholdRecent / total))
-		dupRatio := int(math.Floor(float64(len(dups)) * maxPotentialThresholdRecent / total))
-		uniqs = uniqs[:uniqRatio]
-		dups = dups[:dupRatio]
+	total := float64(hits + misses)
+	if hits > 0 && misses > 0 && total > maxPotentialThresholdRecent {
+		hits = int(math.Floor(float64(hits) * maxPotentialThresholdRecent / total))
+		misses = int(math.Floor(float64(misses) * maxPotentialThresholdRecent / total))
 	}
 
-	// Record unique vs duplicate blocks
-	for range uniqs {
-		ptm.recentWasUnique = append(ptm.recentWasUnique, true)
-	}
-	for range dups {
-		ptm.recentWasUnique = append(ptm.recentWasUnique, false)
+	// Record hits vs misses
+	for hits > 0 || misses > 0 {
+		if hits > 0 {
+			ptm.recentWasHit = append(ptm.recentWasHit, true)
+			hits--
+		}
+		if misses > 0 {
+			ptm.recentWasHit = append(ptm.recentWasHit, false)
+			misses--
+		}
 	}
 
-	poplen := len(ptm.recentWasUnique) - maxPotentialThresholdRecent
+	// Truncate the list to the maximum length
+	poplen := len(ptm.recentWasHit) - maxPotentialThresholdRecent
 	if poplen > 0 {
-		ptm.recentWasUnique = ptm.recentWasUnique[poplen:]
+		ptm.recentWasHit = ptm.recentWasHit[poplen:]
 	}
 
-	if len(ptm.recentWasUnique) > minPotentialThresholdBlockCount {
-		unqCount := 0
-		dupCount := 0
-		for _, u := range ptm.recentWasUnique {
-			if u {
-				unqCount++
-			} else {
-				dupCount++
-			}
+	// Wait until there are enough received items to be significant
+	if len(ptm.recentWasHit) < minPotentialThresholdItemCount {
+		return
+	}
+
+	// Count how many hits / misses there have been in the last
+	// minPotentialThresholdItemCount recordings
+	hitCount := 0
+	missCount := 0
+	for _, u := range ptm.recentWasHit {
+		if u {
+			hitCount++
+		} else {
+			missCount++
 		}
-		total := unqCount + dupCount
-		dupTotalRatio := float64(dupCount) / float64(total)
-		if dupTotalRatio < dupRatioLowWatermark {
-			if ptm.potentialThreshold != maxPotentialThreshold {
-				// ptm.log.log("threshold-up: %.2f (dup %d / total %d = %.2f which is < %.2f so ↑ threshold to %.2f",
-				// 	ptm.potentialThreshold, dupCount, total, dupTotalRatio, dupRatioLowWatermark, maxPotentialThreshold)
-			}
-			ptm.potentialThreshold = maxPotentialThreshold
-		} else if dupTotalRatio > dupRatioHighWatermark {
-			if ptm.potentialThreshold != minPotentialThreshold {
-				// ptm.log.log("threshold-dn: %.2f (dup %d / total %d = %.2f which is > %.2f so ↓ threshold to %.2f",
-				// 	ptm.potentialThreshold, dupCount, total, dupTotalRatio, dupRatioHighWatermark, minPotentialThreshold)
-			}
-			ptm.potentialThreshold = minPotentialThreshold
-		}
+	}
+	ratio := maxPotentialThreshold
+	if hitCount > 0 {
+		ratio = float64(missCount) / float64(hitCount)
+	}
+
+	// Keep the ratio between min and max
+	if ratio > maxPotentialThreshold {
+		ptm.potentialThreshold = maxPotentialThreshold
+	} else if ratio < minPotentialThreshold {
+		ptm.potentialThreshold = minPotentialThreshold
+	} else {
+		ptm.potentialThreshold = ratio
 	}
 }

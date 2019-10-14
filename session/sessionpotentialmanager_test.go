@@ -30,7 +30,7 @@ func (mtm *mockThresholdManager) PotentialThreshold() float64 {
 func (mtm *mockThresholdManager) IdleTimeout() {
 }
 
-func (mtm *mockThresholdManager) ReceivedBlocks(uniqs []cid.Cid, dups []cid.Cid) {
+func (mtm *mockThresholdManager) Received(hits int, misses int) {
 }
 
 type mockPeerManager struct {
