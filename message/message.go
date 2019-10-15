@@ -239,6 +239,9 @@ func (m *impl) AddBlock(b blocks.Block) {
 }
 
 func (m *impl) AddBlockPresence(c cid.Cid, t pb.Message_BlockPresenceType) {
+	if _, ok := m.blocks[c]; ok {
+		return
+	}
 	m.blockPresences[c] = t
 }
 

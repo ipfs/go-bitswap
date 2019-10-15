@@ -196,6 +196,48 @@ func TestDuplicates(t *testing.T) {
 	if len(msg.Blocks()) != 1 {
 		t.Fatal("Duplicate in BitSwapMessage")
 	}
+
+	b2 := blocks.NewBlock([]byte("bar"))
+	msg.AddBlockPresence(b2.Cid(), pb.Message_Have)
+	msg.AddBlockPresence(b2.Cid(), pb.Message_Have)
+	if len(msg.Haves()) != 1 {
+		t.Fatal("Duplicate in BitSwapMessage")
+	}
+}
+
+func TestBlockPresences(t *testing.T) {
+	b1 := blocks.NewBlock([]byte("foo"))
+	b2 := blocks.NewBlock([]byte("bar"))
+	msg := New(true)
+
+	msg.AddBlockPresence(b1.Cid(), pb.Message_Have)
+	msg.AddBlockPresence(b2.Cid(), pb.Message_DontHave)
+	if len(msg.Haves()) != 1 || !msg.Haves()[0].Equals(b1.Cid()) {
+		t.Fatal("Expected HAVE")
+	}
+	if len(msg.DontHaves()) != 1 || !msg.DontHaves()[0].Equals(b2.Cid()) {
+		t.Fatal("Expected HAVE")
+	}
+
+	msg.AddBlock(b1)
+	if len(msg.Haves()) != 0 {
+		t.Fatal("Expected block to overwrite HAVE")
+	}
+
+	msg.AddBlock(b2)
+	if len(msg.DontHaves()) != 0 {
+		t.Fatal("Expected block to overwrite DONT_HAVE")
+	}
+
+	msg.AddBlockPresence(b1.Cid(), pb.Message_Have)
+	if len(msg.Haves()) != 0 {
+		t.Fatal("Expected HAVE not to overwrite block")
+	}
+
+	msg.AddBlockPresence(b2.Cid(), pb.Message_DontHave)
+	if len(msg.DontHaves()) != 0 {
+		t.Fatal("Expected DONT_HAVE not to overwrite block")
+	}
 }
 
 func TestSplitByWantlistSizeEmptyMsg(t *testing.T) {
