@@ -240,6 +240,57 @@ func TestBlockPresences(t *testing.T) {
 	}
 }
 
+func TestAddWantlistEntry(t *testing.T) {
+	b := blocks.NewBlock([]byte("foo"))
+	msg := New(true)
+
+	msg.AddEntry(b.Cid(), 1, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(b.Cid(), 2, pb.Message_Wantlist_Block, true)
+	entries := msg.Wantlist()
+	if len(entries) != 1 {
+		t.Fatal("Duplicate in BitSwapMessage")
+	}
+	e := entries[0]
+	if e.WantType != pb.Message_Wantlist_Block {
+		t.Fatal("want-block should override want-have")
+	}
+	if e.SendDontHave != true {
+		t.Fatal("true SendDontHave should override false SendDontHave")
+	}
+	if e.Priority != 1 {
+		t.Fatal("priority should only be overridden if wants are of same type")
+	}
+
+	msg.AddEntry(b.Cid(), 2, pb.Message_Wantlist_Block, true)
+	e = msg.Wantlist()[0]
+	if e.Priority != 2 {
+		t.Fatal("priority should be overridden if wants are of same type")
+	}
+
+	msg.AddEntry(b.Cid(), 3, pb.Message_Wantlist_Have, false)
+	e = msg.Wantlist()[0]
+	if e.WantType != pb.Message_Wantlist_Block {
+		t.Fatal("want-have should not override want-block")
+	}
+	if e.SendDontHave != true {
+		t.Fatal("false SendDontHave should not override true SendDontHave")
+	}
+	if e.Priority != 2 {
+		t.Fatal("priority should only be overridden if wants are of same type")
+	}
+
+	msg.Cancel(b.Cid())
+	e = msg.Wantlist()[0]
+	if !e.Cancel {
+		t.Fatal("cancel should override want")
+	}
+
+	msg.AddEntry(b.Cid(), 10, pb.Message_Wantlist_Block, true)
+	if !e.Cancel {
+		t.Fatal("want should not override cancel")
+	}
+}
+
 func TestSplitByWantlistSizeEmptyMsg(t *testing.T) {
 	msg := New(true)
 	primary, remaining := msg.SplitByWantlistSize(10)
