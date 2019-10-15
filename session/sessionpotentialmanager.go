@@ -14,8 +14,19 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-// Amount to increase potential by if we received a HAVE message
-const rcvdHavePotentialGain = 0.8
+const (
+	// Default potential amount for a want
+	basePotentialGain = 0.5
+	// Amount to set potential to if we received a HAVE message
+	rcvdHavePotentialGain = 0.8
+	// The fraction of (DONT_HAVEs / total responses) to tolerate before
+	// sending the want to more than one peer
+	dontHaveTolerance = 0.05
+	// The number of recent blocks to keep track of hits and misses for
+	maxPotentialThresholdRecent = 256
+	// Start calculating potential threshold after we have this many blocks
+	minPotentialThresholdItemCount = 8
+)
 
 type update struct {
 	from      peer.ID
@@ -72,7 +83,8 @@ func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPres
 	// The PotentialThresholdManager is a parameter to the constructor so that
 	// it can be provided by the tests
 	if spm.potentialThresholdMgr == nil {
-		spm.potentialThresholdMgr = newPotentialThresholdManager()
+		spm.potentialThresholdMgr = newPotentialThresholdManager(
+			basePotentialGain, rcvdHavePotentialGain, dontHaveTolerance, maxPotentialThresholdRecent, minPotentialThresholdItemCount)
 	}
 
 	return spm
@@ -577,16 +589,13 @@ func (spm *sessionPotentialManager) updatePotential(c cid.Cid, p peer.ID) {
 		return
 	}
 
-	potential := 0.0
+	potential := basePotentialGain
 	// If the peer sent us a HAVE or HAVE_NOT for the cid, adjust the
 	// potential for the peer / cid combination
 	if spm.bpm.PeerHasBlock(p, c) {
-		potential += rcvdHavePotentialGain
+		potential = rcvdHavePotentialGain
 	} else if spm.bpm.PeerDoesNotHaveBlock(p, c) {
-		potential -= rcvdHavePotentialGain
-	} else {
-		// TODO: Take into account peer's uniq / dup ratio?
-		potential += 0.5
+		potential = -rcvdHavePotentialGain
 	}
 
 	wp.setPeerPotential(p, potential)

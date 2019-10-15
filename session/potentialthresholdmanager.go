@@ -6,16 +6,6 @@ import (
 	"sync"
 )
 
-const (
-	minPotentialThreshold     = 0.5
-	maxPotentialThreshold     = 0.8
-	initialPotentialThreshold = maxPotentialThreshold
-	// The number of recent blocks to keep track of hits and misses for
-	maxPotentialThresholdRecent = 256
-	// Start calculating potential threshold after we have this many blocks
-	minPotentialThresholdItemCount = 8
-)
-
 type PotentialThresholdManager interface {
 	PotentialThreshold() float64
 	IdleTimeout()
@@ -24,13 +14,30 @@ type PotentialThresholdManager interface {
 
 type potentialThresholdManager struct {
 	sync.RWMutex
+	// TODO: Use more efficient data structure than bool array
+	recentWasHit []bool
+
 	potentialThreshold float64
-	recentWasHit       []bool
+	// Base threshold value
+	base float64
+	// Minimum threshold value
+	min float64
+	// Maximum threshold value
+	max float64
+	// The number of recent blocks to keep track of hits and misses for
+	capacity int
+	// Start calculating potential threshold after we have this many blocks
+	significanceCount int
 }
 
-func newPotentialThresholdManager() *potentialThresholdManager {
+func newPotentialThresholdManager(min float64, max float64, missTolerance float64, capacity int, significanceCount int) *potentialThresholdManager {
 	return &potentialThresholdManager{
-		potentialThreshold: initialPotentialThreshold,
+		potentialThreshold: max,
+		min:                min,
+		max:                max,
+		base:               (1 - missTolerance) * min,
+		capacity:           capacity,
+		significanceCount:  significanceCount,
 	}
 }
 
@@ -43,16 +50,16 @@ func (ptm *potentialThresholdManager) PotentialThreshold() float64 {
 }
 
 func (ptm *potentialThresholdManager) IdleTimeout() {
-	ptm.potentialThreshold = maxPotentialThreshold
+	ptm.potentialThreshold = ptm.max
 }
 
 func (ptm *potentialThresholdManager) Received(hits int, misses int) {
 	// If there are too many received items to fit into the running average,
 	// add them proportionally
 	total := float64(hits + misses)
-	if hits > 0 && misses > 0 && total > maxPotentialThresholdRecent {
-		hits = int(math.Floor(float64(hits) * maxPotentialThresholdRecent / total))
-		misses = int(math.Floor(float64(misses) * maxPotentialThresholdRecent / total))
+	if hits > 0 && misses > 0 && total > float64(ptm.capacity) {
+		hits = int(math.Floor(float64(hits*ptm.capacity) / total))
+		misses = int(math.Floor(float64(misses*ptm.capacity) / total))
 	}
 
 	// Record hits vs misses
@@ -68,18 +75,18 @@ func (ptm *potentialThresholdManager) Received(hits int, misses int) {
 	}
 
 	// Truncate the list to the maximum length
-	poplen := len(ptm.recentWasHit) - maxPotentialThresholdRecent
+	poplen := len(ptm.recentWasHit) - ptm.capacity
 	if poplen > 0 {
 		ptm.recentWasHit = ptm.recentWasHit[poplen:]
 	}
 
 	// Wait until there are enough received items to be significant
-	if len(ptm.recentWasHit) < minPotentialThresholdItemCount {
+	if len(ptm.recentWasHit) < ptm.significanceCount {
 		return
 	}
 
 	// Count how many hits / misses there have been in the last
-	// minPotentialThresholdItemCount recordings
+	// ptm.significanceCount recordings
 	hitCount := 0
 	missCount := 0
 	for _, u := range ptm.recentWasHit {
@@ -89,17 +96,33 @@ func (ptm *potentialThresholdManager) Received(hits int, misses int) {
 			missCount++
 		}
 	}
-	ratio := maxPotentialThreshold
-	if hitCount > 0 {
-		ratio = float64(missCount) / float64(hitCount)
+
+	// Number of peers to send each want to is inversely proportional to the
+	// hit rate, eg:
+	//   xxx Hit rate: 0/3, so num peers should be max
+	//   ✓xx Hit rate: 1/3, so num peers should be 3/1
+	//   ✓✓x Hit rate: 2/3, so num peers should be 3/2
+	//   ✓✓x Hit rate: 3/3, so num peers should be 1
+
+	// If we didn't get any hits, peg threshold to the maximum value
+	if hitCount == 0 {
+		ptm.potentialThreshold = ptm.max
+		return
 	}
 
-	// Keep the ratio between min and max
-	if ratio > maxPotentialThreshold {
-		ptm.potentialThreshold = maxPotentialThreshold
-	} else if ratio < minPotentialThreshold {
-		ptm.potentialThreshold = minPotentialThreshold
-	} else {
-		ptm.potentialThreshold = ratio
+	// Calculate the inverse of the hit rate
+	totalCount := hitCount + missCount
+	numPeers := float64(totalCount) / float64(hitCount)
+
+	// Adjust proportionally to the base value
+	ratio := numPeers * ptm.base
+
+	// Ensure value is between min and max
+	if ratio > ptm.max {
+		ratio = ptm.max
+	} else if ratio < ptm.min {
+		ratio = ptm.min
 	}
+
+	ptm.potentialThreshold = ratio
 }
