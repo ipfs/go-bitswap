@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sort"
 
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	"github.com/ipfs/go-bitswap/wantlist"
@@ -45,6 +46,8 @@ type BitSwapMessage interface {
 	AddHave(cid.Cid)
 	AddDontHave(cid.Cid)
 	Exportable
+
+	SplitByWantlistSize(maxSize int) (BitSwapMessage, BitSwapMessage)
 
 	Loggable() map[string]interface{}
 }
@@ -255,7 +258,11 @@ func (m *impl) Size() int {
 	for c := range m.blockPresences {
 		size += BlockPresenceSize(c)
 	}
-	// TODO: Include wantlist size
+	for _, e := range m.wantlist {
+		epb := entryToPB(e)
+		size += epb.Size()
+	}
+
 	return size
 }
 
@@ -287,17 +294,21 @@ func FromMsgReader(r msgio.Reader) (BitSwapMessage, error) {
 	return newMessageFromProto(pb)
 }
 
+func entryToPB(e *Entry) pb.Message_Wantlist_Entry {
+	return pb.Message_Wantlist_Entry{
+		Block:        e.Cid.Bytes(),
+		Priority:     int32(e.Priority),
+		Cancel:       e.Cancel,
+		WantType:     e.WantType,
+		SendDontHave: e.SendDontHave,
+	}
+}
+
 func (m *impl) ToProtoV0() *pb.Message {
 	pbm := new(pb.Message)
 	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
-		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
-			Block:        e.Cid.Bytes(),
-			Priority:     int32(e.Priority),
-			Cancel:       e.Cancel,
-			WantType:     e.WantType,
-			SendDontHave: e.SendDontHave,
-		})
+		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, entryToPB(e))
 	}
 	pbm.Wantlist.Full = m.full
 
@@ -313,13 +324,7 @@ func (m *impl) ToProtoV1() *pb.Message {
 	pbm := new(pb.Message)
 	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
 	for _, e := range m.wantlist {
-		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, pb.Message_Wantlist_Entry{
-			Block:        e.Cid.Bytes(),
-			Priority:     int32(e.Priority),
-			Cancel:       e.Cancel,
-			WantType:     e.WantType,
-			SendDontHave: e.SendDontHave,
-		})
+		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, entryToPB(e))
 	}
 	pbm.Wantlist.Full = m.full
 
@@ -346,6 +351,41 @@ func (m *impl) ToNetV0(w io.Writer) error {
 
 func (m *impl) ToNetV1(w io.Writer) error {
 	return write(w, m.ToProtoV1())
+}
+
+func (m *impl) SplitByWantlistSize(maxSize int) (BitSwapMessage, BitSwapMessage) {
+	// Order entries by priority
+	entries := m.Wantlist()
+	sort.Slice(entries, func(i int, j int) bool {
+		return entries[i].Priority > entries[j].Priority
+	})
+
+	// Create a new message and add entries to it up to the size limit
+	message := New(m.Full()).(*impl)
+	total := 0
+	i := 0
+	for ; i < len(entries) && total < maxSize; i++ {
+		e := entries[i]
+		epb := entryToPB(&e)
+		size := epb.Size()
+		if total+size <= maxSize {
+			total += size
+			message.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
+		}
+	}
+
+	// If all the entries were added, we're done
+	if i >= len(entries) {
+		return message, nil
+	}
+
+	// Add the remaining entries to a second message
+	remainder := New(m.Full()).(*impl)
+	for ; i < len(entries); i++ {
+		e := entries[i]
+		remainder.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
+	}
+	return message, remainder
 }
 
 func write(w io.Writer, m *pb.Message) error {

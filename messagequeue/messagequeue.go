@@ -2,7 +2,6 @@ package messagequeue
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -21,6 +20,8 @@ var log = logging.Logger("bitswap")
 const (
 	defaultRebroadcastInterval = 30 * time.Second
 	maxRetries                 = 10
+	// Maximum message size in bytes
+	maxMsgSize = 1024 * 1024 * 2
 	// maxPriority is the max priority as defined by the bitswap protocol
 	maxPriority = math.MaxInt32
 	// sendMessageDebounce is the debounce duration when calling sendMessage():
@@ -112,10 +113,7 @@ func (mq *MessageQueue) addMessageEntries(addEntriesFn func()) {
 
 	addEntriesFn()
 
-	select {
-	case mq.outgoingWork <- struct{}{}:
-	default:
-	}
+	mq.signalWorkReady()
 }
 
 // SetRebroadcastInterval sets a new interval on which to rebroadcast the full wantlist
@@ -194,60 +192,37 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 	mq.addWantlist()
 }
 
-func (mq *MessageQueue) extractOutgoingMessage() bsmsg.BitSwapMessage {
-	// TODO: If necessary, split up outgoing message so it's not too big
-
+func (mq *MessageQueue) extractOutgoingMessage() (bsmsg.BitSwapMessage, bool) {
 	// grab outgoing message
 	mq.nextMessageLk.Lock()
+	defer mq.nextMessageLk.Unlock()
+
 	message := mq.nextMessage
 	mq.nextMessage = nil
-	mq.nextMessageLk.Unlock()
-	return message
+
+	// If the message is too big, split off as much as will fit into a message
+	// and save the remainder for the next invocation
+	if message != nil && message.Size() > maxMsgSize {
+		outgoing, remaining := message.SplitByWantlistSize(maxMsgSize)
+		message = outgoing
+		mq.nextMessage = remaining
+	}
+	return message, mq.nextMessage != nil
 }
 
 func (mq *MessageQueue) sendMessage() {
-	message := mq.extractOutgoingMessage()
+	message, more := mq.extractOutgoingMessage()
 	if message == nil || message.Empty() {
 		return
 	}
 
+	// If the message was too big and had to be split, schedule another
+	// iteration after this one
+	if more {
+		defer mq.signalWorkReady()
+	}
+
 	entries := message.Wantlist()
-	wblocks := 0
-	whaves := 0
-	cwblocks := 0
-	cwhaves := 0
-	for _, e := range entries {
-		if e.WantType == pb.Message_Wantlist_Have {
-			if e.Cancel {
-				cwhaves++
-			} else {
-				whaves++
-			}
-		} else {
-			if e.Cancel {
-				cwblocks++
-			} else {
-				wblocks++
-			}
-		}
-	}
-	detail := ""
-	if wblocks > 0 {
-		detail += fmt.Sprintf(" %d want-block", wblocks)
-	}
-	if cwblocks > 0 {
-		detail += fmt.Sprintf(" %d cancel-block", cwblocks)
-	}
-	if whaves > 0 {
-		detail += fmt.Sprintf(" %d want-have", whaves)
-	}
-	if cwhaves > 0 {
-		detail += fmt.Sprintf(" %d cancel-have", cwhaves)
-	}
-	// log.Warningf("send %s->%s with %d entries:%s\n", lu.P(mq.network.Self()), lu.P(mq.p), len(entries), detail)
-	// for _, e := range entries {
-	// 	log.Debugf("  %s: Cancel? %t / WantHave %t / SendDontHave %t\n", e.Cid.String()[2:8], e.Cancel, e.WantHave, e.SendDontHave)
-	// }
 	for _, e := range entries {
 		if e.Cancel {
 			if e.WantType == pb.Message_Wantlist_Have {
@@ -349,4 +324,11 @@ func openSender(ctx context.Context, network MessageNetwork, p peer.ID) (bsnet.M
 	}
 
 	return nsender, nil
+}
+
+func (mq *MessageQueue) signalWorkReady() {
+	select {
+	case mq.outgoingWork <- struct{}{}:
+	default:
+	}
 }
