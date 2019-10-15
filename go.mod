@@ -4,7 +4,7 @@ require (
 	github.com/btcsuite/btcd v0.0.0-20190605094302-a0d1e3e36d50 // indirect
 	github.com/cskr/pubsub v1.0.2
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/gogo/protobuf v1.3.0
+	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/ipfs/go-block-format v0.0.2
