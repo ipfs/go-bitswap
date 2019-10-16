@@ -366,25 +366,26 @@ func (m *impl) SplitByWantlistSize(maxSize int) (BitSwapMessage, BitSwapMessage)
 	// Create a new message and add entries to it up to the size limit
 	message := New(m.Full()).(*impl)
 	total := 0
-	i := 0
-	for ; i < len(entries) && total < maxSize; i++ {
+	added := 0
+	for i := 0; i < len(entries) && total < maxSize; i++ {
 		e := entries[i]
 		epb := entryToPB(&e)
 		size := epb.Size()
-		if total+size <= maxSize {
-			total += size
+		total += size
+		if total <= maxSize {
+			added++
 			message.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
 		}
 	}
 
 	// If all the entries were added, we're done
-	if i >= len(entries) {
+	if added >= len(entries) {
 		return message, nil
 	}
 
 	// Add the remaining entries to a second message
 	remainder := New(m.Full()).(*impl)
-	for ; i < len(entries); i++ {
+	for i := added; i < len(entries); i++ {
 		e := entries[i]
 		remainder.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
 	}

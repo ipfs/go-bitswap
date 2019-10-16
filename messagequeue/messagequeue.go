@@ -10,6 +10,7 @@ import (
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
+	bswl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -21,7 +22,7 @@ const (
 	defaultRebroadcastInterval = 30 * time.Second
 	maxRetries                 = 10
 	// Maximum message size in bytes
-	maxMsgSize = 1024 * 1024 * 2
+	maxMessageSize = 1024 * 1024 * 2
 	// maxPriority is the max priority as defined by the bitswap protocol
 	maxPriority = math.MaxInt32
 	// sendMessageDebounce is the debounce duration when calling sendMessage():
@@ -38,15 +39,17 @@ type MessageNetwork interface {
 
 // MessageQueue implements queue of want messages to send to peers.
 type MessageQueue struct {
-	ctx     context.Context
-	p       peer.ID
-	network MessageNetwork
+	ctx            context.Context
+	p              peer.ID
+	network        MessageNetwork
+	maxMessageSize int
 
 	outgoingWork chan struct{}
 	done         chan struct{}
 
 	// do not touch out of run loop
-	// wl                    *wantlist.SessionTrackedWantlist
+	wlbcst                *bswl.Wantlist
+	wlpeer                *bswl.Wantlist
 	nextMessage           bsmsg.BitSwapMessage
 	nextMessageLk         sync.RWMutex
 	sender                bsnet.MessageSender
@@ -58,11 +61,18 @@ type MessageQueue struct {
 
 // New creats a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
+	return newMessageQueue(ctx, p, network, maxMessageSize)
+}
+
+// This constructor is used by the tests
+func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int) *MessageQueue {
 	return &MessageQueue{
-		ctx: ctx,
-		// wl:                  wantlist.NewSessionTrackedWantlist(),
-		network:             network,
+		ctx:                 ctx,
 		p:                   p,
+		network:             network,
+		maxMessageSize:      maxMsgSize,
+		wlbcst:              bswl.New(),
+		wlpeer:              bswl.New(),
 		outgoingWork:        make(chan struct{}, 1),
 		done:                make(chan struct{}),
 		rebroadcastInterval: defaultRebroadcastInterval,
@@ -75,6 +85,7 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 		sendDontHave := false
 		for _, c := range wantHaves {
 			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
+			mq.wlbcst.Add(c, mq.priority, pb.Message_Wantlist_Have)
 			mq.priority--
 		}
 	})
@@ -85,10 +96,12 @@ func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 		sendDontHave := true
 		for _, c := range wantHaves {
 			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
+			mq.wlpeer.Add(c, mq.priority, pb.Message_Wantlist_Have)
 			mq.priority--
 		}
 		for _, c := range wantBlocks {
 			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Block, sendDontHave)
+			mq.wlpeer.Add(c, mq.priority, pb.Message_Wantlist_Block)
 			mq.priority--
 		}
 	})
@@ -98,6 +111,9 @@ func (mq *MessageQueue) AddCancels(cancelKs []cid.Cid) {
 	mq.addMessageEntries(func() {
 		for _, c := range cancelKs {
 			mq.nextMessage.Cancel(c)
+
+			mq.wlbcst.Remove(c, pb.Message_Wantlist_Block)
+			mq.wlpeer.Remove(c, pb.Message_Wantlist_Block)
 		}
 	})
 }
@@ -113,6 +129,7 @@ func (mq *MessageQueue) addMessageEntries(addEntriesFn func()) {
 
 	addEntriesFn()
 
+	// Schedule a message send
 	mq.signalWorkReady()
 }
 
@@ -164,32 +181,36 @@ func (mq *MessageQueue) runQueue() {
 	}
 }
 
-func (mq *MessageQueue) addWantlist() {
-
-	mq.nextMessageLk.Lock()
-	defer mq.nextMessageLk.Unlock()
-
-	// TODO: rebroadcast
-	// if mq.wl.Len() > 0 {
-	// 	if mq.nextMessage == nil {
-	// 		mq.nextMessage = bsmsg.New(false)
-	// 	}
-	// 	for _, e := range mq.wl.Entries() {
-	// 		mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, e.SendDontHave)
-	// 	}
-	// 	select {
-	// 	case mq.outgoingWork <- struct{}{}:
-	// 	default:
-	// 	}
-	// }
-}
-
+// Periodically resend the list of wants to the peer
 func (mq *MessageQueue) rebroadcastWantlist() {
 	mq.rebroadcastIntervalLk.RLock()
 	mq.rebroadcastTimer.Reset(mq.rebroadcastInterval)
 	mq.rebroadcastIntervalLk.RUnlock()
 
-	mq.addWantlist()
+	// Check if there are any wants to rebroadcast
+	if mq.wlbcst.Len() == 0 && mq.wlpeer.Len() == 0 {
+		return
+	}
+
+	mq.nextMessageLk.Lock()
+	defer mq.nextMessageLk.Unlock()
+
+	// Create a new message, if necessary
+	if mq.nextMessage == nil {
+		mq.nextMessage = bsmsg.New(false)
+	}
+
+	// Add each broadcast want-have to the message
+	for _, e := range mq.wlbcst.Entries() {
+		mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, false)
+	}
+	// Add each regular want-have / want-block to the message
+	for _, e := range mq.wlpeer.Entries() {
+		mq.nextMessage.AddEntry(e.Cid, e.Priority, e.WantType, true)
+	}
+
+	// Schedule a message send
+	mq.signalWorkReady()
 }
 
 func (mq *MessageQueue) extractOutgoingMessage() (bsmsg.BitSwapMessage, bool) {
@@ -202,8 +223,8 @@ func (mq *MessageQueue) extractOutgoingMessage() (bsmsg.BitSwapMessage, bool) {
 
 	// If the message is too big, split off as much as will fit into a message
 	// and save the remainder for the next invocation
-	if message != nil && message.Size() > maxMsgSize {
-		outgoing, remaining := message.SplitByWantlistSize(maxMsgSize)
+	if message != nil && message.Size() > mq.maxMessageSize {
+		outgoing, remaining := message.SplitByWantlistSize(mq.maxMessageSize)
 		message = outgoing
 		mq.nextMessage = remaining
 	}
@@ -211,14 +232,14 @@ func (mq *MessageQueue) extractOutgoingMessage() (bsmsg.BitSwapMessage, bool) {
 }
 
 func (mq *MessageQueue) sendMessage() {
-	message, more := mq.extractOutgoingMessage()
+	message, work := mq.extractOutgoingMessage()
 	if message == nil || message.Empty() {
 		return
 	}
 
 	// If the message was too big and had to be split, schedule another
 	// iteration after this one
-	if more {
+	if work {
 		defer mq.signalWorkReady()
 	}
 
