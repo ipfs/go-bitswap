@@ -341,8 +341,8 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	// (The duplicates are needed by sessions for accounting purposes)
 	bs.wm.ReceiveFrom(ctx, from, allKs, haves, dontHaves)
 
-	// Send wanted block keys to decision engine
-	bs.engine.AddBlocks(wanted)
+	// Send wanted blocks to decision engine
+	bs.engine.ReceiveFrom(from, wanted, haves)
 
 	// Publish the block to any Bitswap clients that had requested blocks.
 	// (the sessions use this pubsub mechanism to inform clients of incoming

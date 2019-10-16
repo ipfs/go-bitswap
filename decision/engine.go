@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	lu "github.com/ipfs/go-bitswap/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -155,7 +156,6 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
 		peertaskqueue.IgnoreFreezing(true))
-	// go e.taskWorker(ctx)
 	return e
 }
 
@@ -432,6 +432,9 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	// Get the ledger for the peer
 	l := e.findOrCreate(p)
 
+	// t := time.Now()
+	// defer func() { log.Warningf("time to MessageReceived(): %s", time.Since(t)) }()
+
 	// If the peer is sending a full wantlist, replace the ledger's wantlist
 	if m.Full() {
 		l.lk.Lock()
@@ -445,7 +448,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	if len(cancels) > 0 {
 		l.lk.Lock()
 		for _, entry := range cancels {
-			log.Debugf("%s cancel %s", p, entry.Cid)
+			// log.Warningf("%s<-%s cancel %s", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
 			if l.CancelWant(entry.Cid) {
 				e.peerRequestQueue.Remove(entry.Cid, p)
 			}
@@ -453,6 +456,8 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 		l.lk.Unlock()
 	}
 
+	// Add each want-have / want-block to the ledger (we do this separately
+	// from the for loop below so as to keep the lock for a shorter time)
 	if len(wants) > 0 {
 		l.lk.Lock()
 		for _, entry := range wants {
@@ -565,10 +570,12 @@ func (e *Engine) filterCancels(es []bsmsg.Entry) []bsmsg.Entry {
 	return res
 }
 
-// AddBlocks is called when new blocks are received and added to a block store,
+// ReceiveFrom is called when new blocks are received and added to a block store,
 // meaning there may be peers who want those blocks, so we should send the blocks
 // to them.
-func (e *Engine) AddBlocks(blks []blocks.Block) {
+func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid) {
+	e.removeReceivedWants(from, blks, haves)
+
 	if len(blks) == 0 {
 		return
 	}
@@ -595,7 +602,7 @@ func (e *Engine) AddBlocks(blks []blocks.Block) {
 				// if isWantBlock {
 				// 	log.Warningf("  add-block put rq %s->%s %s as want-block (%d bytes)\n", lu.P(e.self), lu.P(l.Partner), lu.C(k), blockSize)
 				// } else {
-				// 	log.Warningf("  add-block rq %s->%s %s as want-have (%d bytes)\n", lu.P(e.self), lu.P(l.Partner), lu.C(k), blockSize)
+				// 	log.Warningf("  add-block put rq %s->%s %s as want-have (%d bytes)\n", lu.P(e.self), lu.P(l.Partner), lu.C(k), blockSize)
 				// }
 
 				entrySize := blockSize
@@ -619,6 +626,39 @@ func (e *Engine) AddBlocks(blks []blocks.Block) {
 
 	if work {
 		e.signalNewWork()
+	}
+}
+
+// For each block or HAVE that the remote peer sends us we can remove the
+// correspoding want from their ledger
+func (e *Engine) removeReceivedWants(from peer.ID, blks []blocks.Block, haves []cid.Cid) {
+	if len(blks) == 0 && len(haves) == 0 {
+		return
+	}
+
+	e.lock.RLock()
+	l, ok := e.ledgerMap[from]
+	e.lock.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	l.lk.Lock()
+	defer l.lk.Unlock()
+
+	for _, b := range blks {
+		c := b.Cid()
+		if l.CancelWant(c) {
+			// log.Warningf("%s: %s add-block rcvd block cancels %s", lu.P(e.self), lu.P(from), lu.C(c))
+			e.peerRequestQueue.Remove(c, from)
+		}
+	}
+	for _, c := range haves {
+		if l.CancelWant(c) {
+			// log.Warningf("%s: %s add-block rcvd HAVE cancels %s", lu.P(e.self), lu.P(from), lu.C(c))
+			e.peerRequestQueue.Remove(c, from)
+		}
 	}
 }
 
