@@ -6,12 +6,13 @@ import (
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-testing/net"
+	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
@@ -109,7 +110,7 @@ func TestMessageSendAndReceive(t *testing.T) {
 	block1 := blockGenerator.Next()
 	block2 := blockGenerator.Next()
 	sent := bsmsg.New(false)
-	sent.AddEntry(block1.Cid(), 1)
+	sent.AddEntry(block1.Cid(), 1, pb.Message_Wantlist_Block, true)
 	sent.AddBlock(block2)
 
 	err = bsnet1.SendMessage(ctx, p2.ID(), sent)
