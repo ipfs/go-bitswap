@@ -12,8 +12,9 @@ type PotentialThresholdManager interface {
 	Received(hits int, misses int)
 }
 
-// potentialThresholdManager keeps track of the potential of each want in a
-// session, and sends out requests to the best peer / want combination
+// potentialThresholdManager keeps track of the threshold value below which
+// wants can be sent to peers for a given CID. Once the sent potential is
+// above the threshold, wants can no longer be sent out for the CID.
 type potentialThresholdManager struct {
 	sync.RWMutex
 	// TODO: Use more efficient data structure than bool array
