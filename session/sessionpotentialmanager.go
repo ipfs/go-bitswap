@@ -347,10 +347,6 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 	}
 }
 
-func (spm *sessionPotentialManager) IdleTimeout() {
-	spm.potentialThresholdMgr.IdleTimeout()
-}
-
 type allWants struct {
 	wantBlocks *cid.Set
 	wantHaves  *cid.Set

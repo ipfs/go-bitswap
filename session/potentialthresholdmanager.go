@@ -8,7 +8,6 @@ import (
 
 type PotentialThresholdManager interface {
 	PotentialThreshold() float64
-	IdleTimeout()
 	Received(hits int, misses int)
 }
 
@@ -50,10 +49,6 @@ func (ptm *potentialThresholdManager) String() string {
 
 func (ptm *potentialThresholdManager) PotentialThreshold() float64 {
 	return ptm.potentialThreshold
-}
-
-func (ptm *potentialThresholdManager) IdleTimeout() {
-	ptm.potentialThreshold = ptm.max
 }
 
 func (ptm *potentialThresholdManager) Received(hits int, misses int) {

@@ -302,8 +302,6 @@ func (s *Session) handleIdleTick(ctx context.Context) {
 
 	// If we have live wants
 	if s.sw.HasLiveWants() {
-		// Inform the potential threshold manager of the idle timeout
-		s.spm.IdleTimeout()
 		s.consecutiveTicks++
 	}
 }
