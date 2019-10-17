@@ -1,9 +1,11 @@
 package blockpresencemanager
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ipfs/go-bitswap/testutil"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	cid "github.com/ipfs/go-cid"
 )
@@ -175,5 +177,63 @@ func TestAddRemoveMulti(t *testing.T) {
 	}
 	if bpm.PeerDoesNotHaveBlock(p1, c2) {
 		t.Fatal(expDoesNotHaveFalseMsg)
+	}
+}
+
+func TestAllPeersDoNotHaveBlock(t *testing.T) {
+	bpm := New()
+
+	peers := testutil.GeneratePeers(3)
+	p0 := peers[0]
+	p1 := peers[1]
+	p2 := peers[2]
+
+	cids := testutil.GenerateCids(3)
+	c0 := cids[0]
+	c1 := cids[1]
+	c2 := cids[2]
+
+	//      c0  c1  c2
+	//  p0   ?  N   N
+	//  p1   N  Y   ?
+	//  p2   Y  Y   N
+	bpm.ReceiveFrom(p0, []cid.Cid{}, []cid.Cid{c1, c2})
+	bpm.ReceiveFrom(p1, []cid.Cid{c1}, []cid.Cid{c0})
+	bpm.ReceiveFrom(p2, []cid.Cid{c0, c1}, []cid.Cid{c2})
+
+	type testcase struct {
+		peers []peer.ID
+		ks    []cid.Cid
+		exp   []cid.Cid
+	}
+
+	testcases := []testcase{
+		testcase{[]peer.ID{p0}, []cid.Cid{c0}, []cid.Cid{}},
+		testcase{[]peer.ID{p1}, []cid.Cid{c0}, []cid.Cid{c0}},
+		testcase{[]peer.ID{p2}, []cid.Cid{c0}, []cid.Cid{}},
+
+		testcase{[]peer.ID{p0}, []cid.Cid{c1}, []cid.Cid{c1}},
+		testcase{[]peer.ID{p1}, []cid.Cid{c1}, []cid.Cid{}},
+		testcase{[]peer.ID{p2}, []cid.Cid{c1}, []cid.Cid{}},
+
+		testcase{[]peer.ID{p0}, []cid.Cid{c2}, []cid.Cid{c2}},
+		testcase{[]peer.ID{p1}, []cid.Cid{c2}, []cid.Cid{}},
+		testcase{[]peer.ID{p2}, []cid.Cid{c2}, []cid.Cid{c2}},
+
+		// p0 recieved DONT_HAVE for c1 & c2 (but not for c0)
+		testcase{[]peer.ID{p0}, []cid.Cid{c0, c1, c2}, []cid.Cid{c1, c2}},
+		testcase{[]peer.ID{p0, p1}, []cid.Cid{c0, c1, c2}, []cid.Cid{}},
+		// Both p0 and p2 received DONT_HAVE for c2
+		testcase{[]peer.ID{p0, p2}, []cid.Cid{c0, c1, c2}, []cid.Cid{c2}},
+		testcase{[]peer.ID{p0, p1, p2}, []cid.Cid{c0, c1, c2}, []cid.Cid{}},
+	}
+
+	for i, tc := range testcases {
+		if !testutil.MatchKeysIgnoreOrder(
+			bpm.AllPeersDoNotHaveBlock(tc.peers, tc.ks),
+			tc.exp,
+		) {
+			t.Fatal(fmt.Sprintf("test case %d failed: expected matching keys", i))
+		}
 	}
 }

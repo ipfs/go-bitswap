@@ -102,7 +102,7 @@ func (ptm *potentialThresholdManager) Received(hits int, misses int) {
 	//   xxx Hit rate: 0/3, so num peers should be max
 	//   ✓xx Hit rate: 1/3, so num peers should be 3/1
 	//   ✓✓x Hit rate: 2/3, so num peers should be 3/2
-	//   ✓✓x Hit rate: 3/3, so num peers should be 1
+	//   ✓✓✓ Hit rate: 3/3, so num peers should be 1
 
 	// If we didn't get any hits, peg threshold to the maximum value
 	if hitCount == 0 {

@@ -84,6 +84,18 @@ func (pm *mockPeerManager) waitNextWants() {
 	}
 }
 
+func (pm *mockPeerManager) flushNextWants() {
+	time.Sleep(5 * time.Millisecond)
+
+	for {
+		select {
+		case <-pm.sendTrigger:
+		default:
+			return
+		}
+	}
+}
+
 func (pm *mockPeerManager) wantSent() bool {
 	time.Sleep(5 * time.Millisecond)
 
@@ -112,9 +124,10 @@ func TestSendWants(t *testing.T) {
 	pm := newMockPeerManager()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 1.0
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend)
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
 
 	go spm.Run(context.Background())
 
@@ -247,9 +260,10 @@ func TestThresholdIncrease(t *testing.T) {
 	pm := newMockPeerManager()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend)
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
 
 	go spm.Run(context.Background())
 
@@ -318,9 +332,10 @@ func TestReceiveBlock(t *testing.T) {
 	pm := newMockPeerManager()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 1.0
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend)
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
 
 	go spm.Run(context.Background())
 
@@ -377,9 +392,10 @@ func TestReceiveDontHave(t *testing.T) {
 	pm := newMockPeerManager()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend)
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
 
 	go spm.Run(context.Background())
 
@@ -445,9 +461,10 @@ func TestPeerUnavailable(t *testing.T) {
 	pm := newMockPeerManager()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend)
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
 
 	go spm.Run(context.Background())
 
@@ -499,6 +516,72 @@ func TestPeerUnavailable(t *testing.T) {
 	}
 	sw = swi.(sentWants)
 	if !testutil.MatchKeysIgnoreOrder(sw.wantBlocks.Keys(), cids) {
+		t.Fatal("Wrong keys")
+	}
+}
+
+func TestPeersExhausted(t *testing.T) {
+	cids := testutil.GenerateCids(2)
+	peers := testutil.GeneratePeers(2)
+	peerA := peers[0]
+	peerB := peers[1]
+	sid := uint64(1)
+	pm := newMockPeerManager()
+	bpm := bsbpm.New()
+	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	potentialThreshold := 0.5
+	ptm := &mockThresholdManager{potentialThreshold}
+
+	var exhausted []cid.Cid
+	onPeersExhausted := func(ks []cid.Cid) {
+		exhausted = append(exhausted, ks...)
+	}
+	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+
+	go spm.Run(context.Background())
+
+	// add cid0, cid1
+	spm.Add(cids)
+
+	// peerA: DONT_HAVE cid0
+	bpm.ReceiveFrom(peerA, []cid.Cid{}, cids[0:1])
+	// Note: this also registers peer A as being available
+	spm.Update(peerA, []cid.Cid{}, []cid.Cid{}, cids[0:1], true)
+
+	time.Sleep(5 * time.Millisecond)
+
+	// All available peers (peer A) have sent us a DONT_HAVE for cid0,
+	// so expect that onPeersExhausted() will be called with cid0
+	if !testutil.MatchKeysIgnoreOrder(exhausted, cids[0:1]) {
+		t.Fatal("Wrong keys")
+	}
+	// Clear exhausted cids
+	exhausted = []cid.Cid{}
+
+	// peerB: DONT_HAVE cid0, cid1
+	bpm.ReceiveFrom(peerB, []cid.Cid{}, cids)
+	spm.Update(peerB, []cid.Cid{}, []cid.Cid{}, cids, true)
+
+	// Wait for processing to complete
+	pm.flushNextWants()
+
+	// All available peers (peer A and peer B) have sent us a DONT_HAVE
+	// for cid0, but we already called onPeersExhausted with cid0, so it
+	// should not be called again
+	if len(exhausted) > 0 {
+		t.Fatal("Wrong keys")
+	}
+
+	// peerA: DONT_HAVE cid1
+	bpm.ReceiveFrom(peerA, []cid.Cid{}, cids[1:])
+	spm.Update(peerA, []cid.Cid{}, []cid.Cid{}, cids[1:], false)
+
+	// Wait for processing to complete
+	pm.flushNextWants()
+
+	// All available peers (peer A and peer B) have sent us a DONT_HAVE for
+	// cid1, so expect that onPeersExhausted() will be called with cid1
+	if !testutil.MatchKeysIgnoreOrder(exhausted, cids[1:]) {
 		t.Fatal("Wrong keys")
 	}
 }

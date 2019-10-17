@@ -57,6 +57,7 @@ const (
 	opReceive opType = iota
 	opWant
 	opCancel
+	opBroadcast
 )
 
 type op struct {
@@ -128,7 +129,7 @@ func New(ctx context.Context,
 		periodicSearchDelay: periodicSearchDelay,
 		self:                self,
 	}
-	s.spm = newSessionPotentialManager(id, pm, bpm, nil, s.onWantsSent)
+	s.spm = newSessionPotentialManager(id, pm, bpm, nil, s.onWantsSent, s.onPeersExhausted)
 
 	go s.run(ctx)
 
@@ -203,6 +204,13 @@ func (s *Session) onWantsSent(p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.C
 	s.sprm.RecordPeerRequests([]peer.ID{p}, allBlks)
 }
 
+func (s *Session) onPeersExhausted(ks []cid.Cid) {
+	select {
+	case s.incoming <- op{op: opBroadcast, keys: ks}:
+	case <-s.ctx.Done():
+	}
+}
+
 // GetBlock fetches a single block.
 func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, error) {
 	return bsgetter.SyncGetBlock(parent, k, s.GetBlocks)
@@ -256,6 +264,8 @@ func (s *Session) run(ctx context.Context) {
 				s.wantBlocks(ctx, oper.keys)
 			case opCancel:
 				s.sw.CancelPending(oper.keys)
+			case opBroadcast:
+				s.handleIdleTick(ctx)
 			default:
 				panic("unhandled operation")
 			}
@@ -274,9 +284,10 @@ func (s *Session) run(ctx context.Context) {
 
 func (s *Session) handleIdleTick(ctx context.Context) {
 	live := s.sw.PrepareBroadcast()
-	log.Warningf("\n\n\n\n\nSes%d: broadcast %d keys\n\n\n\n\n", s.id, len(live))
-	s.wm.Trace()
+	// log.Warningf("\n\n\n\n\nSes%d: broadcast %d keys\n\n\n\n\n", s.id, len(live))
+	// s.wm.Trace()
 	// log.Infof("Ses%d: broadcast %d keys\n", s.id, len(live))
+	log.Warningf("Ses%d: broadcast %d keys", s.id, len(live))
 
 	// Broadcast a want-have for the live wants to everyone we're connected to
 	s.sprm.RecordPeerRequests(nil, live)
@@ -307,7 +318,6 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 	// for new providers for blocks.
 	s.sprm.FindMorePeers(ctx, randomWant)
 
-	// TODO: When this returns, trigger PeerBroker
 	s.wm.BroadcastWantHaves(ctx, s.id, []cid.Cid{randomWant})
 
 	s.periodicSearchTimer.Reset(s.periodicSearchDelay.NextWaitTime())

@@ -26,6 +26,8 @@ const (
 	maxPotentialThresholdRecent = 256
 	// Start calculating potential threshold after we have this many blocks
 	minPotentialThresholdItemCount = 8
+	// Maximum number of changes to accept before blocking
+	changesBufferSize = 128
 )
 
 type update struct {
@@ -43,42 +45,45 @@ type change struct {
 }
 
 type onSendFn func(peer.ID, []cid.Cid, []cid.Cid)
+type onPeersExhaustedFn func([]cid.Cid)
 
 type sessionPotentialManager struct {
-	ctx            context.Context
-	sessionID      uint64
-	changes        chan change
-	sendTrigger    chan struct{}
-	sentPotential  map[cid.Cid]float64
-	wants          map[cid.Cid]*wantPotential
-	sentWantBlocks map[peer.ID]*cid.Set
-	queue          pq.PQ
-	availablePeers map[peer.ID]bool
-	peerRspTrkr    *peerResponseTracker
+	ctx         context.Context
+	sessionID   uint64
+	changes     chan change
+	sendTrigger chan struct{}
+	wants       map[cid.Cid]*wantPotential
+	swbt        *sentWantBlocksTracker
+	wantQueue   pq.PQ
+	peerAvlMgr  *peerAvailabilityManager
+	peerRspTrkr *peerResponseTracker
 
 	pm                    PeerManager
 	bpm                   *bsbpm.BlockPresenceManager
 	potentialThresholdMgr PotentialThresholdManager
 	onSend                onSendFn
+	onPeersExhausted      onPeersExhaustedFn
 }
 
-func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager, ptm PotentialThresholdManager, onSend onSendFn) sessionPotentialManager {
+func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager,
+	ptm PotentialThresholdManager, onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionPotentialManager {
+
 	spm := sessionPotentialManager{
-		sessionID:      sid,
-		changes:        make(chan change, 128),
-		sendTrigger:    make(chan struct{}, 1),
-		sentPotential:  make(map[cid.Cid]float64),
-		wants:          make(map[cid.Cid]*wantPotential),
-		sentWantBlocks: make(map[peer.ID]*cid.Set),
-		availablePeers: make(map[peer.ID]bool),
-		peerRspTrkr:    newPeerResponseTracker(),
+		sessionID:   sid,
+		changes:     make(chan change, changesBufferSize),
+		sendTrigger: make(chan struct{}, 1),
+		wants:       make(map[cid.Cid]*wantPotential),
+		swbt:        newSentWantBlocksTracker(),
+		peerAvlMgr:  newPeerAvailabilityManager(),
+		peerRspTrkr: newPeerResponseTracker(),
 
 		pm:                    pm,
 		bpm:                   bpm,
 		potentialThresholdMgr: ptm,
 		onSend:                onSend,
+		onPeersExhausted:      onPeersExhausted,
 	}
-	spm.queue = pq.New(WrapCompare(spm.WantCompare))
+	spm.wantQueue = pq.New(wrapCompare(spm.wantCompare))
 
 	// The PotentialThresholdManager is a parameter to the constructor so that
 	// it can be provided by the tests
@@ -102,7 +107,7 @@ func (spm *sessionPotentialManager) Add(ks []cid.Cid) {
 }
 
 func (spm *sessionPotentialManager) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, isNewPeer bool) {
-	// fmt.Printf("Update(%s, %d, %d, %d, %t)", lu.P(from), len(ks), len(haves), len(dontHaves), isNewPeer)
+	// fmt.Printf("Update(%s, %d, %d, %d, %t)\n", lu.P(from), len(ks), len(haves), len(dontHaves), isNewPeer)
 	hasUpdate := len(ks) > 0 || len(haves) > 0 || len(dontHaves) > 0
 	if !hasUpdate && !isNewPeer {
 		return
@@ -183,7 +188,7 @@ func (spm *sessionPotentialManager) onChange(changes []change) {
 	for _, chng := range changes {
 		// Add newly discovered peers
 		if chng.addPeer != "" {
-			spm.addPeer(chng.addPeer)
+			spm.peerAvlMgr.addPeer(chng.addPeer)
 		}
 
 		// Initialize potential for new wants
@@ -209,7 +214,7 @@ func (spm *sessionPotentialManager) onChange(changes []change) {
 	spm.processUpdates(updates)
 
 	// If there are some connected peers, send any pending wants
-	if spm.haveAvailablePeers() {
+	if spm.peerAvlMgr.haveAvailablePeers() {
 		// fmt.Printf("sendNextWants()\n")
 		spm.sendNextWants(newlyAvailable)
 		// fmt.Println(spm)
@@ -221,11 +226,11 @@ func (spm *sessionPotentialManager) processAvailability(availability map[peer.ID
 	changed := false
 	for p, isNowAvailable := range availability {
 		// Make sure this is a peer that the session is actually interested in
-		if wasAvailable, ok := spm.availablePeers[p]; ok {
+		if wasAvailable, ok := spm.peerAvlMgr.isAvailable(p); ok {
 			// If the state has changed
 			if wasAvailable != isNowAvailable {
 				// Update the state and record that something changed
-				spm.availablePeers[p] = isNowAvailable
+				spm.peerAvlMgr.setPeerAvailability(p, isNowAvailable)
 				changed = true
 				// fmt.Printf("processAvailability change %s %t\n", lu.P(p), isNowAvailable)
 				spm.updatePotentialAvailability(p, isNowAvailable)
@@ -236,9 +241,9 @@ func (spm *sessionPotentialManager) processAvailability(availability map[peer.ID
 		}
 	}
 
-	// If availability has changed, update the queue
+	// If availability has changed, update the wantQueue
 	if changed {
-		spm.requeueAll()
+		spm.rewantQueueAll()
 	}
 
 	return newlyAvailable
@@ -253,25 +258,26 @@ func (spm *sessionPotentialManager) trackPotential(c cid.Cid) {
 	wp := newWantPotential(spm.peerRspTrkr, c, len(spm.wants))
 	spm.wants[c] = wp
 
-	for p, isAvailable := range spm.availablePeers {
-		if isAvailable {
-			spm.updatePotential(c, p)
-		}
+	for _, p := range spm.peerAvlMgr.availablePeers() {
+		spm.updatePotential(c, p)
 	}
 
-	spm.queue.Push(wp)
+	spm.wantQueue.Push(wp)
 }
 
 func (spm *sessionPotentialManager) processUpdates(updates []update) {
 	hits := 0
 	misses := 0
 	changed := cid.NewSet()
+	dontHaves := cid.NewSet()
 	for _, upd := range updates {
 		// TODO: If there is a timeout for the want from the peer, remove the want
 		// potential so it can be sent again (and blacklist the peer?)
 
 		// For each DONT_HAVE
 		for _, c := range upd.dontHaves {
+			dontHaves.Add(c)
+
 			// Remove the sent potential for the peer / want
 			spm.removeSentPotential(c, upd.from)
 			// Update the want potential for the peer
@@ -280,7 +286,7 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 
 			// If the DONT_HAVE is in response to a want-block then we
 			// count it as a miss (could also be in response to want-have)
-			if spm.haveSentWantBlockTo(upd.from, c) {
+			if spm.swbt.haveSentWantBlockTo(upd.from, c) {
 				misses++
 			}
 		}
@@ -302,20 +308,30 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 				spm.peerRspTrkr.receivedBlockFrom(upd.from)
 
 				// We're just going to remove this want the next time it's
-				// popped from the queue, but we want to update its position
-				// so as to move it to the front of the queue (so it gets
+				// popped from the wantQueue, but we want to update its position
+				// so as to move it to the front of the wantQueue (so it gets
 				// removed sooner, freeing up memory)
-				spm.queue.Update(removed.Index())
+				spm.wantQueue.Update(removed.Index())
 			}
 
 			// If the block came from the network (as opposed to being added by
 			// the local node) and we sent a want-block for it (note that the
 			// remote peer will send a block in response to want-have if the
 			// block is small enough)
-			if upd.from != "" && spm.haveSentWantBlockTo(upd.from, c) {
+			if upd.from != "" && spm.swbt.haveSentWantBlockTo(upd.from, c) {
 				// Count it as a hit
 				hits++
 			}
+		}
+	}
+
+	// If all available peers for a cid sent a DONT_HAVE, signal to the session
+	// that we've exhausted available peers
+	if dontHaves.Len() > 0 {
+		exhausted := spm.bpm.AllPeersDoNotHaveBlock(spm.peerAvlMgr.availablePeers(), dontHaves.Keys())
+		newlyExhausted := spm.newlyExhausted(exhausted)
+		if len(newlyExhausted) > 0 {
+			spm.onPeersExhausted(newlyExhausted)
 		}
 	}
 
@@ -324,9 +340,9 @@ func (spm *sessionPotentialManager) processUpdates(updates []update) {
 
 	// For each want that changed
 	for _, c := range changed.Keys() {
-		// Update the want's position in the queue
+		// Update the want's position in the wantQueue
 		if wp, ok := spm.wants[c]; ok {
-			spm.queue.Update(wp.Index())
+			spm.wantQueue.Update(wp.Index())
 		}
 	}
 }
@@ -349,9 +365,9 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 		// Send any wants we've collected so far
 		spm.sendWants(toSend)
 
-		// Put skipped wants back into the queue
+		// Put skipped wants back into the wantQueue
 		for _, wp := range skipped {
-			spm.queue.Push(wp)
+			spm.wantQueue.Push(wp)
 		}
 	}
 
@@ -374,12 +390,12 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 		getOrCreateSendBuffer(p)
 	}
 
-	// Go through the queue of wants
+	// Go through the wantQueue of wants
 	potentialThreshold := spm.potentialThresholdMgr.PotentialThreshold()
-	// fmt.Printf("  q(%d)\n", spm.queue.Len())
-	for spm.queue.Len() > 0 {
-		// Pop the next item off the queue
-		wp := spm.queue.Pop().(*wantPotential)
+	// fmt.Printf("  q(%d)\n", spm.wantQueue.Len())
+	for spm.wantQueue.Len() > 0 {
+		// Pop the next item off the wantQueue
+		wp := spm.wantQueue.Pop().(*wantPotential)
 
 		// If the want has been removed (because we've already received the
 		// block) just ignore the want
@@ -394,8 +410,8 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 			// fmt.Printf("    q - best: %s: %s/%.2f has no best potential, stopping\n",
 			// 	lu.C(wp.want), lu.P(wp.bestPeer), wp.bestPotential)
 
-			// Put the item back in the queue
-			spm.queue.Push(wp)
+			// Put the item back in the wantQueue
+			spm.wantQueue.Push(wp)
 
 			// Send any wants we've collected
 			onComplete()
@@ -409,20 +425,20 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 		if wp.sentPotential >= potentialThreshold {
 			// fmt.Printf("    q - best: %s: %s/%.2f has sent potential %.2f > threshold %.2f skipping\n",
 			// 	lu.C(wp.want), lu.P(wp.bestPeer), wp.bestPotential, wp.sentPotential, potentialThreshold)
-			// Skip the want, we'll put it back in the queue later
+			// Skip the want, we'll put it back in the wantQueue later
 			skipped = append(skipped, wp)
 			continue
 		}
 
 		// If the peer is not available, the state has changed so we need to
 		// start again
-		isAvailable, pok := spm.availablePeers[wp.bestPeer]
+		isAvailable, pok := spm.peerAvlMgr.isAvailable(wp.bestPeer)
 		if !pok || !isAvailable || !spm.pm.RequestToken(wp.bestPeer) {
 			// Mark the peer as unavailable
-			spm.setPeerAvailability(wp.bestPeer, false)
+			spm.markPeerUnavailable(wp.bestPeer)
 
-			// Put the item back in the queue
-			spm.queue.Push(wp)
+			// Put the item back in the wantQueue
+			spm.wantQueue.Push(wp)
 
 			// Send any wants we've collected
 			onComplete()
@@ -445,12 +461,12 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 		if wp.bestPotential > 0 && wp.sentPotential < potentialThreshold {
 			// fmt.Printf("    q - best: %s: %s/%.2f has sent potential %.2f <= threshold %.2f putting back in q\n",
 			// 	lu.C(wp.want), lu.P(wp.bestPeer), wp.bestPotential, wp.sentPotential, potentialThreshold)
-			// Put it back in the queue
-			spm.queue.Push(wp)
+			// Put it back in the wantQueue
+			spm.wantQueue.Push(wp)
 		} else {
 			// fmt.Printf("    q - best: %s: %s/%.2f (sent potential %.2f vs threshold %.2f). Skipping\n",
 			// 	lu.C(wp.want), lu.P(wp.bestPeer), wp.bestPotential, wp.sentPotential, potentialThreshold)
-			// Skip the want, we'll put it back in the queue later
+			// Skip the want, we'll put it back in the wantQueue later
 			skipped = append(skipped, wp)
 		}
 
@@ -459,7 +475,7 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 
 		// Send a want-have with this CID to each other peer
 		// TODO: limit the number of other peers we send want-have to?
-		for op := range spm.availablePeers {
+		for _, op := range spm.peerAvlMgr.availablePeers() {
 			if op != sentPeer {
 				getOrCreateSendBuffer(op).wantHaves.Add(wp.want)
 			}
@@ -499,15 +515,15 @@ func (spm *sessionPotentialManager) sendWants(sends map[peer.ID]*allWants) {
 		spm.onSend(p, wblks, whaves)
 
 		// Record which peers we send want-block to
-		spm.addSentWantBlocksTo(p, wblks)
+		spm.swbt.addSentWantBlocksTo(p, wblks)
 	}
 
 	// For each changed want
 	ks := sentWantBlocks.Keys()
 	for _, c := range ks {
-		// Update the want's position in the queue
+		// Update the want's position in the wantQueue
 		if wp, ok := spm.wants[c]; ok {
-			spm.queue.Update(wp.Index())
+			spm.wantQueue.Update(wp.Index())
 		}
 	}
 }
@@ -518,53 +534,37 @@ func (spm *sessionPotentialManager) getPiggybackWantHaves(p peer.ID, wantBlocks 
 	for c := range spm.wants {
 		// Don't send want-have if we're already sending a want-block
 		// (or have previously)
-		if !wantBlocks.Has(c) && !spm.haveSentWantBlockTo(p, c) {
+		if !wantBlocks.Has(c) && !spm.swbt.haveSentWantBlockTo(p, c) {
 			whs = append(whs, c)
 		}
 	}
 	return whs
 }
 
-func (spm *sessionPotentialManager) addSentWantBlocksTo(p peer.ID, ks []cid.Cid) {
-	if _, ok := spm.sentWantBlocks[p]; !ok {
-		spm.sentWantBlocks[p] = cid.NewSet()
-	}
+func (spm *sessionPotentialManager) markPeerUnavailable(p peer.ID) {
+	spm.peerAvlMgr.setPeerAvailability(p, false)
+	spm.updatePotentialAvailability(p, false)
+	spm.rewantQueueAll()
+}
+
+func (spm *sessionPotentialManager) newlyExhausted(ks []cid.Cid) []cid.Cid {
+	var res []cid.Cid
 	for _, c := range ks {
-		spm.sentWantBlocks[p].Add(c)
-	}
-}
-
-func (spm *sessionPotentialManager) haveSentWantBlockTo(p peer.ID, c cid.Cid) bool {
-	if ks, ok := spm.sentWantBlocks[p]; ok {
-		return ks.Has(c)
-	}
-	return false
-}
-
-func (spm *sessionPotentialManager) addPeer(p peer.ID) {
-	spm.availablePeers[p] = false
-}
-
-func (spm *sessionPotentialManager) setPeerAvailability(p peer.ID, isAvailable bool) {
-	spm.availablePeers[p] = isAvailable
-	spm.updatePotentialAvailability(p, isAvailable)
-	spm.requeueAll()
-}
-
-func (spm *sessionPotentialManager) haveAvailablePeers() bool {
-	for _, isAvailable := range spm.availablePeers {
-		if isAvailable {
-			return true
+		if wp, ok := spm.wants[c]; ok {
+			if !wp.exhausted {
+				res = append(res, c)
+				wp.exhausted = true
+			}
 		}
 	}
-	return false
+	return res
 }
 
-func (spm *sessionPotentialManager) requeueAll() {
+func (spm *sessionPotentialManager) rewantQueueAll() {
 	// TODO: if this performs poorly, may need to only update rows where
 	// best potential has changed
 	for _, wp := range spm.wants {
-		spm.queue.Update(wp.Index())
+		spm.wantQueue.Update(wp.Index())
 	}
 }
 
@@ -633,13 +633,10 @@ func (spm *sessionPotentialManager) removeSentPotential(c cid.Cid, p peer.ID) {
 
 func (spm *sessionPotentialManager) String() string {
 	var b bytes.Buffer
-	var availablePeers []peer.ID
 	var wantCids []cid.Cid
-	for p := range spm.availablePeers {
-		availablePeers = append(availablePeers, p)
-	}
-	sort.Slice(availablePeers, func(i, j int) bool {
-		return availablePeers[i].String() < availablePeers[j].String()
+	peers := spm.peerAvlMgr.allPeers()
+	sort.Slice(peers, func(i, j int) bool {
+		return peers[i].String() < peers[j].String()
 	})
 	for c := range spm.wants {
 		wantCids = append(wantCids, c)
@@ -649,12 +646,12 @@ func (spm *sessionPotentialManager) String() string {
 	})
 
 	b.WriteString("         best |")
-	for _, p := range availablePeers {
+	for _, p := range peers {
 		b.WriteString(" ")
 		b.WriteString(fmt.Sprintf("%6s", lu.P(p)))
 	}
 	b.WriteString(" |  sent:")
-	for _, p := range availablePeers {
+	for _, p := range peers {
 		b.WriteString(" ")
 		b.WriteString(fmt.Sprintf("%6s", lu.P(p)))
 	}
@@ -663,12 +660,12 @@ func (spm *sessionPotentialManager) String() string {
 	for _, c := range wantCids {
 		wp := spm.wants[c]
 		b.WriteString(fmt.Sprintf("%s: %5.2f |", lu.C(c), wp.bestPotential))
-		for _, p := range availablePeers {
+		for _, p := range peers {
 			b.WriteString(fmt.Sprintf("  %5.2f", wp.byPeer[p]))
 		}
 
 		b.WriteString(fmt.Sprintf(" | %5.2f ", wp.sentPotential))
-		for _, p := range availablePeers {
+		for _, p := range peers {
 			if potential, ok := wp.sent[p]; ok {
 				b.WriteString(fmt.Sprintf("  %5.2f", potential))
 			} else {
@@ -691,6 +688,7 @@ type wantPotential struct {
 	bestPotential float64
 	bestPeer      peer.ID
 	peerRspTrkr   *peerResponseTracker
+	exhausted     bool
 }
 
 func newWantPotential(prt *peerResponseTracker, c cid.Cid, startIndex int) *wantPotential {
@@ -700,6 +698,7 @@ func newWantPotential(prt *peerResponseTracker, c cid.Cid, startIndex int) *want
 		byPeer:      make(map[peer.ID]float64),
 		sent:        make(map[peer.ID]float64),
 		peerRspTrkr: prt,
+		exhausted:   false,
 	}
 }
 
@@ -716,6 +715,9 @@ func (wp *wantPotential) Index() int {
 func (wp *wantPotential) setPeerPotential(p peer.ID, potential float64) {
 	wp.byPeer[p] = potential
 	wp.calculateBestPeer()
+	if wp.bestPeer != "" {
+		wp.exhausted = false
+	}
 }
 
 func (wp *wantPotential) clearPeerPotential(p peer.ID) float64 {
@@ -776,8 +778,8 @@ func (wp *wantPotential) calculateBestPeer() {
 // 1. best potential desc
 // 2. sent potential asc
 // 3. FIFO
-func (spm *sessionPotentialManager) WantCompare(a, b *wantPotential) bool {
-	// Move deleted wants to the front of the queue so they are popped off
+func (spm *sessionPotentialManager) wantCompare(a, b *wantPotential) bool {
+	// Move deleted wants to the front of the wantQueue so they are popped off
 	// first, freeing up memory
 	if _, aok := spm.wants[a.want]; !aok {
 		return true
@@ -795,9 +797,9 @@ func (spm *sessionPotentialManager) WantCompare(a, b *wantPotential) bool {
 	return a.bestPotential > b.bestPotential
 }
 
-// WrapCompare wraps a wantPotential comparison function so it can be used as
-// comparison for a priority queue
-func WrapCompare(f func(a, b *wantPotential) bool) func(a, b pq.Elem) bool {
+// wrapCompare wraps a wantPotential comparison function so it can be used as
+// comparison for a priority wantQueue
+func wrapCompare(f func(a, b *wantPotential) bool) func(a, b pq.Elem) bool {
 	return func(a, b pq.Elem) bool {
 		return f(a.(*wantPotential), b.(*wantPotential))
 	}
