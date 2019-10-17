@@ -5,6 +5,7 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// sentWantBlocksTracker keeps track of which peers we've sent a  want-block to
 type sentWantBlocksTracker struct {
 	sentWantBlocks map[peer.ID]*cid.Set
 }

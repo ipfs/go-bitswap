@@ -9,6 +9,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
+// sessionWants keeps track of which cids are waiting to be sent out, and which
+// peers are "live" - ie, we've sent a request but haven't received a block yet
 type sessionWants struct {
 	sync.RWMutex
 	toFetch   *cidQueue

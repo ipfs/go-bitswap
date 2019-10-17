@@ -4,6 +4,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// peerAvailabilityManager keeps track of which peers have available space
+// to receive want requests
 type peerAvailabilityManager struct {
 	peerAvailable map[peer.ID]bool
 }

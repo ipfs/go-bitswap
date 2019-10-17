@@ -7,6 +7,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// peerResponseTracker keeps track of how many times each peer was the first
+// to send us a block for a given CID (used to rank peers)
 type peerResponseTracker struct {
 	sync.RWMutex
 	firstResponder map[peer.ID]int
