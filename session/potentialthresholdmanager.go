@@ -12,6 +12,8 @@ type PotentialThresholdManager interface {
 	Received(hits int, misses int)
 }
 
+// potentialThresholdManager keeps track of the potential of each want in a
+// session, and sends out requests to the best peer / want combination
 type potentialThresholdManager struct {
 	sync.RWMutex
 	// TODO: Use more efficient data structure than bool array
