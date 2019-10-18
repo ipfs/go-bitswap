@@ -491,6 +491,11 @@ func (bs *Bitswap) GetWantlist() []cid.Cid {
 	return bs.pm.CurrentWants()
 }
 
+// GetWanthaves returns the current list of want-haves.
+func (bs *Bitswap) GetWantHaves() []cid.Cid {
+	return bs.pm.CurrentWantHaves()
+}
+
 // IsOnline is needed to match go-ipfs-exchange-interface
 func (bs *Bitswap) IsOnline() bool {
 	return true

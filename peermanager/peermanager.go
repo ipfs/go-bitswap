@@ -173,6 +173,13 @@ func (pm *PeerManager) CurrentWants() []cid.Cid {
 	return pm.pwm.GetWantBlocks()
 }
 
+func (pm *PeerManager) CurrentWantHaves() []cid.Cid {
+	pm.RLock()
+	defer pm.RUnlock()
+
+	return pm.pwm.GetWantHaves()
+}
+
 func (pm *PeerManager) getOrCreate(p peer.ID) *peerQueueInstance {
 	pqi, ok := pm.peerQueues[p]
 	if !ok {

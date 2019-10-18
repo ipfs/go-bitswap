@@ -36,6 +36,9 @@ func TestEmpty(t *testing.T) {
 	if len(pwm.GetWantBlocks()) > 0 {
 		t.Fatal("Expected GetWantBlocks() to have length 0")
 	}
+	if len(pwm.GetWantHaves()) > 0 {
+		t.Fatal("Expected GetWantHaves() to have length 0")
+	}
 }
 
 func TestBroadcastWantHaves(t *testing.T) {
@@ -220,6 +223,9 @@ func TestSendCancels(t *testing.T) {
 	if !testutil.MatchKeysIgnoreOrder(pwm.GetWantBlocks(), allwb) {
 		t.Fatal("Expected 4 cids to be wanted")
 	}
+	if !testutil.MatchKeysIgnoreOrder(pwm.GetWantHaves(), allwh) {
+		t.Fatal("Expected 4 cids to be wanted")
+	}
 
 	// Cancel 1 want-block and 1 want-have that were sent to p0
 	res := pwm.SendCancels([]cid.Cid{wb1[0], wh1[0]})
@@ -232,6 +238,9 @@ func TestSendCancels(t *testing.T) {
 	}
 	if !testutil.MatchKeysIgnoreOrder(pwm.GetWantBlocks(), append(wb2, wb1[1])) {
 		t.Fatal("Expected 3 want-blocks")
+	}
+	if !testutil.MatchKeysIgnoreOrder(pwm.GetWantHaves(), append(wh2, wh1[1])) {
+		t.Fatal("Expected 3 want-haves")
 	}
 
 	// Cancel everything
@@ -251,6 +260,9 @@ func TestSendCancels(t *testing.T) {
 	}
 	if len(pwm.GetWantBlocks()) != 0 {
 		t.Fatal("Expected 0 want-blocks")
+	}
+	if len(pwm.GetWantHaves()) != 0 {
+		t.Fatal("Expected 0 want-haves")
 	}
 }
 
