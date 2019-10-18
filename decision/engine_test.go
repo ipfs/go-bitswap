@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	lu "github.com/ipfs/go-bitswap/logutil"
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
-	lu "github.com/ipfs/go-bitswap/logutil"
 
 	blocks "github.com/ipfs/go-block-format"
+	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	cid "github.com/ipfs/go-cid"
+	process "github.com/jbenet/goprocess"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	testutil "github.com/libp2p/go-libp2p-core/test"
 )
@@ -67,12 +68,14 @@ type engineSet struct {
 func newEngine(ctx context.Context, idStr string) engineSet {
 	fpt := &fakePeerTagger{}
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	e := NewEngine(ctx, bs, fpt, "localhost", 0)
+	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	return engineSet{
 		Peer: peer.ID(idStr),
 		//Strategy: New(true),
 		PeerTagger: fpt,
 		Blockstore: bs,
-		Engine: NewEngine(ctx, bs, fpt, "localhost", 0),
+		Engine:     e,
 	}
 }
 
@@ -183,21 +186,21 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 	// partnerWantBlocks(e, vowels, partner)
 
 	type testCaseEntry struct {
-		wantBlks string
-		wantHaves string
+		wantBlks     string
+		wantHaves    string
 		sendDontHave bool
 	}
 
 	type testCaseExp struct {
-		blks string
-		haves string
+		blks      string
+		haves     string
 		dontHaves string
 	}
 
 	type testCase struct {
 		only bool
-		wls []testCaseEntry
-		exp []testCaseExp
+		wls  []testCaseEntry
+		exp  []testCaseExp
 	}
 
 	testCases := []testCase{
@@ -205,7 +208,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: vowels,
+					wantBlks:     vowels,
 					sendDontHave: false,
 				},
 			},
@@ -220,14 +223,14 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: vowels,
-					wantHaves: "fgh",
+					wantBlks:     vowels,
+					wantHaves:    "fgh",
 					sendDontHave: false,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: vowels,
+					blks:  vowels,
 					haves: "fgh",
 				},
 			},
@@ -238,14 +241,14 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: vowels,
-					wantHaves: "fgh123",
+					wantBlks:     vowels,
+					wantHaves:    "fgh123",
 					sendDontHave: false,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: vowels,
+					blks:  vowels,
 					haves: "fgh",
 				},
 			},
@@ -256,15 +259,15 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: vowels,
-					wantHaves: "fgh123",
+					wantBlks:     vowels,
+					wantHaves:    "fgh123",
 					sendDontHave: true,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: vowels,
-					haves: "fgh",
+					blks:      vowels,
+					haves:     "fgh",
 					dontHaves: "123",
 				},
 			},
@@ -275,15 +278,15 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "aeiou123",
-					wantHaves: "fgh456",
+					wantBlks:     "aeiou123",
+					wantHaves:    "fgh456",
 					sendDontHave: false,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "aeiou",
-					haves: "fgh",
+					blks:      "aeiou",
+					haves:     "fgh",
 					dontHaves: "",
 				},
 			},
@@ -294,15 +297,15 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "aeiou123",
-					wantHaves: "fgh456",
+					wantBlks:     "aeiou123",
+					wantHaves:    "fgh456",
 					sendDontHave: true,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "aeiou",
-					haves: "fgh",
+					blks:      "aeiou",
+					haves:     "fgh",
 					dontHaves: "123456",
 				},
 			},
@@ -312,15 +315,15 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "ae",
+					wantBlks:     "ae",
 					sendDontHave: false,
 				},
 				testCaseEntry{
-					wantBlks: "io",
+					wantBlks:     "io",
 					sendDontHave: false,
 				},
 				testCaseEntry{
-					wantBlks: "u",
+					wantBlks:     "u",
 					sendDontHave: false,
 				},
 			},
@@ -335,23 +338,23 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "ae",
-					wantHaves: "jk",
+					wantBlks:     "ae",
+					wantHaves:    "jk",
 					sendDontHave: false,
 				},
 				testCaseEntry{
-					wantBlks: "io",
-					wantHaves: "lm",
+					wantBlks:     "io",
+					wantHaves:    "lm",
 					sendDontHave: false,
 				},
 				testCaseEntry{
-					wantBlks: "u",
+					wantBlks:     "u",
 					sendDontHave: false,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "aeiou",
+					blks:  "aeiou",
 					haves: "jklm",
 				},
 			},
@@ -362,25 +365,25 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "ae12",
-					wantHaves: "jk5",
+					wantBlks:     "ae12",
+					wantHaves:    "jk5",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "io34",
-					wantHaves: "lm",
+					wantBlks:     "io34",
+					wantHaves:    "lm",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "u",
-					wantHaves: "6",
+					wantBlks:     "u",
+					wantHaves:    "6",
 					sendDontHave: true,
 				},
 			},
 			exp: []testCaseExp{
 				testCaseExp{
-					blks: "aeiou",
-					haves: "jklm",
+					blks:      "aeiou",
+					haves:     "jklm",
 					dontHaves: "123456",
 				},
 			},
@@ -390,11 +393,11 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 			},
@@ -411,11 +414,11 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantHaves: "b",
+					wantHaves:    "b",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "b",
+					wantBlks:     "b",
 					sendDontHave: true,
 				},
 			},
@@ -431,11 +434,11 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 			},
@@ -451,11 +454,11 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 			},
@@ -479,6 +482,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 	}
 
 	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	for i, testCase := range testCases {
 		t.Logf("Test case %d:", i)
 		for _, wl := range testCase.wls {
@@ -520,21 +524,21 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 	// partnerWantBlocks(e, vowels, partner)
 
 	type testCaseEntry struct {
-		wantBlks string
-		wantHaves string
+		wantBlks     string
+		wantHaves    string
 		sendDontHave bool
 	}
 
 	type testCaseExp struct {
-		blks string
-		haves string
+		blks      string
+		haves     string
 		dontHaves string
 	}
 
 	type testCase struct {
 		only bool
-		wls []testCaseEntry
-		exp []testCaseExp
+		wls  []testCaseEntry
+		exp  []testCaseExp
 	}
 
 	testCases := []testCase{
@@ -542,11 +546,11 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 			},
@@ -563,11 +567,11 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantHaves: "b",
+					wantHaves:    "b",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "b",
+					wantBlks:     "b",
 					sendDontHave: true,
 				},
 			},
@@ -587,11 +591,11 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantBlks: "a",
+					wantBlks:     "a",
 					sendDontHave: true,
 				},
 			},
@@ -607,11 +611,11 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCase{
 			wls: []testCaseEntry{
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 				testCaseEntry{
-					wantHaves: "a",
+					wantHaves:    "a",
 					sendDontHave: true,
 				},
 			},
@@ -635,6 +639,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 	}
 
 	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	var next (<-chan *Envelope)
 	getNextEnv := func(ctx context.Context) *Envelope {
 		if next == nil {
@@ -666,7 +671,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 			wantHaves := strings.Split(wl.wantHaves, "")
 			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partner)
 
-			ctx, _ := context.WithTimeout(context.Background(), 5 * time.Millisecond)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Millisecond)
 			env := getNextEnv(ctx)
 			if env != nil {
 				envs = append(envs, env)
@@ -790,7 +795,7 @@ func formatPresencesDiff(presences []pb.Message_BlockPresence, expHaves []string
 		}
 		out.WriteString(fmt.Sprintf("  %s - %s\n", lu.C(c), t))
 	}
-	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expHaves) + len(expDontHaves)))
+	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expHaves)+len(expDontHaves)))
 	for _, k := range expHaves {
 		expected := blocks.NewBlock([]byte(k))
 		out.WriteString(fmt.Sprintf("  %s: %s - HAVE\n", lu.C(expected.Cid()), k))
@@ -844,6 +849,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
 		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+		e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 		for _, testcase := range testcases {
 			set := testcase[0]
 			cancels := testcase[1]
