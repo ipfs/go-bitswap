@@ -8,8 +8,19 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
+type gauge struct {
+	count int
+}
+
+func (g *gauge) Inc() {
+	g.count++
+}
+func (g *gauge) Dec() {
+	g.count--
+}
+
 func TestEmpty(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(2)
 	cids := testutil.GenerateCids(2)
@@ -28,7 +39,7 @@ func TestEmpty(t *testing.T) {
 }
 
 func TestBroadcastWantHaves(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(3)
 	cids := testutil.GenerateCids(2)
@@ -115,7 +126,7 @@ func TestBroadcastWantHaves(t *testing.T) {
 }
 
 func TestSendWants(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(2)
 	p0 := peers[0]
@@ -185,7 +196,7 @@ func TestSendWants(t *testing.T) {
 }
 
 func TestSendCancels(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(2)
 	p0 := peers[0]
@@ -244,7 +255,7 @@ func TestSendCancels(t *testing.T) {
 }
 
 func TestPeerCanSendWants(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(2)
 	p0 := peers[0]
@@ -291,7 +302,7 @@ func TestPeerCanSendWants(t *testing.T) {
 }
 
 func TestPeersCanSendWantBlock(t *testing.T) {
-	pwm := newPeerWantManager()
+	pwm := newPeerWantManager(&gauge{})
 
 	peers := testutil.GeneratePeers(3)
 	p0 := peers[0]
@@ -333,5 +344,41 @@ func TestPeersCanSendWantBlock(t *testing.T) {
 	// the CID
 	if len(pwm.PeersCanSendWantBlock(c2, peers)) != 2 {
 		t.Fatal("Expected all peers to be able to send want")
+	}
+}
+
+func TestStats(t *testing.T) {
+	g := &gauge{}
+	pwm := newPeerWantManager(g)
+
+	peers := testutil.GeneratePeers(2)
+	p0 := peers[0]
+	cids := testutil.GenerateCids(2)
+	cids2 := testutil.GenerateCids(2)
+
+	pwm.AddPeer(p0)
+
+	// Send 2 want-blocks and 2 want-haves to p0
+	pwm.SendWants(p0, cids, cids2)
+
+	if g.count != 2 {
+		t.Fatal("Expected 2 want-blocks")
+	}
+
+	// Send 1 old want-block and 2 new want-blocks to p0
+	cids3 := testutil.GenerateCids(2)
+	pwm.SendWants(p0, append(cids3, cids[0]), []cid.Cid{})
+
+	if g.count != 4 {
+		t.Fatal("Expected 4 want-blocks")
+	}
+
+	// Cancel 1 want-block that was sent to p0
+	// and 1 want-block that was not sent
+	cids4 := testutil.GenerateCids(1)
+	pwm.SendCancels(append(cids4, cids[0]))
+
+	if g.count != 3 {
+		t.Fatal("Expected 3 want-blocks", g.count)
 	}
 }

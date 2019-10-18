@@ -10,9 +10,15 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+type Gauge interface {
+	Inc()
+	Dec()
+}
+
 // peerWantManager
 type peerWantManager struct {
-	peerWants map[peer.ID]*peerWant
+	peerWants      map[peer.ID]*peerWant
+	wantBlockGauge Gauge
 }
 
 type peerWant struct {
@@ -21,9 +27,10 @@ type peerWant struct {
 }
 
 // New creates a new peerWantManager.
-func newPeerWantManager() *peerWantManager {
+func newPeerWantManager(wantBlockGauge Gauge) *peerWantManager {
 	return &peerWantManager{
-		peerWants: make(map[peer.ID]*peerWant),
+		peerWants:      make(map[peer.ID]*peerWant),
+		wantBlockGauge: wantBlockGauge,
 	}
 }
 
@@ -83,6 +90,9 @@ func (pwm *peerWantManager) SendWants(p peer.ID, wantBlocks []cid.Cid, wantHaves
 
 				// Make sure the CID is no longer recorded as a want-have
 				pws.wantHaves.Remove(c)
+
+				// Increment the count of want-blocks
+				pwm.wantBlockGauge.Inc()
 			}
 		}
 
@@ -109,8 +119,16 @@ func (pwm *peerWantManager) SendCancels(cancelKs []cid.Cid) map[peer.ID][]cid.Ci
 	for p, pws := range pwm.peerWants {
 		// Iterate over all requested cancels
 		for _, c := range cancelKs {
+			isWantBlock := pws.wantBlocks.Has(c)
+			isWantHave := pws.wantHaves.Has(c)
+
+			// If the CID was sent as a want-block, decrement the want-block count
+			if isWantBlock {
+				pwm.wantBlockGauge.Dec()
+			}
+
 			// If the CID was sent as a want-block or want-have
-			if pws.wantBlocks.Has(c) || pws.wantHaves.Has(c) {
+			if isWantBlock || isWantHave {
 				// Remove the CID from the recorded want-blocks and want-haves
 				pws.wantBlocks.Remove(c)
 				pws.wantHaves.Remove(c)

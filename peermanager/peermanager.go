@@ -51,22 +51,17 @@ type PeerManager struct {
 	sessions     map[uint64]Session
 	peerSessions map[peer.ID]map[uint64]struct{}
 
-	// TODO: update wantlistGauge
-	wantlistGauge metrics.Gauge
-
 	self peer.ID
 }
 
 // New creates a new PeerManager, given a context and a peerQueueFactory.
 func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *PeerManager {
-	wantlistGauge := metrics.NewCtx(ctx, "wantlist_total",
-		"Number of items in wantlist.").Gauge()
+	wantGauge := metrics.NewCtx(ctx, "wantlist_total", "Number of items in wantlist.").Gauge()
 	return &PeerManager{
 		peerQueues:      make(map[peer.ID]*peerQueueInstance),
-		pwm:             newPeerWantManager(),
+		pwm:             newPeerWantManager(wantGauge),
 		createPeerQueue: createPeerQueue,
 		ctx:             ctx,
-		wantlistGauge:   wantlistGauge,
 		self:            self,
 
 		sessions:     make(map[uint64]Session),
