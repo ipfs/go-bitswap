@@ -56,7 +56,6 @@ func GenerateMessageEntries(n int, isCancel bool) []bsmsg.Entry {
 	for i := 0; i < n; i++ {
 		prioritySeq++
 		msg := bsmsg.Entry{
-			// Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false),
 			Entry:  wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq),
 			Cancel: isCancel,
 		}

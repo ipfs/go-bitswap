@@ -30,7 +30,6 @@ const (
 type WantManager interface {
 	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
 	RemoveSession(context.Context, uint64)
-	Trace()
 }
 
 type PeerManager interface {
