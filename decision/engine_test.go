@@ -13,6 +13,7 @@ import (
 	lu "github.com/ipfs/go-bitswap/logutil"
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
+	"github.com/ipfs/go-bitswap/testutil"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -21,7 +22,7 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	process "github.com/jbenet/goprocess"
 	peer "github.com/libp2p/go-libp2p-core/peer"
-	testutil "github.com/libp2p/go-libp2p-core/test"
+	libp2ptest "github.com/libp2p/go-libp2p-core/test"
 )
 
 type fakePeerTagger struct {
@@ -182,7 +183,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		}
 	}
 
-	partner := testutil.RandPeerIDFatal(t)
+	partner := libp2ptest.RandPeerIDFatal(t)
 	// partnerWantBlocks(e, vowels, partner)
 
 	type testCaseEntry struct {
@@ -520,8 +521,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		}
 	}
 
-	partner := testutil.RandPeerIDFatal(t)
-	// partnerWantBlocks(e, vowels, partner)
+	partner := libp2ptest.RandPeerIDFatal(t)
 
 	type testCaseEntry struct {
 		wantBlks     string
@@ -640,26 +640,8 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 
 	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
-	var next (<-chan *Envelope)
-	getNextEnv := func(ctx context.Context) *Envelope {
-		if next == nil {
-			next = <-e.Outbox() // returns immediately
-		}
 
-		select {
-		case env, ok := <-next: // blocks till next envelope ready
-			next = nil
-			if !ok {
-				log.Warningf("got closed channel")
-				return nil
-			}
-			return env
-		case <-ctx.Done():
-			// log.Warningf("got timeout")
-		}
-		return nil
-	}
-
+	var next envChan
 	for i, testCase := range testCases {
 		envs := make([]*Envelope, 0)
 
@@ -671,8 +653,8 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 			wantHaves := strings.Split(wl.wantHaves, "")
 			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partner)
 
-			ctx, _ := context.WithTimeout(context.Background(), 5*time.Millisecond)
-			env := getNextEnv(ctx)
+			var env *Envelope
+			next, env = getNextEnvelope(e, next, 5*time.Millisecond)
 			if env != nil {
 				envs = append(envs, env)
 			}
@@ -856,7 +838,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 			keeps := stringsComplement(set, cancels)
 			expected = append(expected, keeps)
 
-			partner := testutil.RandPeerIDFatal(t)
+			partner := libp2ptest.RandPeerIDFatal(t)
 
 			partnerWantBlocks(e, set, partner)
 			partnerCancels(e, cancels, partner)
@@ -865,6 +847,176 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 			t.Logf("run #%d of %d", i, numRounds)
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	partner := libp2ptest.RandPeerIDFatal(t)
+	otherPeer := libp2ptest.RandPeerIDFatal(t)
+
+	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
+
+	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
+	msg := message.New(false)
+	msg.AddEntry(blks[0].Cid(), 4, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(blks[1].Cid(), 3, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(blks[2].Cid(), 2, pb.Message_Wantlist_Block, false)
+	msg.AddEntry(blks[3].Cid(), 1, pb.Message_Wantlist_Block, false)
+	e.MessageReceived(partner, msg)
+
+	// Nothing in blockstore, so shouldn't get any envelope
+	var next envChan
+	next, env := getNextEnvelope(e, next, 5*time.Millisecond)
+	if env != nil {
+		t.Fatal("expected no envelope yet")
+	}
+
+	if err := bs.PutMany([]blocks.Block{blks[0], blks[2]}); err != nil {
+		t.Fatal(err)
+	}
+	e.ReceiveFrom(otherPeer, []blocks.Block{blks[0], blks[2]}, []cid.Cid{})
+	_, env = getNextEnvelope(e, next, 5*time.Millisecond)
+	if env == nil {
+		t.Fatal("expected envelope")
+	}
+	if env.Peer != partner {
+		t.Fatal("expected message to peer")
+	}
+	sentBlk := env.Message.Blocks()
+	if len(sentBlk) != 1 || !sentBlk[0].Cid().Equals(blks[2].Cid()) {
+		t.Fatal("expected 1 block")
+	}
+	sentHave := env.Message.BlockPresences()
+	if len(sentHave) != 1 || bytes.Compare(sentHave[0].Cid, blks[0].Cid().Bytes()) != 0 || sentHave[0].Type != pb.Message_Have {
+		t.Fatal("expected 1 HAVE")
+	}
+}
+
+func TestCancelPeerWantsOnReceivingBlockFromPeer(t *testing.T) {
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	partner := libp2ptest.RandPeerIDFatal(t)
+	otherPeer := libp2ptest.RandPeerIDFatal(t)
+
+	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
+
+	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
+	msg := message.New(false)
+	msg.AddEntry(blks[0].Cid(), 4, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(blks[1].Cid(), 3, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(blks[2].Cid(), 2, pb.Message_Wantlist_Block, false)
+	msg.AddEntry(blks[3].Cid(), 1, pb.Message_Wantlist_Block, false)
+	e.MessageReceived(partner, msg)
+
+	// Nothing in blockstore, so shouldn't get any envelope
+	var next envChan
+	next, env := getNextEnvelope(e, next, 5*time.Millisecond)
+	if env != nil {
+		t.Fatal("expected no envelope yet")
+	}
+
+	// Receive a block and a HAVE for two of the blocks from the peer itself.
+	// This should cause those wants to be removed from the peer's wantlist.
+	if err := bs.PutMany([]blocks.Block{blks[0]}); err != nil {
+		t.Fatal(err)
+	}
+	e.ReceiveFrom(partner, []blocks.Block{blks[0]}, []cid.Cid{blks[2].Cid()})
+
+	// Should not send a HAVE to peer for block that it sent to us
+	next, env = getNextEnvelope(e, next, 5*time.Millisecond)
+	if env != nil {
+		t.Fatal("expected no envelope yet")
+	}
+
+	// Receive all the blocks from a different peer
+	if err := bs.PutMany(blks); err != nil {
+		t.Fatal(err)
+	}
+	e.ReceiveFrom(otherPeer, blks, []cid.Cid{})
+
+	// Envelope should only contain HAVE / block for blocks that peer didn't
+	// already tell us it has
+	_, env = getNextEnvelope(e, next, 5*time.Millisecond)
+	if env == nil {
+		log.Debugf("did not get expected env")
+		t.Fatal("expected envelope")
+	}
+	if env.Peer != partner {
+		t.Fatal("expected message to peer")
+	}
+	sentBlk := env.Message.Blocks()
+	if len(sentBlk) != 1 || !sentBlk[0].Cid().Equals(blks[3].Cid()) {
+		t.Fatal("expected 1 block")
+	}
+	sentHave := env.Message.BlockPresences()
+	if len(sentHave) != 1 || bytes.Compare(sentHave[0].Cid, blks[1].Cid().Bytes()) != 0 || sentHave[0].Type != pb.Message_Have {
+		t.Fatal("expected 1 HAVE")
+	}
+}
+
+func TestSendDontHave(t *testing.T) {
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	partner := libp2ptest.RandPeerIDFatal(t)
+	otherPeer := libp2ptest.RandPeerIDFatal(t)
+
+	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
+
+	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
+	msg := message.New(false)
+	msg.AddEntry(blks[0].Cid(), 4, pb.Message_Wantlist_Have, false)
+	msg.AddEntry(blks[1].Cid(), 3, pb.Message_Wantlist_Have, true)
+	msg.AddEntry(blks[2].Cid(), 2, pb.Message_Wantlist_Block, false)
+	msg.AddEntry(blks[3].Cid(), 1, pb.Message_Wantlist_Block, true)
+	e.MessageReceived(partner, msg)
+
+	// Nothing in blockstore, should get DONT_HAVE for entries that wanted it
+	var next envChan
+	next, env := getNextEnvelope(e, next, 5*time.Millisecond)
+	if env == nil {
+		t.Fatal("expected envelope")
+	}
+	if env.Peer != partner {
+		t.Fatal("expected message to peer")
+	}
+	if len(env.Message.Blocks()) > 0 {
+		t.Fatal("expected no blocks")
+	}
+	sentDontHaves := env.Message.BlockPresences()
+	if len(sentDontHaves) != 2 {
+		t.Fatal("expected 2 DONT_HAVEs")
+	}
+	if bytes.Compare(sentDontHaves[0].Cid, blks[1].Cid().Bytes()) != 0 &&
+		bytes.Compare(sentDontHaves[1].Cid, blks[1].Cid().Bytes()) != 0 {
+		t.Fatal("expected DONT_HAVE for want-have")
+	}
+	if bytes.Compare(sentDontHaves[0].Cid, blks[3].Cid().Bytes()) != 0 &&
+		bytes.Compare(sentDontHaves[1].Cid, blks[3].Cid().Bytes()) != 0 {
+		t.Fatal("expected DONT_HAVE for want-block")
+	}
+
+	// Receive all the blocks
+	if err := bs.PutMany(blks); err != nil {
+		t.Fatal(err)
+	}
+	e.ReceiveFrom(otherPeer, blks, []cid.Cid{})
+
+	// Envelope should contain 2 HAVEs / 2 blocks
+	_, env = getNextEnvelope(e, next, 5*time.Millisecond)
+	if env == nil {
+		t.Fatal("expected envelope")
+	}
+	if env.Peer != partner {
+		t.Fatal("expected message to peer")
+	}
+	if len(env.Message.Blocks()) != 2 {
+		t.Fatal("expected 2 blocks")
+	}
+	sentHave := env.Message.BlockPresences()
+	if len(sentHave) != 2 || sentHave[0].Type != pb.Message_Have || sentHave[1].Type != pb.Message_Have {
+		t.Fatal("expected 2 HAVEs")
 	}
 }
 
@@ -928,6 +1080,28 @@ func partnerCancels(e *Engine, keys []string, partner peer.ID) {
 		cancels.Cancel(block.Cid())
 	}
 	e.MessageReceived(partner, cancels)
+}
+
+type envChan <-chan *Envelope
+
+func getNextEnvelope(e *Engine, next envChan, t time.Duration) (envChan, *Envelope) {
+	ctx, _ := context.WithTimeout(context.Background(), t)
+
+	if next == nil {
+		next = <-e.Outbox() // returns immediately
+	}
+
+	select {
+	case env, ok := <-next: // blocks till next envelope ready
+		if !ok {
+			log.Warningf("got closed channel")
+			return nil, nil
+		}
+		return nil, env
+	case <-ctx.Done():
+		// log.Warningf("got timeout")
+	}
+	return next, nil
 }
 
 func checkHandledInOrder(t *testing.T, e *Engine, expected [][]string) error {
