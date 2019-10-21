@@ -137,7 +137,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	notif := notifications.New()
 	sm := bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 	wm.SetSessionManager(sm)
-	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self(), 1024)
+	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
 	bs := &Bitswap{
 		blockstore: bstore,

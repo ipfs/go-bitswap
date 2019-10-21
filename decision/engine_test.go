@@ -65,10 +65,10 @@ type engineSet struct {
 	Blockstore blockstore.Blockstore
 }
 
-func newEngine(ctx context.Context, idStr string) engineSet {
+func newTestEngine(ctx context.Context, idStr string) engineSet {
 	fpt := &fakePeerTagger{}
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
-	e := NewEngine(ctx, bs, fpt, "localhost", 0)
+	e := newEngine(ctx, bs, fpt, "localhost", 0)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	return engineSet{
 		Peer: peer.ID(idStr),
@@ -82,8 +82,8 @@ func newEngine(ctx context.Context, idStr string) engineSet {
 func TestConsistentAccounting(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sender := newEngine(ctx, "Ernie")
-	receiver := newEngine(ctx, "Bert")
+	sender := newTestEngine(ctx, "Ernie")
+	receiver := newTestEngine(ctx, "Bert")
 
 	// Send messages from Ernie to Bert
 	for i := 0; i < 1000; i++ {
@@ -117,8 +117,8 @@ func TestPeerIsAddedToPeersWhenMessageReceivedOrSent(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sanfrancisco := newEngine(ctx, "sf")
-	seattle := newEngine(ctx, "sea")
+	sanfrancisco := newTestEngine(ctx, "sf")
+	seattle := newTestEngine(ctx, "sea")
 
 	m := message.New(true)
 
@@ -154,7 +154,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, "localhost", 0)
+	e := newEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{}, "localhost", 0)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -481,7 +481,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	for i, testCase := range testCases {
 		t.Logf("Test case %d:", i)
@@ -638,7 +638,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+	e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	var next (<-chan *Envelope)
 	getNextEnv := func(ctx context.Context) *Envelope {
@@ -848,7 +848,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := NewEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
+		e := newEngine(context.Background(), bs, &fakePeerTagger{}, "localhost", 0)
 		e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 		for _, testcase := range testcases {
 			set := testcase[0]
@@ -871,8 +871,8 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 func TestTaggingPeers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	sanfrancisco := newEngine(ctx, "sf")
-	seattle := newEngine(ctx, "sea")
+	sanfrancisco := newTestEngine(ctx, "sf")
+	seattle := newTestEngine(ctx, "sea")
 
 	keys := []string{"a", "b", "c", "d", "e"}
 	for _, letter := range keys {

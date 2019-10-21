@@ -71,10 +71,12 @@ const (
 
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
-	// maxBlockSizeReplaceHasWithBlock = 1024
+	maxBlockSizeReplaceHasWithBlock = 1024
 
+	// Number of concurrent workers that pull tasks off the request queue
 	taskWorkerCount = 8
 
+	// Number of concurrent workers that process requests to the blockstore
 	blockstoreWorkerCount = 128
 )
 
@@ -129,7 +131,6 @@ type Engine struct {
 	taskWorkerLock  sync.Mutex
 	taskWorkerCount int
 
-	// TODO: make this an optional argument
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
 	maxBlockSizeReplaceHasWithBlock int
@@ -138,8 +139,11 @@ type Engine struct {
 }
 
 // NewEngine creates a new block sending engine for the given block store
-// func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID) *Engine {
-func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID, maxReplaceSize int) *Engine {
+func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID) *Engine {
+	return newEngine(ctx, bs, peerTagger, self, maxBlockSizeReplaceHasWithBlock)
+}
+
+func newEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger, self peer.ID, maxReplaceSize int) *Engine {
 	e := &Engine{
 		ledgerMap:                       make(map[peer.ID]*ledger),
 		bsm:                             newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
