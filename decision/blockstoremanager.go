@@ -60,28 +60,19 @@ func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
 	}
 
 	var lk sync.Mutex
-
-	wg := sync.WaitGroup{}
-	for _, k := range ks {
-		c := k
-		wg.Add(1)
-		bsm.addJob(func() {
-			defer wg.Done()
-
-			size, err := bsm.bs.GetSize(c)
-			if err != nil {
-				if err != bstore.ErrNotFound {
-					log.Warningf("blockstore.GetSize(%s) error: %s", c, err)
-				}
-				size = 0
+	bsm.jobPerKey(ks, func(c cid.Cid) {
+		size, err := bsm.bs.GetSize(c)
+		if err != nil {
+			if err != bstore.ErrNotFound {
+				log.Warningf("blockstore.GetSize(%s) error: %s", c, err)
 			}
+			size = 0
+		}
 
-			lk.Lock()
-			res[c] = size
-			lk.Unlock()
-		})
-	}
-	wg.Wait()
+		lk.Lock()
+		res[c] = size
+		lk.Unlock()
+	})
 
 	return res
 }
@@ -93,28 +84,32 @@ func (bsm *blockstoreManager) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
 	}
 
 	var lk sync.Mutex
+	bsm.jobPerKey(ks, func(c cid.Cid) {
+		blk, err := bsm.bs.Get(c)
+		if err != nil {
+			blk = nil
+			if err != bstore.ErrNotFound {
+				log.Warningf("blockstore.Get(%s) error: %s", c, err)
+			}
+		}
 
+		lk.Lock()
+		res[c] = blk
+		lk.Unlock()
+	})
+
+	return res
+}
+
+func (bsm *blockstoreManager) jobPerKey(ks []cid.Cid, jobFn func(c cid.Cid)) {
 	wg := sync.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
 		bsm.addJob(func() {
-			defer wg.Done()
-
-			blk, err := bsm.bs.Get(c)
-			if err != nil {
-				blk = nil
-				if err != bstore.ErrNotFound {
-					log.Warningf("blockstore.Get(%s) error: %s", c, err)
-				}
-			}
-
-			lk.Lock()
-			res[c] = blk
-			lk.Unlock()
+			jobFn(c)
+			wg.Done()
 		})
 	}
 	wg.Wait()
-
-	return res
 }
