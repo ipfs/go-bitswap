@@ -21,7 +21,6 @@ import (
 	testinstance "github.com/ipfs/go-bitswap/testinstance"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	cid "github.com/ipfs/go-cid"
-	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	logging "github.com/ipfs/go-log"
@@ -34,11 +33,12 @@ type fetchFunc func(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid)
 type distFunc func(b *testing.B, provs []testinstance.Instance, blocks []blocks.Block)
 
 type runStats struct {
-	Dups    uint64
-	MsgSent uint64
-	MsgRecd uint64
-	Time    time.Duration
-	Name    string
+	DupsRcvd uint64
+	BlksRcvd uint64
+	MsgSent  uint64
+	MsgRecd  uint64
+	Time     time.Duration
+	Name     string
 }
 
 var benchmarkLog []runStats
@@ -61,8 +61,6 @@ var benches = []bench{
 	// Fetch from two seed nodes, one at a time, where:
 	// - node A has blocks 0 - 74
 	// - node B has blocks 25 - 99
-	// * Slow because we only get blocks from one node for 75 blocks, then
-	//   have to broadcast
 	bench{"3Nodes-Overlap1-OneAtATime", 3, 100, overlap1, oneAtATime},
 
 	// Fetch from two seed nodes, where:
@@ -71,9 +69,6 @@ var benches = []bench{
 	// - both nodes have every third block
 
 	// - request one at a time, in series
-	// * Slow because when potential-threshold decreases to 0.5,
-	//   we frequently have to send want-have then wait for HAVE then
-	//   send want-block
 	bench{"3Nodes-Overlap3-OneAtATime", 3, 100, overlap2, oneAtATime},
 	// - request 10 at a time, in series
 	bench{"3Nodes-Overlap3-BatchBy10", 3, 100, overlap2, batchFetchBy10},
@@ -95,18 +90,11 @@ var benches = []bench{
 	bench{"10Nodes-AllToAll-AllConcurrent", 10, 100, allToAll, fetchAllConcurrent},
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
 	bench{"10Nodes-AllToAll-UnixfsFetch", 10, 100, allToAll, unixfsFileFetch},
+	// - follow a typical IPFS request pattern for 1000 blocks
+	bench{"10Nodes-AllToAll-UnixfsFetchLarge", 10, 1000, allToAll, unixfsFileFetchLarge},
 
 	// Fetch from nine seed nodes, blocks are distributed randomly across all nodes (no dups)
 	// - request one at a time, in series
-	// * Slow because
-	//   1. We broadcast to 9 nodes, get 1 response (1 session peer)
-	//   2. Then ask that peer for next block
-	//   3. Times out
-	//   4. Repeat 1, (2 session peers)
-	//   Possible optimization: if all peers in the session send DONT_HAVEs for
-	//   block, broadcast to all connected peers (check if there are more connected
-	//   peers than session peers, and somehow limit broadcasts to make sure they're
-	//   not too frequent)
 	bench{"10Nodes-OnePeerPerBlock-OneAtATime", 10, 100, onePeerPerBlock, oneAtATime},
 	// - request all 100 with a single GetBlocks() call
 	bench{"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},
@@ -148,6 +136,7 @@ const mediumBandwidth = 500000.0
 const mediumBandwidthDeviation = 80000.0
 const slowBandwidth = 100000.0
 const slowBandwidthDeviation = 16500.0
+const rootBlockSize = 800
 const stdBlockSize = 8000
 const largeBlockSize = 256 * 1024
 
@@ -199,7 +188,7 @@ func BenchmarkDatacenter(b *testing.B) {
 	}
 
 	datacenterNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
-		fastSpeed-datacenterSpeed, (fastSpeed-datacenterSpeed) / 2,
+		fastSpeed-datacenterSpeed, (fastSpeed-datacenterSpeed)/2,
 		0.0, 0.0, datacenterDistribution, randomGen)
 	datacenterNetworkDelay := delay.Delay(datacenterSpeed, datacenterNetworkDelayGenerator)
 	datacenterBandwidthGenerator := tn.VariableRateLimitGenerator(datacenterBandwidth, datacenterBandwidthDeviation, randomGen)
@@ -213,6 +202,49 @@ func BenchmarkDatacenter(b *testing.B) {
 	printResults(benchmarkLog)
 }
 
+func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
+	benchmarkLog = nil
+	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
+	var randomGen *rand.Rand = nil
+	if err == nil {
+		randomGen = rand.New(rand.NewSource(benchmarkSeed))
+	}
+
+	datacenterNetworkDelayGenerator := tn.InternetLatencyDelayGenerator(
+		fastSpeed-datacenterSpeed, (fastSpeed-datacenterSpeed)/2,
+		0.0, 0.0, datacenterDistribution, randomGen)
+	datacenterNetworkDelay := delay.Delay(datacenterSpeed, datacenterNetworkDelayGenerator)
+	datacenterBandwidthGenerator := tn.VariableRateLimitGenerator(datacenterBandwidth, datacenterBandwidthDeviation, randomGen)
+	bstoreLatency := time.Millisecond * 25
+
+	b.Run("3Leech3Seed-AllToAll-UnixfsFetch", func(b *testing.B) {
+		d := datacenterNetworkDelay
+		rateLimitGenerator := datacenterBandwidthGenerator
+		var blockSize int64
+		blockSize = largeBlockSize
+		df := allToAll
+		ff := unixfsFileFetchLarge
+		numnodes := 6
+		numblks := 1000
+
+		for i := 0; i < b.N; i++ {
+			start := time.Now()
+			net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
+
+			ig := testinstance.NewTestInstanceGenerator(net)
+			defer ig.Close()
+
+			instances := ig.Instances(numnodes)
+			blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
+			runDistributionMulti(b, instances, 3, blocks, bstoreLatency, df, ff, start)
+		}
+	})
+
+	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
+	_ = ioutil.WriteFile("tmp/rb-benchmark.json", out, 0666)
+	printResults(benchmarkLog)
+}
+
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
 		// fmt.Println("\n\n\n\nStarting bench")
@@ -221,10 +253,10 @@ func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, b
 
 		ig := testinstance.NewTestInstanceGenerator(net)
 
-		bg := blocksutil.NewBlockGenerator()
-
 		instances := ig.Instances(numnodes)
-		blocks := bg.Blocks(numblks)
+		rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
+		blocks := testutil.GenerateBlocksOfSize(numblks, stdBlockSize)
+		blocks[0] = rootBlock[0]
 		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
 		ig.Close()
 	}
@@ -239,9 +271,66 @@ func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d
 		defer ig.Close()
 
 		instances := ig.Instances(numnodes)
+		rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
 		blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
+		blocks[0] = rootBlock[0]
 		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
 	}
+}
+
+func runDistributionMulti(b *testing.B, instances []testinstance.Instance, numFetchers int, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc, start time.Time) {
+	numnodes := len(instances)
+	fetchers := instances[numnodes-numFetchers:]
+
+	// Distribute blocks to seed nodes
+	seeds := instances[:numnodes-numFetchers]
+	df(b, seeds, blocks)
+
+	// Set the blockstore latency on seed nodes
+	if bstoreLatency > 0 {
+		for _, i := range seeds {
+			i.SetBlockstoreLatency(bstoreLatency)
+		}
+	}
+
+	// Fetch blocks (from seed nodes to leech nodes)
+	var ks []cid.Cid
+	for _, blk := range blocks {
+		ks = append(ks, blk.Cid())
+	}
+
+	var wg sync.WaitGroup
+	for _, fetcher := range fetchers {
+		wg.Add(1)
+
+		go func(ftchr testinstance.Instance) {
+			defer wg.Done()
+
+			ff(b, ftchr.Exchange, ks)
+		}(fetcher)
+	}
+	wg.Wait()
+
+	// Collect statistics
+	fetcher := fetchers[0]
+	st, err := fetcher.Exchange.Stat()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for _, fetcher := range fetchers {
+		nst := fetcher.Adapter.Stats()
+		stats := runStats{
+			Time:     time.Since(start),
+			MsgRecd:  nst.MessagesRecvd,
+			MsgSent:  nst.MessagesSent,
+			DupsRcvd: st.DupBlksReceived,
+			BlksRcvd: st.BlocksReceived,
+			Name:     b.Name(),
+		}
+		benchmarkLog = append(benchmarkLog, stats)
+	}
+	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
 }
 
 func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc, start time.Time) {
@@ -251,7 +340,7 @@ func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []b
 	// Distribute blocks to seed nodes
 	seeds := instances[:numnodes-1]
 	df(b, seeds, blocks)
-	
+
 	// Set the blockstore latency on seed nodes
 	if bstoreLatency > 0 {
 		for _, i := range seeds {
@@ -274,11 +363,12 @@ func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []b
 
 	nst := fetcher.Adapter.Stats()
 	stats := runStats{
-		Time:    time.Since(start),
-		MsgRecd: nst.MessagesRecvd,
-		MsgSent: nst.MessagesSent,
-		Dups:    st.DupBlksReceived,
-		Name:    b.Name(),
+		Time:     time.Since(start),
+		MsgRecd:  nst.MessagesRecvd,
+		MsgSent:  nst.MessagesSent,
+		DupsRcvd: st.DupBlksReceived,
+		BlksRcvd: st.BlocksReceived,
+		Name:     b.Name(),
 	}
 	benchmarkLog = append(benchmarkLog, stats)
 	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
@@ -421,6 +511,58 @@ func unixfsFileFetch(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 	}
 }
 
+func unixfsFileFetchLarge(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	_, err := ses.GetBlock(context.Background(), ks[0])
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	out, err := ses.GetBlocks(context.Background(), ks[1:11])
+	if err != nil {
+		b.Fatal(err)
+	}
+	for range out {
+	}
+
+	out, err = ses.GetBlocks(context.Background(), ks[11:100])
+	if err != nil {
+		b.Fatal(err)
+	}
+	for range out {
+	}
+
+	rest := ks[100:]
+	for len(rest) > 0 {
+		var batch [][]cid.Cid
+		for i := 0; i < 5 && len(rest) > 0; i++ {
+			cnt := 10
+			if len(rest) < 10 {
+				cnt = len(rest)
+			}
+			group := rest[:cnt]
+			rest = rest[cnt:]
+			batch = append(batch, group)
+		}
+
+		var wg sync.WaitGroup
+		for _, group := range batch {
+			wg.Add(1)
+			go func(grp []cid.Cid) {
+				defer wg.Done()
+
+				out, err = ses.GetBlocks(context.Background(), grp)
+				if err != nil {
+					b.Fatal(err)
+				}
+				for range out {
+				}
+			}(group)
+		}
+		wg.Wait()
+	}
+}
+
 func printResults(rs []runStats) {
 	nameOrder := make([]string, 0)
 	names := make(map[string]struct{})
@@ -437,25 +579,29 @@ func printResults(rs []runStats) {
 		sent := 0.0
 		rcvd := 0.0
 		dups := 0.0
+		blks := 0.0
 		elpd := 0.0
 		for i := 0; i < len(rs); i++ {
 			if rs[i].Name == name {
 				count++
 				sent += float64(rs[i].MsgSent)
 				rcvd += float64(rs[i].MsgRecd)
-				dups += float64(rs[i].Dups)
+				dups += float64(rs[i].DupsRcvd)
+				blks += float64(rs[i].BlksRcvd)
 				elpd += float64(rs[i].Time)
 			}
 		}
 		sent /= float64(count)
 		rcvd /= float64(count)
 		dups /= float64(count)
+		blks /= float64(count)
 
 		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd/1000000000.0)
-		fmt.Printf("%-75s %s / sent %d / recv %d / dups %d\n",
+		fmt.Printf("%-75s %s: sent %d, recv %d, dups %d / %d\n",
 			label,
 			fmtDuration(time.Duration(int64(math.Round(elpd/float64(count))))),
-			int64(math.Round(sent)), int64(math.Round(rcvd)), int64(math.Round(dups)))
+			int64(math.Round(sent)), int64(math.Round(rcvd)),
+			int64(math.Round(dups)), int64(math.Round(blks)))
 	}
 }
 
