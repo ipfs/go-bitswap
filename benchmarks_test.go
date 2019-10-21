@@ -101,7 +101,7 @@ var benches = []bench{
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
 	bench{"10Nodes-OnePeerPerBlock-UnixfsFetch", 10, 100, onePeerPerBlock, unixfsFileFetch},
 
-	// Fetch from 19 seed nodes, all nodes have all blocks, fetch all 200 blocks with a single GetBlocks() call
+	// Fetch from 199 seed nodes, all nodes have all blocks, fetch all 20 blocks with a single GetBlocks() call
 	bench{"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
 }
 
@@ -228,7 +228,6 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 		numblks := 1000
 
 		for i := 0; i < b.N; i++ {
-			start := time.Now()
 			net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
 
 			ig := testinstance.NewTestInstanceGenerator(net)
@@ -236,7 +235,7 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 
 			instances := ig.Instances(numnodes)
 			blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
-			runDistributionMulti(b, instances, 3, blocks, bstoreLatency, df, ff, start)
+			runDistributionMulti(b, instances, 3, blocks, bstoreLatency, df, ff)
 		}
 	})
 
@@ -247,8 +246,6 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 
 func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
-		// fmt.Println("\n\n\n\nStarting bench")
-		start := time.Now()
 		net := tn.VirtualNetwork(mockrouting.NewServer(), d)
 
 		ig := testinstance.NewTestInstanceGenerator(net)
@@ -257,14 +254,14 @@ func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, b
 		rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
 		blocks := testutil.GenerateBlocksOfSize(numblks, stdBlockSize)
 		blocks[0] = rootBlock[0]
-		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
+		runDistribution(b, instances, blocks, bstoreLatency, df, ff)
 		ig.Close()
+		// panic("done")
 	}
 }
 
 func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	for i := 0; i < b.N; i++ {
-		start := time.Now()
 		net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
 
 		ig := testinstance.NewTestInstanceGenerator(net)
@@ -274,11 +271,11 @@ func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d
 		rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
 		blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
 		blocks[0] = rootBlock[0]
-		runDistribution(b, instances, blocks, bstoreLatency, df, ff, start)
+		runDistribution(b, instances, blocks, bstoreLatency, df, ff)
 	}
 }
 
-func runDistributionMulti(b *testing.B, instances []testinstance.Instance, numFetchers int, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc, start time.Time) {
+func runDistributionMulti(b *testing.B, instances []testinstance.Instance, numFetchers int, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	numnodes := len(instances)
 	fetchers := instances[numnodes-numFetchers:]
 
@@ -299,6 +296,7 @@ func runDistributionMulti(b *testing.B, instances []testinstance.Instance, numFe
 		ks = append(ks, blk.Cid())
 	}
 
+	start := time.Now()
 	var wg sync.WaitGroup
 	for _, fetcher := range fetchers {
 		wg.Add(1)
@@ -333,7 +331,7 @@ func runDistributionMulti(b *testing.B, instances []testinstance.Instance, numFe
 	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
 }
 
-func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc, start time.Time) {
+func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
 	numnodes := len(instances)
 	fetcher := instances[numnodes-1]
 
@@ -353,6 +351,8 @@ func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []b
 	for _, blk := range blocks {
 		ks = append(ks, blk.Cid())
 	}
+
+	start := time.Now()
 	ff(b, fetcher.Exchange, ks)
 
 	// Collect statistics
