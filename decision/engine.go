@@ -15,6 +15,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
+	process "github.com/jbenet/goprocess"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -55,6 +56,8 @@ var log = logging.Logger("engine")
 const (
 	// outboxChanBuffer must be 0 to prevent stale messages from being sent
 	outboxChanBuffer = 0
+	// Number of concurrent workers that pull tasks off the request queue
+	taskWorkerCount = 8
 	// maxMessageSize is the maximum size of the batched payload
 	maxMessageSize = 512 * 1024
 	// tagFormat is the tag given to peers associated an engine
@@ -136,24 +139,38 @@ type Engine struct {
 	ledgerMap map[peer.ID]*ledger
 
 	ticker *time.Ticker
+
+	taskWorkerLock  sync.Mutex
+	taskWorkerCount int
 }
 
 // NewEngine creates a new block sending engine for the given block store
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
 	e := &Engine{
-		ledgerMap:  make(map[peer.ID]*ledger),
-		bs:         bs,
-		peerTagger: peerTagger,
-		outbox:     make(chan (<-chan *Envelope), outboxChanBuffer),
-		workSignal: make(chan struct{}, 1),
-		ticker:     time.NewTicker(time.Millisecond * 100),
+		ledgerMap:       make(map[peer.ID]*ledger),
+		bs:              bs,
+		peerTagger:      peerTagger,
+		outbox:          make(chan (<-chan *Envelope), outboxChanBuffer),
+		workSignal:      make(chan struct{}, 1),
+		ticker:          time.NewTicker(time.Millisecond * 100),
+		taskWorkerCount: taskWorkerCount,
 	}
 	e.tagQueued = fmt.Sprintf(tagFormat, "queued", uuid.New().String())
 	e.tagUseful = fmt.Sprintf(tagFormat, "useful", uuid.New().String())
-	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
-	go e.taskWorker(ctx)
+	e.peerRequestQueue = peertaskqueue.New(
+		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
+		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
 	go e.scoreWorker(ctx)
 	return e
+}
+
+// Start up workers to handle requests from other nodes for the data on this node
+func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	for i := 0; i < e.taskWorkerCount; i++ {
+		px.Go(func(px process.Process) {
+			e.taskWorker(ctx)
+		})
+	}
 }
 
 // scoreWorker keeps track of how "useful" our peers are, updating scores in the
@@ -287,8 +304,11 @@ func (e *Engine) LedgerForPeer(p peer.ID) *Receipt {
 	}
 }
 
+// Each taskWorker pulls items off the request queue up and adds them to an
+// envelope. The envelope is passed off to the bitswap workers, which send
+// the message to the network.
 func (e *Engine) taskWorker(ctx context.Context) {
-	defer close(e.outbox) // because taskWorker uses the channel exclusively
+	defer e.taskWorkerExit()
 	for {
 		oneTimeUse := make(chan *Envelope, 1) // buffer to prevent blocking
 		select {
@@ -305,6 +325,17 @@ func (e *Engine) taskWorker(ctx context.Context) {
 		}
 		oneTimeUse <- envelope // buffered. won't block
 		close(oneTimeUse)
+	}
+}
+
+// taskWorkerExit handles cleanup of task workers
+func (e *Engine) taskWorkerExit() {
+	e.taskWorkerLock.Lock()
+	defer e.taskWorkerLock.Unlock()
+
+	e.taskWorkerCount--
+	if e.taskWorkerCount == 0 {
+		close(e.outbox)
 	}
 }
 
@@ -484,9 +515,7 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 	for _, block := range m.Blocks() {
 		l.SentBytes(len(block.RawData()))
 		l.wantList.Remove(block.Cid())
-		e.peerRequestQueue.Remove(block.Cid(), p)
 	}
-
 }
 
 // PeerConnected is called when a new peer connects, meaning we should start
