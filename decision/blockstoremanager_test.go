@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -120,6 +121,7 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 	}
 
 	// Create more concurrent requests than the number of workers
+	var err error
 	wg := sync.WaitGroup{}
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
@@ -129,15 +131,20 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 
 			sizes := bsm.getBlockSizes(ks)
 			if len(sizes) != len(ks) {
-				t.Fatal("Wrong response length")
+				err = errors.New("Wrong response length")
 			}
 
 			for _, c := range ks {
 				if sizes[c] != 0 {
-					t.Fatal("Non-existent block should have size 0")
+					err = errors.New("Non-existent block should have size 0")
 				}
 			}
 		}()
 	}
 	wg.Wait()
+
+	// Note: it's not possible to call t.Fatal() inside a go routine
+	if err != nil {
+		t.Fatal(err)
+	}
 }

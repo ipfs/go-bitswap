@@ -169,9 +169,8 @@ func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
 
 	// Start up workers to handle requests from other nodes for the data on this node
 	for i := 0; i < e.taskWorkerCount; i++ {
-		i := i
 		px.Go(func(px process.Process) {
-			e.taskWorker(ctx, i)
+			e.taskWorker(ctx)
 		})
 	}
 }
@@ -212,7 +211,7 @@ func (e *Engine) LedgerForPeer(p peer.ID) *Receipt {
 // Each taskWorker pulls items off the request queue up to the maximum size
 // and adds them to an envelope that is passed off to the bitswap workers,
 // which send the message to the network.
-func (e *Engine) taskWorker(ctx context.Context, id int) {
+func (e *Engine) taskWorker(ctx context.Context) {
 	defer e.taskWorkerExit()
 	for {
 		oneTimeUse := make(chan *Envelope, 1) // buffer to prevent blocking
