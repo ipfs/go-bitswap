@@ -4,10 +4,7 @@ import (
 	"sync"
 
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
 )
-
-var log = logging.Logger("bs:bcst")
 
 type SessionWantlist struct {
 	sync.RWMutex

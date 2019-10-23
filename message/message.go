@@ -169,7 +169,10 @@ func (m *impl) Blocks() []blocks.Block {
 func (m *impl) BlockPresences() []pb.Message_BlockPresence {
 	bis := make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
 	for c, t := range m.blockPresences {
-		bis = append(bis, pb.Message_BlockPresence{c.Bytes(), t})
+		bis = append(bis, pb.Message_BlockPresence{
+			Cid:  c.Bytes(),
+			Type: t,
+		})
 	}
 	return bis
 }
@@ -342,7 +345,10 @@ func (m *impl) ToProtoV1() *pb.Message {
 
 	pbm.BlockPresences = make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
 	for c, t := range m.blockPresences {
-		pbm.BlockPresences = append(pbm.BlockPresences, pb.Message_BlockPresence{c.Bytes(), t})
+		pbm.BlockPresences = append(pbm.BlockPresences, pb.Message_BlockPresence{
+			Cid:  c.Bytes(),
+			Type: t,
+		})
 	}
 
 	return pbm

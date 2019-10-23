@@ -693,8 +693,8 @@ func checkOutput(t *testing.T, e *Engine, envelope *Envelope, expBlks []string, 
 	expPresencesCount := len(expHaves) + len(expDontHaves)
 	if len(presences) != expPresencesCount {
 		presenceDiff := formatPresencesDiff(presences, expHaves, expDontHaves)
-		return errors.New(fmt.Sprintf("Received %d BlockPresences. Expected %d BlockPresences:\n%s",
-			len(presences), expPresencesCount, presenceDiff))
+		return fmt.Errorf("Received %d BlockPresences. Expected %d BlockPresences:\n%s",
+			len(presences), expPresencesCount, presenceDiff)
 	}
 
 	// Verify payload message contents
@@ -889,7 +889,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 		t.Fatal("expected 1 block")
 	}
 	sentHave := env.Message.BlockPresences()
-	if len(sentHave) != 1 || bytes.Compare(sentHave[0].Cid, blks[0].Cid().Bytes()) != 0 || sentHave[0].Type != pb.Message_Have {
+	if len(sentHave) != 1 || !bytes.Equal(sentHave[0].Cid, blks[0].Cid().Bytes()) || sentHave[0].Type != pb.Message_Have {
 		t.Fatal("expected 1 HAVE")
 	}
 }
@@ -951,7 +951,7 @@ func TestCancelPeerWantsOnReceivingBlockFromPeer(t *testing.T) {
 		t.Fatal("expected 1 block")
 	}
 	sentHave := env.Message.BlockPresences()
-	if len(sentHave) != 1 || bytes.Compare(sentHave[0].Cid, blks[1].Cid().Bytes()) != 0 || sentHave[0].Type != pb.Message_Have {
+	if len(sentHave) != 1 || !bytes.Equal(sentHave[0].Cid, blks[1].Cid().Bytes()) || sentHave[0].Type != pb.Message_Have {
 		t.Fatal("expected 1 HAVE")
 	}
 }
@@ -988,12 +988,12 @@ func TestSendDontHave(t *testing.T) {
 	if len(sentDontHaves) != 2 {
 		t.Fatal("expected 2 DONT_HAVEs")
 	}
-	if bytes.Compare(sentDontHaves[0].Cid, blks[1].Cid().Bytes()) != 0 &&
-		bytes.Compare(sentDontHaves[1].Cid, blks[1].Cid().Bytes()) != 0 {
+	if !bytes.Equal(sentDontHaves[0].Cid, blks[1].Cid().Bytes()) &&
+		!bytes.Equal(sentDontHaves[1].Cid, blks[1].Cid().Bytes()) {
 		t.Fatal("expected DONT_HAVE for want-have")
 	}
-	if bytes.Compare(sentDontHaves[0].Cid, blks[3].Cid().Bytes()) != 0 &&
-		bytes.Compare(sentDontHaves[1].Cid, blks[3].Cid().Bytes()) != 0 {
+	if !bytes.Equal(sentDontHaves[0].Cid, blks[3].Cid().Bytes()) &&
+		!bytes.Equal(sentDontHaves[1].Cid, blks[3].Cid().Bytes()) {
 		t.Fatal("expected DONT_HAVE for want-block")
 	}
 
@@ -1085,7 +1085,8 @@ func partnerCancels(e *Engine, keys []string, partner peer.ID) {
 type envChan <-chan *Envelope
 
 func getNextEnvelope(e *Engine, next envChan, t time.Duration) (envChan, *Envelope) {
-	ctx, _ := context.WithTimeout(context.Background(), t)
+	ctx, cancel := context.WithTimeout(context.Background(), t)
+	defer cancel()
 
 	if next == nil {
 		next = <-e.Outbox() // returns immediately

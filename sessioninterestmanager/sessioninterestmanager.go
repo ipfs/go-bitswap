@@ -65,15 +65,9 @@ func (sim *SessionInterestManager) SplitWantedUnwanted(blks []blocks.Block) ([]b
 
 func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []uint64 {
 	ks := make([]cid.Cid, 0, len(blks)+len(haves)+len(dontHaves))
-	for _, c := range blks {
-		ks = append(ks, c)
-	}
-	for _, c := range haves {
-		ks = append(ks, c)
-	}
-	for _, c := range dontHaves {
-		ks = append(ks, c)
-	}
+	ks = append(ks, blks...)
+	ks = append(ks, haves...)
+	ks = append(ks, dontHaves...)
 
 	return sim.interested.SessionsFor(ks)
 }

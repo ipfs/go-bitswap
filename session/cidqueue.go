@@ -41,11 +41,7 @@ func (cq *cidQueue) Cids() []cid.Cid {
 	}
 
 	// Make a copy of the cids
-	out := make([]cid.Cid, 0, len(cq.elems))
-	for _, c := range cq.elems {
-		out = append(out, c)
-	}
-	return out
+	return append([]cid.Cid{}, cq.elems...)
 }
 
 func (cq *cidQueue) Push(c cid.Cid) {

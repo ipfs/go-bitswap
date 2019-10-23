@@ -96,17 +96,6 @@ func (pm *mockPeerManager) flushNextWants() {
 	}
 }
 
-func (pm *mockPeerManager) wantSent() bool {
-	time.Sleep(5 * time.Millisecond)
-
-	select {
-	case <-pm.sendTrigger:
-		return true
-	default:
-		return false
-	}
-}
-
 func (pm *mockPeerManager) clearWants() {
 	pm.peerSends.Range(func(k, v interface{}) bool {
 		pm.peerSends.Delete(k)

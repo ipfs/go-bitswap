@@ -23,10 +23,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
-	logging "github.com/ipfs/go-log"
 )
-
-var log = logging.Logger("bs:bnch")
 
 type fetchFunc func(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid)
 
@@ -138,7 +135,7 @@ const slowBandwidth = 100000.0
 const slowBandwidthDeviation = 16500.0
 const rootBlockSize = 800
 const stdBlockSize = 8000
-const largeBlockSize = 256 * 1024
+const largeBlockSize = int64(256 * 1024)
 
 func BenchmarkRealWorld(b *testing.B) {
 	benchmarkLog = nil
@@ -220,8 +217,7 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 	b.Run("3Leech3Seed-AllToAll-UnixfsFetch", func(b *testing.B) {
 		d := datacenterNetworkDelay
 		rateLimitGenerator := datacenterBandwidthGenerator
-		var blockSize int64
-		blockSize = largeBlockSize
+		blockSize := largeBlockSize
 		df := allToAll
 		ff := unixfsFileFetchLarge
 		numnodes := 6
@@ -545,6 +541,7 @@ func unixfsFileFetchLarge(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 			batch = append(batch, group)
 		}
 
+		var anyErr error
 		var wg sync.WaitGroup
 		for _, group := range batch {
 			wg.Add(1)
@@ -553,13 +550,18 @@ func unixfsFileFetchLarge(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 
 				out, err = ses.GetBlocks(context.Background(), grp)
 				if err != nil {
-					b.Fatal(err)
+					anyErr = err
 				}
 				for range out {
 				}
 			}(group)
 		}
 		wg.Wait()
+
+		// Note: b.Fatal() cannot be called from within a go-routine
+		if anyErr != nil {
+			b.Fatal(anyErr)
+		}
 	}
 }
 
