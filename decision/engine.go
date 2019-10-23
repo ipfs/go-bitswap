@@ -81,6 +81,9 @@ const (
 	// long/short term scores for tagging peers
 	longTermScore  = 10 // this is a high tag but it grows _very_ slowly.
 	shortTermScore = 10 // this is a high tag but it'll go away quickly if we aren't using the peer.
+
+	// Number of concurrent workers that process requests to the blockstore
+	blockstoreWorkerCount = 128
 )
 
 var (
@@ -128,7 +131,7 @@ type Engine struct {
 	// taskWorker goroutine
 	outbox chan (<-chan *Envelope)
 
-	bs bstore.Blockstore
+	bsm *blockstoreManager
 
 	peerTagger PeerTagger
 
@@ -148,7 +151,7 @@ type Engine struct {
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
 	e := &Engine{
 		ledgerMap:       make(map[peer.ID]*ledger),
-		bs:              bs,
+		bsm:             newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
 		peerTagger:      peerTagger,
 		outbox:          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:      make(chan struct{}, 1),
@@ -166,6 +169,9 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger)
 
 // Start up workers to handle requests from other nodes for the data on this node
 func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	// Start up blockstore manager
+	e.bsm.start(ctx, px)
+
 	for i := 0; i < e.taskWorkerCount; i++ {
 		px.Go(func(px process.Process) {
 			e.taskWorker(ctx)
@@ -357,14 +363,15 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		}
 
 		// with a task in hand, we're ready to prepare the envelope...
+		blockCids := cid.NewSet()
+		for _, t := range nextTask.Tasks {
+			blockCids.Add(t.Identifier.(cid.Cid))
+		}
+		blks := e.bsm.getBlocks(blockCids.Keys())
+
 		msg := bsmsg.New(true)
-		for _, entry := range nextTask.Tasks {
-			block, err := e.bs.Get(entry.Identifier.(cid.Cid))
-			if err != nil {
-				log.Errorf("tried to execute a task and errored fetching block: %s", err)
-				continue
-			}
-			msg.AddBlock(block)
+		for _, b := range blks {
+			msg.AddBlock(b)
 		}
 
 		if msg.Empty() {
@@ -422,6 +429,16 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 		}
 	}()
 
+	// Get block sizes
+	entries := m.Wantlist()
+	wantKs := cid.NewSet()
+	for _, entry := range entries {
+		if !entry.Cancel {
+			wantKs.Add(entry.Cid)
+		}
+	}
+	blockSizes := e.bsm.getBlockSizes(wantKs.Keys())
+
 	l := e.findOrCreate(p)
 	l.lk.Lock()
 	defer l.lk.Unlock()
@@ -439,13 +456,8 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 		} else {
 			log.Debugf("wants %s - %d", entry.Cid, entry.Priority)
 			l.Wants(entry.Cid, entry.Priority)
-			blockSize, err := e.bs.GetSize(entry.Cid)
-			if err != nil {
-				if err == bstore.ErrNotFound {
-					continue
-				}
-				log.Error(err)
-			} else {
+			blockSize := blockSizes[entry.Cid]
+			if blockSize > 0 {
 				// we have the block
 				newWorkExists = true
 				if msgSize+blockSize > maxMessageSize {
