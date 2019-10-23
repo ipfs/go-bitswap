@@ -150,7 +150,10 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger)
 	}
 	e.tagQueued = fmt.Sprintf(tagFormat, "queued", uuid.New().String())
 	e.tagUseful = fmt.Sprintf(tagFormat, "useful", uuid.New().String())
-	e.peerRequestQueue = peertaskqueue.New(peertaskqueue.OnPeerAddedHook(e.onPeerAdded), peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved))
+	e.peerRequestQueue = peertaskqueue.New(
+		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
+		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
+		peertaskqueue.IgnoreFreezing(true))
 	go e.taskWorker(ctx)
 	go e.scoreWorker(ctx)
 	return e
