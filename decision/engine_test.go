@@ -15,6 +15,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	process "github.com/jbenet/goprocess"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	testutil "github.com/libp2p/go-libp2p-core/test"
 )
@@ -88,13 +89,14 @@ type engineSet struct {
 func newEngine(ctx context.Context, idStr string) engineSet {
 	fpt := &fakePeerTagger{}
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	e := NewEngine(ctx, bs, fpt)
+	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	return engineSet{
 		Peer: peer.ID(idStr),
 		//Strategy: New(true),
 		PeerTagger: fpt,
 		Blockstore: bs,
-		Engine: NewEngine(ctx,
-			bs, fpt),
+		Engine:     e,
 	}
 }
 
@@ -172,8 +174,10 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 }
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
+	ctx := context.Background()
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{})
+	e := NewEngine(ctx, blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), &fakePeerTagger{})
+	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -228,9 +232,11 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 		}
 	}
 
+	ctx := context.Background()
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := NewEngine(context.Background(), bs, &fakePeerTagger{})
+		e := NewEngine(ctx, bs, &fakePeerTagger{})
+		e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 		for _, testcase := range testcases {
 			set := testcase[0]
 			cancels := testcase[1]
@@ -310,7 +316,7 @@ func TestTaggingUseful(t *testing.T) {
 	if me.PeerTagger.count(me.Engine.tagUseful) == 0 {
 		t.Fatal("peers should still be tagged due to long-term usefulness")
 	}
-	time.Sleep(shortTerm * 10)
+	time.Sleep(shortTerm * 20)
 	if me.PeerTagger.count(me.Engine.tagUseful) != 0 {
 		t.Fatal("peers should finally be untagged")
 	}
