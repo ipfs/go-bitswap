@@ -149,7 +149,7 @@ type Engine struct {
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
 	e := &Engine{
 		ledgerMap:       make(map[peer.ID]*ledger),
-		bs:              newDelayedBlockstore(bs, delay.Fixed(90*time.Millisecond)),
+		bs:              newDelayedBlockstore(bs, delay.Fixed(20*time.Millisecond)),
 		peerTagger:      peerTagger,
 		outbox:          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:      make(chan struct{}, 1),
