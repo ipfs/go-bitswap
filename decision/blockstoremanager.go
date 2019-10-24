@@ -12,8 +12,7 @@ import (
 
 // blockstoreManager maintains a pool of workers that make requests to the blockstore.
 type blockstoreManager struct {
-	bs bstore.Blockstore
-	// workerLock sync.Mutex
+	bs          bstore.Blockstore
 	workerCount int
 	jobs        chan func()
 }
