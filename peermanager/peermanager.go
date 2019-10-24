@@ -107,9 +107,6 @@ func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
 
 // Disconnected is called to remove a peer from the pool.
 func (pm *PeerManager) Disconnected(p peer.ID) {
-	// TODO: Need to inform sessions that had requested a want / want-block
-	// from peer so they can adjust their want potential
-
 	pm.Lock()
 	defer pm.Unlock()
 

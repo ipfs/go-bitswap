@@ -163,6 +163,11 @@ func (bsnet *impl) ConnectTo(ctx context.Context, p peer.ID) error {
 	return bsnet.host.Connect(ctx, peer.AddrInfo{ID: p})
 }
 
+func (bsnet *impl) DisconnectFrom(ctx context.Context, p peer.ID) error {
+	panic("Not implemented: DisconnectFrom() is only used by tests")
+	return nil
+}
+
 // FindProvidersAsync returns a channel of providers for the given key.
 func (bsnet *impl) FindProvidersAsync(ctx context.Context, k cid.Cid, max int) <-chan peer.ID {
 	out := make(chan peer.ID, max)

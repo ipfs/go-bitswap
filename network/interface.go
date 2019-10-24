@@ -36,6 +36,7 @@ type BitSwapNetwork interface {
 	SetDelegate(Receiver)
 
 	ConnectTo(context.Context, peer.ID) error
+	DisconnectFrom(context.Context, peer.ID) error
 
 	NewMessageSender(context.Context, peer.ID) (MessageSender, error)
 

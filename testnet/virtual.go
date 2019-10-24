@@ -198,7 +198,6 @@ func (nc *networkClient) Stats() bsnet.Stats {
 
 // FindProvidersAsync returns a channel of providers for the given key.
 func (nc *networkClient) FindProvidersAsync(ctx context.Context, k cid.Cid, max int) <-chan peer.ID {
-
 	// NB: this function duplicates the AddrInfo -> ID transformation in the
 	// bitswap network adapter. Not to worry. This network client will be
 	// deprecated once the ipfsnet.Mock is added. The code below is only
@@ -261,7 +260,6 @@ func (nc *networkClient) SetDelegate(r bsnet.Receiver) {
 
 func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	nc.network.mu.Lock()
-
 	otherClient, ok := nc.network.clients[p]
 	if !ok {
 		nc.network.mu.Unlock()
@@ -277,10 +275,29 @@ func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	nc.network.conns[tag] = struct{}{}
 	nc.network.mu.Unlock()
 
-	// TODO: add handling for disconnects
-
 	otherClient.receiver.PeerConnected(nc.local)
 	nc.Receiver.PeerConnected(p)
+	return nil
+}
+
+func (nc *networkClient) DisconnectFrom(_ context.Context, p peer.ID) error {
+	nc.network.mu.Lock()
+	defer nc.network.mu.Unlock()
+
+	otherClient, ok := nc.network.clients[p]
+	if !ok {
+		return errors.New("no such peer in network")
+	}
+
+	tag := tagForPeers(nc.local, p)
+	if _, ok := nc.network.conns[tag]; !ok {
+		// Already disconnected
+		return nil
+	}
+	delete(nc.network.conns, tag)
+
+	otherClient.receiver.PeerDisconnected(nc.local)
+	nc.Receiver.PeerDisconnected(p)
 	return nil
 }
 

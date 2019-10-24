@@ -130,8 +130,7 @@ func (spm *sessionPotentialManager) Update(from peer.ID, ks []cid.Cid, haves []c
 }
 
 func (spm *sessionPotentialManager) SignalAvailability(p peer.ID, isAvailable bool) {
-	// fmt.Printf("SignalAvailability(%s, %t)", lu.P(p), isAvailable)
-
+	// fmt.Printf("SignalAvailability(%s, %t)\n", lu.P(p), isAvailable)
 	availability := make(map[peer.ID]bool)
 	availability[p] = isAvailable
 	spm.changes <- change{availability: availability}
