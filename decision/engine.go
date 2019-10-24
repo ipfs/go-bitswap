@@ -12,6 +12,7 @@ import (
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
+	delay "github.com/ipfs/go-ipfs-delay"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
@@ -149,9 +150,10 @@ type Engine struct {
 
 // NewEngine creates a new block sending engine for the given block store
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
+	dbs := newDelayedBlockstore(bs, delay.Fixed(20*time.Millisecond))
 	e := &Engine{
 		ledgerMap:       make(map[peer.ID]*ledger),
-		bsm:             newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
+		bsm:             newBlockstoreManager(ctx, dbs, blockstoreWorkerCount),
 		peerTagger:      peerTagger,
 		outbox:          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:      make(chan struct{}, 1),
