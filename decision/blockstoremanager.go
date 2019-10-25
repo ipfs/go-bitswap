@@ -15,7 +15,7 @@ type blockstoreManager struct {
 	bs          bstore.Blockstore
 	workerCount int
 	jobs        chan func()
-	ctx         context.Context
+	px          process.Process
 }
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
@@ -28,8 +28,8 @@ func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount
 	}
 }
 
-func (bsm *blockstoreManager) start(ctx context.Context, px process.Process) {
-	bsm.ctx = ctx
+func (bsm *blockstoreManager) start(px process.Process) {
+	bsm.px = px
 
 	// Start up workers
 	for i := 0; i < bsm.workerCount; i++ {
@@ -42,7 +42,7 @@ func (bsm *blockstoreManager) start(ctx context.Context, px process.Process) {
 func (bsm *blockstoreManager) worker() {
 	for {
 		select {
-		case <-bsm.ctx.Done():
+		case <-bsm.px.Closing():
 			return
 		case job := <-bsm.jobs:
 			job()
@@ -53,7 +53,7 @@ func (bsm *blockstoreManager) worker() {
 func (bsm *blockstoreManager) addJob(ctx context.Context, job func()) {
 	select {
 	case <-ctx.Done():
-	case <-bsm.ctx.Done():
+	case <-bsm.px.Closing():
 	case bsm.jobs <- job:
 	}
 }

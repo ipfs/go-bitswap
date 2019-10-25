@@ -170,7 +170,7 @@ func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger)
 // Start up workers to handle requests from other nodes for the data on this node
 func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
 	// Start up blockstore manager
-	e.bsm.start(ctx, px)
+	e.bsm.start(px)
 
 	for i := 0; i < e.taskWorkerCount; i++ {
 		px.Go(func(px process.Process) {
