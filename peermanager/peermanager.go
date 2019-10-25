@@ -29,7 +29,7 @@ type Session interface {
 }
 
 // PeerQueueFactory provides a function that will create a PeerQueue.
-type PeerQueueFactory func(ctx context.Context, p peer.ID) PeerQueue
+type PeerQueueFactory func(ctx context.Context, p peer.ID, supportsHave bool) PeerQueue
 
 type peerQueueInstance struct {
 	refcnt int
@@ -88,11 +88,11 @@ func (pm *PeerManager) ConnectedPeers() []peer.ID {
 
 // Connected is called to add a new peer to the pool, and send it an initial set
 // of wants.
-func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
+func (pm *PeerManager) Connected(p peer.ID, supportsHave bool, initialWantHaves []cid.Cid) {
 	pm.Lock()
 	defer pm.Unlock()
 
-	pq := pm.getOrCreate(p)
+	pq := pm.getOrCreate(p, supportsHave)
 
 	if pq.refcnt == 0 {
 		// Broadcast any live want-haves to the newly connected peers
@@ -177,10 +177,10 @@ func (pm *PeerManager) CurrentWantHaves() []cid.Cid {
 	return pm.pwm.GetWantHaves()
 }
 
-func (pm *PeerManager) getOrCreate(p peer.ID) *peerQueueInstance {
+func (pm *PeerManager) getOrCreate(p peer.ID, supportsHave bool) *peerQueueInstance {
 	pqi, ok := pm.peerQueues[p]
 	if !ok {
-		pq := pm.createPeerQueue(pm.ctx, p)
+		pq := pm.createPeerQueue(pm.ctx, p, supportsHave)
 		pq.Startup()
 		pqi = &peerQueueInstance{0, pq}
 		pm.peerQueues[p] = pqi

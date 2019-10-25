@@ -2,11 +2,13 @@ package network_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
+	"github.com/ipfs/go-bitswap/network"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
@@ -40,7 +42,7 @@ func (r *receiver) ReceiveMessage(
 func (r *receiver) ReceiveError(err error) {
 }
 
-func (r *receiver) PeerConnected(p peer.ID) {
+func (r *receiver) PeerConnected(p peer.ID, supportsHave bool) {
 	r.peers[p] = struct{}{}
 	r.connectionEvent <- struct{}{}
 }
@@ -158,5 +160,30 @@ func TestMessageSendAndReceive(t *testing.T) {
 	receivedBlock := receivedBlocks[0]
 	if receivedBlock.Cid() != sentBlock.Cid() {
 		t.Fatal("Sent message blocks did not match received message blocks")
+	}
+}
+
+func TestSupportsHave(t *testing.T) {
+	ctx := context.Background()
+	mn := mocknet.New(ctx)
+	mr := mockrouting.NewServer()
+	streamNet, err := tn.StreamNet(ctx, mn, mr)
+	if err != nil {
+		t.Fatal("Unable to setup network")
+	}
+	p1 := tnet.RandIdentityOrFatal(t)
+	bsnet1 := streamNet.Adapter(p1)
+
+	if bsnet1.SupportsHave(network.ProtocolBitswapNoVers) {
+		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapNoVers))
+	}
+	if bsnet1.SupportsHave(network.ProtocolBitswapOne) {
+		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapOne))
+	}
+	if bsnet1.SupportsHave(network.ProtocolBitswapOneOne) {
+		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapOneOne))
+	}
+	if !bsnet1.SupportsHave(network.ProtocolBitswap) {
+		t.Fatal(fmt.Sprintf("Expected %s to support HAVEs", network.ProtocolBitswap))
 	}
 }

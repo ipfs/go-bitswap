@@ -13,13 +13,14 @@ import (
 )
 
 var (
-	// ProtocolBitswapOne is the prefix for the legacy bitswap protocol
-	ProtocolBitswapOne protocol.ID = "/ipfs/bitswap/1.0.0"
 	// ProtocolBitswapNoVers is equivalent to the legacy bitswap protocol
 	ProtocolBitswapNoVers protocol.ID = "/ipfs/bitswap"
-
-	// ProtocolBitswap is the current version of bitswap protocol, 1.1.0
-	ProtocolBitswap protocol.ID = "/ipfs/bitswap/1.1.0"
+	// ProtocolBitswapOne is the prefix for the legacy bitswap protocol
+	ProtocolBitswapOne protocol.ID = "/ipfs/bitswap/1.0.0"
+	// ProtocolBitswapOneOne is the the prefix for version 1.1.0
+	ProtocolBitswapOneOne protocol.ID = "/ipfs/bitswap/1.1.0"
+	// ProtocolBitswap is the current version of bitswap protocol, 1.2.0
+	ProtocolBitswap protocol.ID = "/ipfs/bitswap/1.2.0"
 )
 
 // BitSwapNetwork provides network connectivity for BitSwap sessions.
@@ -41,6 +42,8 @@ type BitSwapNetwork interface {
 	NewMessageSender(context.Context, peer.ID) (MessageSender, error)
 
 	ConnectionManager() connmgr.ConnManager
+
+	SupportsHave(protocol.ID) bool
 
 	Stats() Stats
 
@@ -65,7 +68,7 @@ type Receiver interface {
 	ReceiveError(error)
 
 	// Connected/Disconnected warns bitswap about peer connections.
-	PeerConnected(peer.ID)
+	PeerConnected(peer.ID, bool)
 	PeerDisconnected(peer.ID)
 }
 

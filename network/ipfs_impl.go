@@ -38,9 +38,10 @@ func NewFromIpfsHost(host host.Host, r routing.ContentRouting, opts ...NetOpt) B
 		host:    host,
 		routing: r,
 
-		protocolBitswap:       s.ProtocolPrefix + ProtocolBitswap,
-		protocolBitswapOne:    s.ProtocolPrefix + ProtocolBitswapOne,
 		protocolBitswapNoVers: s.ProtocolPrefix + ProtocolBitswapNoVers,
+		protocolBitswapOne:    s.ProtocolPrefix + ProtocolBitswapOne,
+		protocolBitswapOneOne: s.ProtocolPrefix + ProtocolBitswapOneOne,
+		protocolBitswap:       s.ProtocolPrefix + ProtocolBitswap,
 	}
 	return &bitswapNetwork
 }
@@ -51,9 +52,12 @@ type impl struct {
 	host    host.Host
 	routing routing.ContentRouting
 
-	protocolBitswap       protocol.ID
-	protocolBitswapOne    protocol.ID
 	protocolBitswapNoVers protocol.ID
+	protocolBitswapOne    protocol.ID
+	protocolBitswapOneOne protocol.ID
+	protocolBitswap       protocol.ID
+
+	hasConn bool
 
 	// inbound messages from the network are forwarded to the receiver
 	receiver Receiver
@@ -82,6 +86,14 @@ func (bsnet *impl) Self() peer.ID {
 	return bsnet.host.ID()
 }
 
+func (bsnet *impl) SupportsHave(proto protocol.ID) bool {
+	switch proto {
+	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswapOne, bsnet.protocolBitswapNoVers:
+		return false
+	}
+	return true
+}
+
 func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.BitSwapMessage) error {
 	deadline := time.Now().Add(sendMessageTimeout)
 	if dl, ok := ctx.Deadline(); ok {
@@ -93,7 +105,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	}
 
 	switch s.Protocol() {
-	case bsnet.protocolBitswap:
+	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap:
 		if err := msg.ToNetV1(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
@@ -123,7 +135,11 @@ func (bsnet *impl) NewMessageSender(ctx context.Context, p peer.ID) (MessageSend
 }
 
 func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stream, error) {
-	return bsnet.host.NewStream(ctx, p, bsnet.protocolBitswap, bsnet.protocolBitswapOne, bsnet.protocolBitswapNoVers)
+	return bsnet.host.NewStream(ctx, p,
+		bsnet.protocolBitswap,
+		bsnet.protocolBitswapOneOne,
+		bsnet.protocolBitswapOne,
+		bsnet.protocolBitswapNoVers)
 }
 
 func (bsnet *impl) SendMessage(
@@ -152,6 +168,7 @@ func (bsnet *impl) SendMessage(
 func (bsnet *impl) SetDelegate(r Receiver) {
 	bsnet.receiver = r
 	bsnet.host.SetStreamHandler(bsnet.protocolBitswap, bsnet.handleNewStream)
+	bsnet.host.SetStreamHandler(bsnet.protocolBitswapOneOne, bsnet.handleNewStream)
 	bsnet.host.SetStreamHandler(bsnet.protocolBitswapOne, bsnet.handleNewStream)
 	bsnet.host.SetStreamHandler(bsnet.protocolBitswapNoVers, bsnet.handleNewStream)
 	bsnet.host.Network().Notify((*netNotifiee)(bsnet))
@@ -240,15 +257,23 @@ func (nn *netNotifiee) impl() *impl {
 	return (*impl)(nn)
 }
 
-func (nn *netNotifiee) Connected(n network.Network, v network.Conn) {
-	nn.impl().receiver.PeerConnected(v.RemotePeer())
-}
-
+func (nn *netNotifiee) Connected(n network.Network, v network.Conn) {}
 func (nn *netNotifiee) Disconnected(n network.Network, v network.Conn) {
-	nn.impl().receiver.PeerDisconnected(v.RemotePeer())
+	netImpl := nn.impl()
+	// TODO: DO I need a lock around hasConn?
+	netImpl.hasConn = false
+	netImpl.receiver.PeerDisconnected(v.RemotePeer())
 }
 
-func (nn *netNotifiee) OpenedStream(n network.Network, v network.Stream) {}
+func (nn *netNotifiee) OpenedStream(n network.Network, s network.Stream) {
+	netImpl := nn.impl()
+	if !netImpl.hasConn {
+		// TODO: DO I need a lock around hasConn?
+		netImpl.hasConn = true
+		supportsHave := netImpl.SupportsHave(s.Protocol())
+		netImpl.receiver.PeerConnected(s.Conn().RemotePeer(), supportsHave)
+	}
+}
 func (nn *netNotifiee) ClosedStream(n network.Network, v network.Stream) {}
 func (nn *netNotifiee) Listen(n network.Network, a ma.Multiaddr)         {}
 func (nn *netNotifiee) ListenClose(n network.Network, a ma.Multiaddr)    {}

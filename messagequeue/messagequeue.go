@@ -38,10 +38,11 @@ type MessageNetwork interface {
 
 // MessageQueue implements queue of want messages to send to peers.
 type MessageQueue struct {
-	ctx            context.Context
-	p              peer.ID
-	network        MessageNetwork
-	maxMessageSize int
+	ctx              context.Context
+	p                peer.ID
+	network          MessageNetwork
+	maxMessageSize   int
+	peerSupportsHave bool
 
 	outgoingWork chan struct{}
 	done         chan struct{}
@@ -59,17 +60,18 @@ type MessageQueue struct {
 }
 
 // New creats a new MessageQueue.
-func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
-	return newMessageQueue(ctx, p, network, maxMessageSize)
+func New(ctx context.Context, p peer.ID, supportsHave bool, network MessageNetwork) *MessageQueue {
+	return newMessageQueue(ctx, p, supportsHave, network, maxMessageSize)
 }
 
 // This constructor is used by the tests
-func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int) *MessageQueue {
+func newMessageQueue(ctx context.Context, p peer.ID, supportsHave bool, network MessageNetwork, maxMsgSize int) *MessageQueue {
 	return &MessageQueue{
 		ctx:                 ctx,
 		p:                   p,
 		network:             network,
 		maxMessageSize:      maxMsgSize,
+		peerSupportsHave:    supportsHave,
 		wlbcst:              bswl.New(),
 		wlpeer:              bswl.New(),
 		outgoingWork:        make(chan struct{}, 1),
@@ -83,8 +85,14 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := false
 		for _, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
-			mq.wlbcst.Add(c, mq.priority, pb.Message_Wantlist_Have)
+			wantType := pb.Message_Wantlist_Have
+			// If the remote peer doesn't support HAVE / DONT_HAVE messages,
+			// send a block instead
+			if !mq.peerSupportsHave {
+				wantType = pb.Message_Wantlist_Block
+			}
+			mq.nextMessage.AddEntry(c, mq.priority, wantType, sendDontHave)
+			mq.wlbcst.Add(c, mq.priority, wantType)
 			mq.priority--
 		}
 	})
@@ -93,10 +101,14 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	mq.addMessageEntries(func() {
 		sendDontHave := true
-		for _, c := range wantHaves {
-			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
-			mq.wlpeer.Add(c, mq.priority, pb.Message_Wantlist_Have)
-			mq.priority--
+		// If the remote peer doesn't support HAVE / DONT_HAVE messages,
+		// don't send want-haves (only send want-blocks)
+		if mq.peerSupportsHave {
+			for _, c := range wantHaves {
+				mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Have, sendDontHave)
+				mq.wlpeer.Add(c, mq.priority, pb.Message_Wantlist_Have)
+				mq.priority--
+			}
 		}
 		for _, c := range wantBlocks {
 			mq.nextMessage.AddEntry(c, mq.priority, pb.Message_Wantlist_Block, sendDontHave)

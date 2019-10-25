@@ -111,8 +111,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		return nil
 	})
 
-	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
-		return bsmq.New(ctx, p, network)
+	peerQueueFactory := func(ctx context.Context, p peer.ID, supportsHave bool) bspm.PeerQueue {
+		return bsmq.New(ctx, p, supportsHave, network)
 	}
 
 	sim := bssim.New()
@@ -461,8 +461,8 @@ func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
 
 // PeerConnected is called by the network interface
 // when a peer initiates a new connection to bitswap.
-func (bs *Bitswap) PeerConnected(p peer.ID) {
-	bs.wm.Connected(p)
+func (bs *Bitswap) PeerConnected(p peer.ID, supportsHave bool) {
+	bs.wm.Connected(p, supportsHave)
 	bs.engine.PeerConnected(p)
 }
 

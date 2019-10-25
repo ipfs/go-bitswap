@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
+	protocol "github.com/libp2p/go-libp2p-protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
@@ -258,6 +259,10 @@ func (nc *networkClient) SetDelegate(r bsnet.Receiver) {
 	nc.Receiver = r
 }
 
+func (nc *networkClient) SupportsHave(proto protocol.ID) bool {
+	return true
+}
+
 func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	nc.network.mu.Lock()
 	otherClient, ok := nc.network.clients[p]
@@ -275,8 +280,8 @@ func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	nc.network.conns[tag] = struct{}{}
 	nc.network.mu.Unlock()
 
-	otherClient.receiver.PeerConnected(nc.local)
-	nc.Receiver.PeerConnected(p)
+	otherClient.receiver.PeerConnected(nc.local, true)
+	nc.Receiver.PeerConnected(p, true)
 	return nil
 }
 

@@ -10,6 +10,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -80,7 +81,7 @@ func TestStartupAndShutdown(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, fakenet)
+	messageQueue := New(ctx, peerID, true, fakenet)
 	bcstwh := testutil.GenerateCids(10)
 
 	messageQueue.Startup()
@@ -121,7 +122,7 @@ func TestSendingMessagesDeduped(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, fakenet)
+	messageQueue := New(ctx, peerID, true, fakenet)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
 
@@ -143,7 +144,7 @@ func TestSendingMessagesPartialDupe(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, fakenet)
+	messageQueue := New(ctx, peerID, true, fakenet)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
 
@@ -165,7 +166,7 @@ func TestSendingMessagesPriority(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, fakenet)
+	messageQueue := New(ctx, peerID, true, fakenet)
 	wantHaves1 := testutil.GenerateCids(5)
 	wantHaves2 := testutil.GenerateCids(5)
 	wantHaves := append(wantHaves1, wantHaves2...)
@@ -233,7 +234,7 @@ func TestWantlistRebroadcast(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, fakenet)
+	messageQueue := New(ctx, peerID, true, fakenet)
 	bcstwh := testutil.GenerateCids(10)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
@@ -332,7 +333,7 @@ func TestSendingLargeMessages(t *testing.T) {
 
 	wantBlocks := testutil.GenerateCids(10)
 	maxMsgSize := 46 * 3 // 3 wants
-	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize)
+	messageQueue := newMessageQueue(ctx, peerID, true, fakenet, maxMsgSize)
 
 	messageQueue.Startup()
 	messageQueue.AddWants(wantBlocks, []cid.Cid{})
@@ -346,5 +347,61 @@ func TestSendingLargeMessages(t *testing.T) {
 	}
 	if totalEntriesLength(messages) != len(wantBlocks) {
 		t.Fatal("wrong number of wants")
+	}
+}
+
+func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan bsmsg.BitSwapMessage)
+	resetChan := make(chan struct{}, 1)
+	fullClosedChan := make(chan struct{}, 1)
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+
+	supportsHave := false
+	messageQueue := New(ctx, peerID, supportsHave, fakenet)
+	messageQueue.Startup()
+
+	// If the remote peer doesn't support HAVE / DONT_HAVE messages
+	// - want-blocks should be sent normally
+	// - want-haves should not be sent
+	// - broadcast want-haves should be sent as want-blocks
+
+	// Check broadcast want-haves
+	bcwh := testutil.GenerateCids(10)
+	messageQueue.AddBroadcastWantHaves(bcwh)
+	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	if len(messages) != 1 {
+		t.Fatal("wrong number of messages were sent", len(messages))
+	}
+	wl := messages[0].Wantlist()
+	if len(wl) != len(bcwh) {
+		t.Fatal("wrong number of entries in wantlist", len(wl))
+	}
+	for _, entry := range wl {
+		if entry.WantType != pb.Message_Wantlist_Block {
+			t.Fatal("broadcast want-haves should be sent as want-blocks")
+		}
+	}
+
+	// Check regular want-haves and want-blocks
+	wbs := testutil.GenerateCids(10)
+	whs := testutil.GenerateCids(10)
+	messageQueue.AddWants(wbs, whs)
+	messages = collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	if len(messages) != 1 {
+		t.Fatal("wrong number of messages were sent", len(messages))
+	}
+	wl = messages[0].Wantlist()
+	if len(wl) != len(wbs) {
+		t.Fatal("should only send want-blocks (no want-haves)", len(wl))
+	}
+	for _, entry := range wl {
+		if entry.WantType != pb.Message_Wantlist_Block {
+			t.Fatal("should only send want-blocks")
+		}
 	}
 }
