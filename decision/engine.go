@@ -367,7 +367,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		for _, t := range nextTask.Tasks {
 			blockCids.Add(t.Identifier.(cid.Cid))
 		}
-		blks := e.bsm.getBlocks(blockCids.Keys())
+		blks := e.bsm.getBlocks(ctx, blockCids.Keys())
 
 		msg := bsmsg.New(true)
 		for _, b := range blks {
@@ -417,7 +417,7 @@ func (e *Engine) Peers() []peer.ID {
 
 // MessageReceived performs book-keeping. Returns error if passed invalid
 // arguments.
-func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
+func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwapMessage) {
 	if m.Empty() {
 		log.Debugf("received empty message from %s", p)
 	}
@@ -437,7 +437,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 			wantKs.Add(entry.Cid)
 		}
 	}
-	blockSizes := e.bsm.getBlockSizes(wantKs.Keys())
+	blockSizes := e.bsm.getBlockSizes(ctx, wantKs.Keys())
 
 	l := e.findOrCreate(p)
 	l.lk.Lock()
@@ -456,8 +456,8 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 		} else {
 			log.Debugf("wants %s - %d", entry.Cid, entry.Priority)
 			l.Wants(entry.Cid, entry.Priority)
-			blockSize := blockSizes[entry.Cid]
-			if blockSize > 0 {
+			blockSize, ok := blockSizes[entry.Cid]
+			if ok {
 				// we have the block
 				newWorkExists = true
 				if msgSize+blockSize > maxMessageSize {

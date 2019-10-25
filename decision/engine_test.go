@@ -114,7 +114,7 @@ func TestConsistentAccounting(t *testing.T) {
 		m.AddBlock(blocks.NewBlock([]byte(strings.Join(content, " "))))
 
 		sender.Engine.MessageSent(receiver.Peer, m)
-		receiver.Engine.MessageReceived(sender.Peer, m)
+		receiver.Engine.MessageReceived(ctx, sender.Peer, m)
 	}
 
 	// Ensure sender records the change
@@ -144,7 +144,7 @@ func TestPeerIsAddedToPeersWhenMessageReceivedOrSent(t *testing.T) {
 	m := message.New(true)
 
 	sanfrancisco.Engine.MessageSent(seattle.Peer, m)
-	seattle.Engine.MessageReceived(sanfrancisco.Peer, m)
+	seattle.Engine.MessageReceived(ctx, sanfrancisco.Peer, m)
 
 	if seattle.Peer == sanfrancisco.Peer {
 		t.Fatal("Sanity Check: Peers have same Key!")
@@ -328,7 +328,7 @@ func partnerWants(e *Engine, keys []string, partner peer.ID) {
 		block := blocks.NewBlock([]byte(letter))
 		add.AddEntry(block.Cid(), len(keys)-i)
 	}
-	e.MessageReceived(partner, add)
+	e.MessageReceived(context.Background(), partner, add)
 }
 
 func partnerCancels(e *Engine, keys []string, partner peer.ID) {
@@ -337,7 +337,7 @@ func partnerCancels(e *Engine, keys []string, partner peer.ID) {
 		block := blocks.NewBlock([]byte(k))
 		cancels.Cancel(block.Cid())
 	}
-	e.MessageReceived(partner, cancels)
+	e.MessageReceived(context.Background(), partner, cancels)
 }
 
 func checkHandledInOrder(t *testing.T, e *Engine, expected [][]string) error {

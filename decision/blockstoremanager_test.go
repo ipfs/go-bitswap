@@ -30,25 +30,25 @@ func TestBlockstoreManagerNotFoundKey(t *testing.T) {
 	bsm.start(ctx, process.WithTeardown(func() error { return nil }))
 
 	cids := testutil.GenerateCids(4)
-	sizes := bsm.getBlockSizes(cids)
-	if len(sizes) != len(cids) {
+	sizes := bsm.getBlockSizes(ctx, cids)
+	if len(sizes) != 0 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
-		if sizes[c] != 0 {
-			t.Fatal("Non-existent block should have size 0")
+		if _, ok := sizes[c]; ok {
+			t.Fatal("Non-existent block should have no size")
 		}
 	}
 
-	blks := bsm.getBlocks(cids)
-	if len(blks) != len(cids) {
+	blks := bsm.getBlocks(ctx, cids)
+	if len(blks) != 0 {
 		t.Fatal("Wrong response length")
 	}
 
-	for _, b := range blks {
-		if b != nil {
-			t.Fatal("Non-existent block should be nil")
+	for _, c := range cids {
+		if _, ok := blks[c]; ok {
+			t.Fatal("Non-existent block should have no size")
 		}
 	}
 }
@@ -71,7 +71,9 @@ func TestBlockstoreManager(t *testing.T) {
 		blks = append(blks, b)
 		exp[b.Cid()] = b
 	}
-	if err := bstore.PutMany(blks); err != nil {
+
+	// Put all blocks in the blockstore except the last one
+	if err := bstore.PutMany(blks[:len(blks)-1]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,26 +82,50 @@ func TestBlockstoreManager(t *testing.T) {
 		cids = append(cids, b.Cid())
 	}
 
-	sizes := bsm.getBlockSizes(cids)
-	if len(sizes) != len(cids) {
+	sizes := bsm.getBlockSizes(ctx, cids)
+	if len(sizes) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
 		expSize := len(exp[c].RawData())
-		if sizes[c] != expSize {
-			t.Fatal("Block should have size ", expSize)
+		size, ok := sizes[c]
+
+		// Only the last key should be missing
+		if c.Equals(cids[len(cids)-1]) {
+			if ok {
+				t.Fatal("Non-existent block should not be in sizes map")
+			}
+		} else {
+			if !ok {
+				t.Fatal("Block should be in sizes map")
+			}
+			if size != expSize {
+				t.Fatal("Block has wrong size")
+			}
 		}
 	}
 
-	fetched := bsm.getBlocks(cids)
-	if len(fetched) != len(cids) {
+	fetched := bsm.getBlocks(ctx, cids)
+	if len(fetched) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
-		if fetched[c].Cid() != c {
-			t.Fatal("Block should have cid ", c)
+		blk, ok := fetched[c]
+
+		// Only the last key should be missing
+		if c.Equals(cids[len(cids)-1]) {
+			if ok {
+				t.Fatal("Non-existent block should not be in blocks map")
+			}
+		} else {
+			if !ok {
+				t.Fatal("Block should be in blocks map")
+			}
+			if !blk.Cid().Equals(c) {
+				t.Fatal("Block has wrong cid")
+			}
 		}
 	}
 }
@@ -114,11 +140,14 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 	bsm := newBlockstoreManager(ctx, bstore, workerCount)
 	bsm.start(ctx, process.WithTeardown(func() error { return nil }))
 
-	blks := testutil.GenerateBlocksOfSize(32, 8*1024)
+	blkSize := int64(8 * 1024)
+	blks := testutil.GenerateBlocksOfSize(32, blkSize)
 	var ks []cid.Cid
 	for _, b := range blks {
 		ks = append(ks, b.Cid())
 	}
+
+	bstore.PutMany(blks)
 
 	// Create more concurrent requests than the number of workers
 	var err error
@@ -129,15 +158,9 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 		go func(t *testing.T) {
 			defer wg.Done()
 
-			sizes := bsm.getBlockSizes(ks)
-			if len(sizes) != len(ks) {
+			sizes := bsm.getBlockSizes(ctx, ks)
+			if len(sizes) != len(blks) {
 				err = errors.New("Wrong response length")
-			}
-
-			for _, c := range ks {
-				if sizes[c] != 0 {
-					err = errors.New("Non-existent block should have size 0")
-				}
 			}
 		}(t)
 	}

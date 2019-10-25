@@ -15,6 +15,7 @@ type blockstoreManager struct {
 	bs          bstore.Blockstore
 	workerCount int
 	jobs        chan func()
+	ctx         context.Context
 }
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
@@ -28,19 +29,20 @@ func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount
 }
 
 func (bsm *blockstoreManager) start(ctx context.Context, px process.Process) {
+	bsm.ctx = ctx
+
 	// Start up workers
 	for i := 0; i < bsm.workerCount; i++ {
-		i := i
 		px.Go(func(px process.Process) {
-			bsm.worker(ctx, i)
+			bsm.worker()
 		})
 	}
 }
 
-func (bsm *blockstoreManager) worker(ctx context.Context, id int) {
+func (bsm *blockstoreManager) worker() {
 	for {
 		select {
-		case <-ctx.Done():
+		case <-bsm.ctx.Done():
 			return
 		case job := <-bsm.jobs:
 			job()
@@ -48,64 +50,66 @@ func (bsm *blockstoreManager) worker(ctx context.Context, id int) {
 	}
 }
 
-func (bsm *blockstoreManager) addJob(job func()) {
-	bsm.jobs <- job
+func (bsm *blockstoreManager) addJob(ctx context.Context, job func()) {
+	select {
+	case <-ctx.Done():
+	case <-bsm.ctx.Done():
+	case bsm.jobs <- job:
+	}
 }
 
-func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
+func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) map[cid.Cid]int {
 	res := make(map[cid.Cid]int)
 	if len(ks) == 0 {
 		return res
 	}
 
 	var lk sync.Mutex
-	bsm.jobPerKey(ks, func(c cid.Cid) {
+	bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
 		size, err := bsm.bs.GetSize(c)
 		if err != nil {
 			if err != bstore.ErrNotFound {
 				log.Warningf("blockstore.GetSize(%s) error: %s", c, err)
 			}
-			size = 0
+		} else {
+			lk.Lock()
+			res[c] = size
+			lk.Unlock()
 		}
-
-		lk.Lock()
-		res[c] = size
-		lk.Unlock()
 	})
 
 	return res
 }
 
-func (bsm *blockstoreManager) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
+func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) map[cid.Cid]blocks.Block {
 	res := make(map[cid.Cid]blocks.Block)
 	if len(ks) == 0 {
 		return res
 	}
 
 	var lk sync.Mutex
-	bsm.jobPerKey(ks, func(c cid.Cid) {
+	bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
 		blk, err := bsm.bs.Get(c)
 		if err != nil {
-			blk = nil
 			if err != bstore.ErrNotFound {
 				log.Warningf("blockstore.Get(%s) error: %s", c, err)
 			}
+		} else {
+			lk.Lock()
+			res[c] = blk
+			lk.Unlock()
 		}
-
-		lk.Lock()
-		res[c] = blk
-		lk.Unlock()
 	})
 
 	return res
 }
 
-func (bsm *blockstoreManager) jobPerKey(ks []cid.Cid, jobFn func(c cid.Cid)) {
+func (bsm *blockstoreManager) jobPerKey(ctx context.Context, ks []cid.Cid, jobFn func(c cid.Cid)) {
 	wg := sync.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
-		bsm.addJob(func() {
+		bsm.addJob(ctx, func() {
 			jobFn(c)
 			wg.Done()
 		})
