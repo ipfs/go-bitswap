@@ -195,6 +195,8 @@ func TestBlockstoreManagerClose(t *testing.T) {
 
 	go px.Close()
 
+	time.Sleep(5 * time.Millisecond)
+
 	fnCallDone := make(chan struct{})
 	go func() {
 		bsm.getBlockSizes(ctx, ks)
