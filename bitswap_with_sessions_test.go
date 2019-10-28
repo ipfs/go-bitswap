@@ -259,7 +259,10 @@ func TestFetchAfterDisconnect(t *testing.T) {
 	}
 
 	// Break connection
-	peerA.Adapter.DisconnectFrom(ctx, peerB.Peer)
+	err = peerA.Adapter.DisconnectFrom(ctx, peerB.Peer)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Provide remaining blocks
 	lastBlks := blks[5:]
