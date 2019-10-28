@@ -348,8 +348,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 func (e *Engine) filterDontHaves(tasks []peertask.Task) []cid.Cid {
 	var ks []cid.Cid
 	for _, t := range tasks {
-		// Size zero means the block was not found
-		if t.BlockSize == 0 {
+		if !t.HaveBlock {
 			ks = append(ks, t.Identifier.(cid.Cid))
 		}
 	}
@@ -360,7 +359,7 @@ func (e *Engine) filterDontHaves(tasks []peertask.Task) []cid.Cid {
 func (e *Engine) filterWantHaves(tasks []peertask.Task) []cid.Cid {
 	var ks []cid.Cid
 	for _, t := range tasks {
-		if t.BlockSize > 0 && !t.IsWantBlock {
+		if t.HaveBlock && !t.IsWantBlock {
 			ks = append(ks, t.Identifier.(cid.Cid))
 		}
 	}
@@ -371,7 +370,7 @@ func (e *Engine) filterWantHaves(tasks []peertask.Task) []cid.Cid {
 func (e *Engine) filterWantBlocks(tasks []peertask.Task) []peertask.Task {
 	var res []peertask.Task
 	for _, t := range tasks {
-		if t.BlockSize > 0 && t.IsWantBlock {
+		if t.HaveBlock && t.IsWantBlock {
 			res = append(res, t)
 		}
 	}
@@ -504,6 +503,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 					Priority:     entry.Priority,
 					EntrySize:    e.getBlockPresenceSize(c),
 					BlockSize:    0,
+					HaveBlock:    false,
 					IsWantBlock:  isWantBlock,
 					SendDontHave: entry.SendDontHave,
 				})
@@ -535,6 +535,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 				Priority:     entry.Priority,
 				EntrySize:    entrySize,
 				BlockSize:    blockSize,
+				HaveBlock:    true,
 				IsWantBlock:  isWantBlock,
 				SendDontHave: entry.SendDontHave,
 			})
@@ -615,6 +616,7 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 					Priority:     entry.Priority,
 					EntrySize:    entrySize,
 					BlockSize:    blockSize,
+					HaveBlock:    true,
 					IsWantBlock:  isWantBlock,
 					SendDontHave: false,
 				})

@@ -21,13 +21,14 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-peertaskqueue v0.1.2-0.20190930153442-b012c91d0a09
+	github.com/ipfs/go-peertaskqueue v0.1.2-0.20191028140841-a62f9b47895a
 	github.com/jbenet/goprocess v0.1.3
 	github.com/libp2p/go-buffer-pool v0.0.2
 	github.com/libp2p/go-libp2p v0.1.1
 	github.com/libp2p/go-libp2p-core v0.0.3
 	github.com/libp2p/go-libp2p-loggables v0.1.0
 	github.com/libp2p/go-libp2p-netutil v0.1.0
+	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/libp2p/go-libp2p-testing v0.0.4
 	github.com/libp2p/go-msgio v0.0.4
 	github.com/mattn/go-colorable v0.1.2 // indirect
