@@ -69,7 +69,7 @@ func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) m
 		size, err := bsm.bs.GetSize(c)
 		if err != nil {
 			if err != bstore.ErrNotFound {
-				log.Warningf("blockstore.GetSize(%s) error: %s", c, err)
+				log.Errorf("blockstore.GetSize(%s) error: %s", c, err)
 			}
 		} else {
 			lk.Lock()
@@ -92,7 +92,7 @@ func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) map[c
 		blk, err := bsm.bs.Get(c)
 		if err != nil {
 			if err != bstore.ErrNotFound {
-				log.Warningf("blockstore.Get(%s) error: %s", c, err)
+				log.Errorf("blockstore.Get(%s) error: %s", c, err)
 			}
 		} else {
 			lk.Lock()
