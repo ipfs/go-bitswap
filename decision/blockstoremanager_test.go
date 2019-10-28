@@ -27,28 +27,28 @@ func TestBlockstoreManagerNotFoundKey(t *testing.T) {
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
 	bsm := newBlockstoreManager(ctx, bstore, 5)
-	bsm.start(ctx, process.WithTeardown(func() error { return nil }))
+	bsm.start(process.WithTeardown(func() error { return nil }))
 
 	cids := testutil.GenerateCids(4)
-	sizes := bsm.getBlockSizes(cids)
-	if len(sizes) != len(cids) {
+	sizes := bsm.getBlockSizes(ctx, cids)
+	if len(sizes) != 0 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
-		if sizes[c] != 0 {
-			t.Fatal("Non-existent block should have size 0")
+		if _, ok := sizes[c]; ok {
+			t.Fatal("Non-existent block should have no size")
 		}
 	}
 
-	blks := bsm.getBlocks(cids)
-	if len(blks) != len(cids) {
+	blks := bsm.getBlocks(ctx, cids)
+	if len(blks) != 0 {
 		t.Fatal("Wrong response length")
 	}
 
-	for _, b := range blks {
-		if b != nil {
-			t.Fatal("Non-existent block should be nil")
+	for _, c := range cids {
+		if _, ok := blks[c]; ok {
+			t.Fatal("Non-existent block should have no size")
 		}
 	}
 }
@@ -60,7 +60,7 @@ func TestBlockstoreManager(t *testing.T) {
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
 	bsm := newBlockstoreManager(ctx, bstore, 5)
-	bsm.start(ctx, process.WithTeardown(func() error { return nil }))
+	bsm.start(process.WithTeardown(func() error { return nil }))
 
 	exp := make(map[cid.Cid]blocks.Block)
 	var blks []blocks.Block
@@ -71,7 +71,9 @@ func TestBlockstoreManager(t *testing.T) {
 		blks = append(blks, b)
 		exp[b.Cid()] = b
 	}
-	if err := bstore.PutMany(blks); err != nil {
+
+	// Put all blocks in the blockstore except the last one
+	if err := bstore.PutMany(blks[:len(blks)-1]); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,26 +82,50 @@ func TestBlockstoreManager(t *testing.T) {
 		cids = append(cids, b.Cid())
 	}
 
-	sizes := bsm.getBlockSizes(cids)
-	if len(sizes) != len(cids) {
+	sizes := bsm.getBlockSizes(ctx, cids)
+	if len(sizes) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
 		expSize := len(exp[c].RawData())
-		if sizes[c] != expSize {
-			t.Fatal("Block should have size ", expSize)
+		size, ok := sizes[c]
+
+		// Only the last key should be missing
+		if c.Equals(cids[len(cids)-1]) {
+			if ok {
+				t.Fatal("Non-existent block should not be in sizes map")
+			}
+		} else {
+			if !ok {
+				t.Fatal("Block should be in sizes map")
+			}
+			if size != expSize {
+				t.Fatal("Block has wrong size")
+			}
 		}
 	}
 
-	fetched := bsm.getBlocks(cids)
-	if len(fetched) != len(cids) {
+	fetched := bsm.getBlocks(ctx, cids)
+	if len(fetched) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
 
 	for _, c := range cids {
-		if fetched[c].Cid() != c {
-			t.Fatal("Block should have cid ", c)
+		blk, ok := fetched[c]
+
+		// Only the last key should be missing
+		if c.Equals(cids[len(cids)-1]) {
+			if ok {
+				t.Fatal("Non-existent block should not be in blocks map")
+			}
+		} else {
+			if !ok {
+				t.Fatal("Block should be in blocks map")
+			}
+			if !blk.Cid().Equals(c) {
+				t.Fatal("Block has wrong cid")
+			}
 		}
 	}
 }
@@ -112,39 +138,115 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 
 	workerCount := 5
 	bsm := newBlockstoreManager(ctx, bstore, workerCount)
-	bsm.start(ctx, process.WithTeardown(func() error { return nil }))
+	bsm.start(process.WithTeardown(func() error { return nil }))
 
-	blks := testutil.GenerateBlocksOfSize(32, 8*1024)
+	blkSize := int64(8 * 1024)
+	blks := testutil.GenerateBlocksOfSize(32, blkSize)
 	var ks []cid.Cid
 	for _, b := range blks {
 		ks = append(ks, b.Cid())
 	}
 
+	err := bstore.PutMany(blks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Create more concurrent requests than the number of workers
-	var err error
 	wg := sync.WaitGroup{}
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
 
-		go func() {
+		go func(t *testing.T) {
 			defer wg.Done()
 
-			sizes := bsm.getBlockSizes(ks)
-			if len(sizes) != len(ks) {
+			sizes := bsm.getBlockSizes(ctx, ks)
+			if len(sizes) != len(blks) {
+				// Note: it's not possible to call t.Fatal() inside a go routine
 				err = errors.New("Wrong response length")
 			}
-
-			for _, c := range ks {
-				if sizes[c] != 0 {
-					err = errors.New("Non-existent block should have size 0")
-				}
-			}
-		}()
+		}(t)
 	}
 	wg.Wait()
 
-	// Note: it's not possible to call t.Fatal() inside a go routine
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBlockstoreManagerClose(t *testing.T) {
+	ctx := context.Background()
+	delayTime := 20 * time.Millisecond
+	bsdelay := delay.Fixed(delayTime)
+	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
+	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
+
+	bsm := newBlockstoreManager(ctx, bstore, 3)
+	px := process.WithTeardown(func() error { return nil })
+	bsm.start(px)
+
+	blks := testutil.GenerateBlocksOfSize(3, 1024)
+	var ks []cid.Cid
+	for _, b := range blks {
+		ks = append(ks, b.Cid())
+	}
+
+	err := bstore.PutMany(blks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go px.Close()
+
+	time.Sleep(5 * time.Millisecond)
+
+	fnCallDone := make(chan struct{})
+	go func() {
+		bsm.getBlockSizes(ctx, ks)
+		fnCallDone <- struct{}{}
+	}()
+
+	select {
+	case <-fnCallDone:
+		t.Fatal("call to BlockstoreManager should be cancelled")
+	case <-px.Closed():
+	}
+}
+
+func TestBlockstoreManagerCtxDone(t *testing.T) {
+	delayTime := 20 * time.Millisecond
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), delayTime/2)
+	defer cancel()
+	bsdelay := delay.Fixed(delayTime)
+
+	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
+	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
+
+	bsm := newBlockstoreManager(ctx, bstore, 3)
+	proc := process.WithTeardown(func() error { return nil })
+	bsm.start(proc)
+
+	blks := testutil.GenerateBlocksOfSize(3, 1024)
+	var ks []cid.Cid
+	for _, b := range blks {
+		ks = append(ks, b.Cid())
+	}
+
+	err := bstore.PutMany(blks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fnCallDone := make(chan struct{})
+	go func() {
+		bsm.getBlockSizes(ctx, ks)
+		fnCallDone <- struct{}{}
+	}()
+
+	select {
+	case <-fnCallDone:
+		t.Fatal("call to BlockstoreManager should be cancelled")
+	case <-ctx.Done():
 	}
 }

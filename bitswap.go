@@ -140,8 +140,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
 	bs := &Bitswap{
-		blockstore: bstore,
-		// TODO close the engine with Close() method
+		blockstore:       bstore,
 		engine:           engine,
 		network:          network,
 		process:          px,
@@ -381,7 +380,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 
 	// This call records changes to wantlists, blocks received,
 	// and number of bytes transfered.
-	bs.engine.MessageReceived(p, incoming)
+	bs.engine.MessageReceived(ctx, p, incoming)
 	// TODO: this is bad, and could be easily abused.
 	// Should only track *useful* messages in ledger
 

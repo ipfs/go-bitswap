@@ -62,11 +62,27 @@ const (
 	outboxChanBuffer = 0
 	// maxMessageSize is the maximum size of the batched payload
 	maxMessageSize = 1024 * 1024
-	// tagPrefix is the tag given to peers associated an engine
-	tagPrefix = "bs-engine-%s"
+	// tagFormat is the tag given to peers associated an engine
+	tagFormat = "bs-engine-%s-%s"
 
-	// tagWeight is the default weight for peers associated with an engine
-	tagWeight = 5
+	// queuedTagWeight is the default weight for peers that have work queued
+	// on their behalf.
+	queuedTagWeight = 10
+
+	// the alpha for the EWMA used to track short term usefulness
+	shortTermAlpha = 0.5
+
+	// the alpha for the EWMA used to track long term usefulness
+	longTermAlpha = 0.05
+
+	// long term ratio defines what "long term" means in terms of the
+	// shortTerm duration. Peers that interact once every longTermRatio are
+	// considered useful over the long term.
+	longTermRatio = 10
+
+	// long/short term scores for tagging peers
+	longTermScore  = 10 // this is a high tag but it grows _very_ slowly.
+	shortTermScore = 10 // this is a high tag but it'll go away quickly if we aren't using the peer.
 
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
@@ -77,6 +93,14 @@ const (
 
 	// Number of concurrent workers that process requests to the blockstore
 	blockstoreWorkerCount = 128
+)
+
+var (
+	// how frequently the engine should sample usefulness. Peers that
+	// interact every shortTerm time period are considered "active".
+	//
+	// this is only a variable to make testing easier.
+	shortTerm = 10 * time.Second
 )
 
 // Envelope contains a message for a Peer.
@@ -120,8 +144,10 @@ type Engine struct {
 
 	peerTagger PeerTagger
 
-	tag  string
+	tagQueued, tagUseful string
+
 	lock sync.RWMutex // protects the fields immediatly below
+
 	// ledgerMap lists Ledgers by their Partner key.
 	ledgerMap map[peer.ID]*ledger
 
@@ -155,19 +181,21 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		taskWorkerCount:                 taskWorkerCount,
 		self:                            self,
 	}
-	e.tag = fmt.Sprintf(tagPrefix, uuid.New().String())
+	e.tagQueued = fmt.Sprintf(tagFormat, "queued", uuid.New().String())
+	e.tagUseful = fmt.Sprintf(tagFormat, "useful", uuid.New().String())
 	e.peerRequestQueue = peertaskqueue.New(
 		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
 		peertaskqueue.IgnoreFreezing(true))
+	go e.scoreWorker(ctx)
 	return e
 }
 
+// Start up workers to handle requests from other nodes for the data on this node
 func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
 	// Start up blockstore manager
-	e.bsm.start(ctx, px)
+	e.bsm.start(px)
 
-	// Start up workers to handle requests from other nodes for the data on this node
 	for i := 0; i < e.taskWorkerCount; i++ {
 		px.Go(func(px process.Process) {
 			e.taskWorker(ctx)
@@ -175,12 +203,110 @@ func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
 	}
 }
 
+// scoreWorker keeps track of how "useful" our peers are, updating scores in the
+// connection manager.
+//
+// It does this by tracking two scores: short-term usefulness and long-term
+// usefulness. Short-term usefulness is sampled frequently and highly weights
+// new observations. Long-term usefulness is sampled less frequently and highly
+// weights on long-term trends.
+//
+// In practice, we do this by keeping two EWMAs. If we see an interaction
+// within the sampling period, we record the score, otherwise, we record a 0.
+// The short-term one has a high alpha and is sampled every shortTerm period.
+// The long-term one has a low alpha and is sampled every
+// longTermRatio*shortTerm period.
+//
+// To calculate the final score, we sum the short-term and long-term scores then
+// adjust it ±25% based on our debt ratio. Peers that have historically been
+// more useful to us than we are to them get the highest score.
+func (e *Engine) scoreWorker(ctx context.Context) {
+	ticker := time.NewTicker(shortTerm)
+	defer ticker.Stop()
+
+	type update struct {
+		peer  peer.ID
+		score int
+	}
+	var (
+		lastShortUpdate, lastLongUpdate time.Time
+		updates                         []update
+	)
+
+	for i := 0; ; i = (i + 1) % longTermRatio {
+		var now time.Time
+		select {
+		case now = <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
+
+		// The long term update ticks every `longTermRatio` short
+		// intervals.
+		updateLong := i == 0
+
+		e.lock.Lock()
+		for _, ledger := range e.ledgerMap {
+			ledger.lk.Lock()
+
+			// Update the short-term score.
+			if ledger.lastExchange.After(lastShortUpdate) {
+				ledger.shortScore = ewma(ledger.shortScore, shortTermScore, shortTermAlpha)
+			} else {
+				ledger.shortScore = ewma(ledger.shortScore, 0, shortTermAlpha)
+			}
+
+			// Update the long-term score.
+			if updateLong {
+				if ledger.lastExchange.After(lastLongUpdate) {
+					ledger.longScore = ewma(ledger.longScore, longTermScore, longTermAlpha)
+				} else {
+					ledger.longScore = ewma(ledger.longScore, 0, longTermAlpha)
+				}
+			}
+
+			// Calculate the new score.
+			//
+			// The accounting score adjustment prefers peers _we_
+			// need over peers that need us. This doesn't help with
+			// leeching.
+			score := int((ledger.shortScore + ledger.longScore) * ((ledger.Accounting.Score())*.5 + .75))
+
+			// Avoid updating the connection manager unless there's a change. This can be expensive.
+			if ledger.score != score {
+				// put these in a list so we can perform the updates outside _global_ the lock.
+				updates = append(updates, update{ledger.Partner, score})
+				ledger.score = score
+			}
+			ledger.lk.Unlock()
+		}
+		e.lock.Unlock()
+
+		// record the times.
+		lastShortUpdate = now
+		if updateLong {
+			lastLongUpdate = now
+		}
+
+		// apply the updates
+		for _, update := range updates {
+			if update.score == 0 {
+				e.peerTagger.UntagPeer(update.peer, e.tagUseful)
+			} else {
+				e.peerTagger.TagPeer(update.peer, e.tagUseful, update.score)
+			}
+		}
+		// Keep the memory. It's not much and it saves us from having to allocate.
+		updates = updates[:0]
+	}
+}
+
 func (e *Engine) onPeerAdded(p peer.ID) {
-	e.peerTagger.TagPeer(p, e.tag, tagWeight)
+	e.peerTagger.TagPeer(p, e.tagQueued, queuedTagWeight)
 }
 
 func (e *Engine) onPeerRemoved(p peer.ID) {
-	e.peerTagger.UntagPeer(p, e.tag)
+	e.peerTagger.UntagPeer(p, e.tagQueued)
 }
 
 // WantlistForPeer returns the currently understood want list for a given peer
@@ -296,7 +422,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			for _, t := range blockTasks {
 				blockCids.Add(t.Identifier.(cid.Cid))
 			}
-			blks := e.bsm.getBlocks(blockCids.Keys())
+			blks := e.bsm.getBlocks(ctx, blockCids.Keys())
 
 			for _, t := range blockTasks {
 				c := t.Identifier.(cid.Cid)
@@ -398,7 +524,7 @@ func (e *Engine) Peers() []peer.ID {
 // MessageReceived is called when a message is received from a remote peer.
 // For each item in the wantlist, add a want-have or want-block entry to the
 // request queue (this is later popped off by the workerTasks)
-func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
+func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwapMessage) {
 	entries := m.Wantlist()
 
 	// if len(entries) > 0 {
@@ -431,7 +557,7 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	for _, entry := range wants {
 		wantKs.Add(entry.Cid)
 	}
-	blockSizes := e.bsm.getBlockSizes(wantKs.Keys())
+	blockSizes := e.bsm.getBlockSizes(ctx, wantKs.Keys())
 
 	// Get the ledger for the peer
 	l := e.findOrCreate(p)
@@ -481,9 +607,10 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
+		blockSize, found := blockSizes[entry.Cid]
 
 		// If the block was not found
-		if blockSizes[c] == 0 {
+		if !found {
 			// Only add the task to the queue if the requester wants a DONT_HAVE
 			if entry.SendDontHave {
 				newWorkExists = true
@@ -513,7 +640,6 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 			// The block was found, add it to the queue
 			newWorkExists = true
 
-			blockSize := blockSizes[c]
 			isWantBlock := e.sendAsBlock(entry.WantType, blockSize)
 
 			// if isWantBlock {
