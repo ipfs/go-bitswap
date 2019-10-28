@@ -24,7 +24,7 @@ func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount
 	return &blockstoreManager{
 		bs:          bs,
 		workerCount: workerCount,
-		jobs:        make(chan func(), 1),
+		jobs:        make(chan func()),
 	}
 }
 
