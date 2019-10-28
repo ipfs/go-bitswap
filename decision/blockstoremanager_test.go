@@ -147,10 +147,12 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 		ks = append(ks, b.Cid())
 	}
 
-	bstore.PutMany(blks)
+	err := bstore.PutMany(blks)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Create more concurrent requests than the number of workers
-	var err error
 	wg := sync.WaitGroup{}
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
