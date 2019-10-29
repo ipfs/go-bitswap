@@ -9,6 +9,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
+	"go.uber.org/zap"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending
@@ -39,10 +40,9 @@ func (bs *Bitswap) startWorkers(ctx context.Context, px process.Process) {
 }
 
 func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
-	idmap := logging.LoggableMap{"ID": id}
 	defer log.Debug("bitswap task worker shutting down...")
 	for {
-		log.Event(ctx, "Bitswap.TaskWorker.Loop", idmap)
+		log.Desugar().Info("Bitswap.TaskWorker.Loop", zap.Int("id", id))
 		select {
 		case nextEnvelope := <-bs.engine.Outbox():
 			select {
@@ -54,13 +54,11 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 				// TODO: Should only track *useful* messages in ledger
 				outgoing := bsmsg.New(false)
 				for _, block := range envelope.Message.Blocks() {
-					log.Event(ctx, "Bitswap.TaskWorker.Work", logging.LoggableF(func() map[string]interface{} {
-						return logging.LoggableMap{
-							"ID":     id,
-							"Target": envelope.Peer.Pretty(),
-							"Block":  block.Cid().String(),
-						}
-					}))
+					log.Desugar().Info("Bitswap.TaskWorker.Work",
+						zap.Int("id", id),
+						zap.String("target", envelope.Peer.Pretty()),
+						zap.String("block", block.Cid().String()),
+					)
 					outgoing.AddBlock(block)
 				}
 				bs.engine.MessageSent(envelope.Peer, outgoing)
@@ -121,7 +119,10 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 		}()
 		ev := logging.LoggableMap{"ID": wid}
 
-		defer log.EventBegin(ctx, "Bitswap.ProvideWorker.Work", ev, k).Done()
+		defer log.Desugar().Info("Bitswap.ProvideWorker.Work",
+			zap.Int("id", wid),
+			zap.String("cid", k.String()),
+		)
 
 		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
 		defer cancel()
@@ -134,8 +135,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 	// worker spawner, reads from bs.provideKeys until it closes, spawning a
 	// _ratelimited_ number of workers to handle each key.
 	for wid := 2; ; wid++ {
-		ev := logging.LoggableMap{"ID": 1}
-		log.Event(ctx, "Bitswap.ProvideWorker.Loop", ev)
+		log.Infow("Bitswap.ProvideWorker.Loop", "id", 1)
 
 		select {
 		case <-px.Closing():

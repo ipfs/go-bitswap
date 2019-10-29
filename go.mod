@@ -27,6 +27,7 @@ require (
 	github.com/libp2p/go-msgio v0.0.4
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/multiformats/go-multiaddr v0.1.1
+	go.uber.org/zap v1.10.0
 )
 
 go 1.12
