@@ -392,7 +392,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	// Process blocks
 	err := bs.receiveBlocksFrom(ctx, p, iblocks)
 	if err != nil {
-		log.Warningf("ReceiveMessage recvBlockFrom error: %s", err)
+		log.Warnf("ReceiveMessage recvBlockFrom error: %s", err)
 		return
 	}
 }

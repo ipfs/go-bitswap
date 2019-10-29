@@ -230,7 +230,7 @@ func (mq *MessageQueue) attemptSendAndRecovery(message bsmsg.BitSwapMessage) boo
 		return true
 	case <-time.After(time.Millisecond * 100):
 		// wait 100ms in case disconnect notifications are still propogating
-		log.Warning("SendMsg errored but neither 'done' nor context.Done() were set")
+		log.Warn("SendMsg errored but neither 'done' nor context.Done() were set")
 	}
 
 	err = mq.initializeSender()

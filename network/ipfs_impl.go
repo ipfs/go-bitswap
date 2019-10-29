@@ -85,7 +85,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	}
 
 	if err := s.SetWriteDeadline(deadline); err != nil {
-		log.Warningf("error setting deadline: %s", err)
+		log.Warnf("error setting deadline: %s", err)
 	}
 
 	switch s.Protocol() {
@@ -104,7 +104,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	}
 
 	if err := s.SetWriteDeadline(time.Time{}); err != nil {
-		log.Warningf("error resetting deadline: %s", err)
+		log.Warnf("error resetting deadline: %s", err)
 	}
 	return nil
 }

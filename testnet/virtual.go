@@ -270,7 +270,7 @@ func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	tag := tagForPeers(nc.local, p)
 	if _, ok := nc.network.conns[tag]; ok {
 		nc.network.mu.Unlock()
-		log.Warning("ALREADY CONNECTED TO PEER (is this a reconnect? test lib needs fixing)")
+		log.Warn("ALREADY CONNECTED TO PEER (is this a reconnect? test lib needs fixing)")
 		return nil
 	}
 	nc.network.conns[tag] = struct{}{}
