@@ -1031,7 +1031,7 @@ func TestSendDontHave(t *testing.T) {
 	}
 	e.ReceiveFrom(otherPeer, blks, []cid.Cid{})
 
-	// Envelope should contain 2 HAVEs / 2 blocks
+	// Envelope should contain 2 HAVEs / 1 block (all that will fit in the message)
 	_, env = getNextEnvelope(e, next, 5*time.Millisecond)
 	if env == nil {
 		t.Fatal("expected envelope")
@@ -1039,12 +1039,24 @@ func TestSendDontHave(t *testing.T) {
 	if env.Peer != partner {
 		t.Fatal("expected message to peer")
 	}
-	if len(env.Message.Blocks()) != 2 {
-		t.Fatal("expected 2 blocks")
+	if len(env.Message.Blocks()) != 1 {
+		t.Fatal("expected 1 block")
 	}
 	sentHave := env.Message.BlockPresences()
 	if len(sentHave) != 2 || sentHave[0].Type != pb.Message_Have || sentHave[1].Type != pb.Message_Have {
 		t.Fatal("expected 2 HAVEs")
+	}
+
+	// Next envelope should contain remaining block
+	_, env = getNextEnvelope(e, next, 5*time.Millisecond)
+	if env == nil {
+		t.Fatal("expected envelope")
+	}
+	if env.Peer != partner {
+		t.Fatal("expected message to peer")
+	}
+	if len(env.Message.Blocks()) != 1 {
+		t.Fatal("expected 1 block")
 	}
 }
 

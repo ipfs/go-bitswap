@@ -60,8 +60,10 @@ var log = logging.Logger("engine")
 const (
 	// outboxChanBuffer must be 0 to prevent stale messages from being sent
 	outboxChanBuffer = 0
-	// maxMessageSize is the maximum size of the batched payload
-	maxMessageSize = 1024 * 1024
+	// targetMessageSize is the ideal size of the batched payload. We try to
+	// pop this much data off the request queue, but it may be a little more
+	// or less depending on what's in the queue.
+	targetMessageSize = 16 * 1024
 	// tagFormat is the tag given to peers associated an engine
 	tagFormat = "bs-engine-%s-%s"
 
@@ -374,20 +376,20 @@ func (e *Engine) taskWorkerExit() {
 // context is cancelled before the next Envelope can be created.
 func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 	for {
-		// Pop some tasks off the request queue (up to the maximum message size)
-		p, nextTasks := e.peerRequestQueue.PopTasks(maxMessageSize)
+		// Pop some tasks off the request queue
+		p, nextTasks := e.peerRequestQueue.PopTasks(targetMessageSize)
 		for len(nextTasks) == 0 {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-e.workSignal:
-				p, nextTasks = e.peerRequestQueue.PopTasks(maxMessageSize)
+				p, nextTasks = e.peerRequestQueue.PopTasks(targetMessageSize)
 			case <-e.ticker.C:
 				// When a task is cancelled, the queue may be "frozen" for a
 				// period of time. We periodically "thaw" the queue to make
 				// sure it doesn't get stuck in a frozen state.
 				e.peerRequestQueue.ThawRound()
-				p, nextTasks = e.peerRequestQueue.PopTasks(maxMessageSize)
+				p, nextTasks = e.peerRequestQueue.PopTasks(targetMessageSize)
 			}
 		}
 
