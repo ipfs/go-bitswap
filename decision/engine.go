@@ -186,6 +186,7 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 	e.peerRequestQueue = peertaskqueue.New(
 		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
+		peertaskqueue.TaskMerger(newTaskMerger()),
 		peertaskqueue.IgnoreFreezing(true))
 	go e.scoreWorker(ctx)
 	return e
@@ -374,83 +375,67 @@ func (e *Engine) taskWorkerExit() {
 func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 	for {
 		// Pop some tasks off the request queue (up to the maximum message size)
-		p, nextTasks := e.peerRequestQueue.PopTasks("", maxMessageSize)
+		p, nextTasks := e.peerRequestQueue.PopTasks(maxMessageSize)
 		for len(nextTasks) == 0 {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-e.workSignal:
-				// On subsequent invocations pull tasks for the same peer
-				p, nextTasks = e.peerRequestQueue.PopTasks(p, maxMessageSize)
+				p, nextTasks = e.peerRequestQueue.PopTasks(maxMessageSize)
 			case <-e.ticker.C:
 				// When a task is cancelled, the queue may be "frozen" for a
 				// period of time. We periodically "thaw" the queue to make
 				// sure it doesn't get stuck in a frozen state.
 				e.peerRequestQueue.ThawRound()
-				p, nextTasks = e.peerRequestQueue.PopTasks(p, maxMessageSize)
+				p, nextTasks = e.peerRequestQueue.PopTasks(maxMessageSize)
 			}
 		}
 
 		// While there are more tasks to process
-		var msgTasks []peertask.Task
 		msg := bsmsg.New(true)
-		for len(nextTasks) > 0 {
-			// log.Debugf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			default:
-			}
 
-			msgTasks = append(msgTasks, nextTasks...)
+		// log.Debugf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
 
-			// Add DONT_HAVEs to the message
-			for _, c := range e.filterDontHaves(nextTasks) {
-				// log.Debugf("  make evlp %s->%s DONT_HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
-				msg.AddDontHave(c)
-			}
+		// Add DONT_HAVEs to the message
+		for _, c := range filterDontHaves(nextTasks) {
+			// log.Debugf("  make evlp %s->%s DONT_HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
+			msg.AddDontHave(c)
+		}
 
-			// Add HAVEs to the message
-			for _, c := range e.filterWantHaves(nextTasks) {
-				// log.Debugf("  make evlp %s->%s HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
-				msg.AddHave(c)
-			}
+		// Add HAVEs to the message
+		for _, c := range filterWantHaves(nextTasks) {
+			// log.Debugf("  make evlp %s->%s HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
+			msg.AddHave(c)
+		}
 
-			// Get requested blocks from the blockstore
-			blockTasks := e.filterWantBlocks(nextTasks)
-			blockCids := cid.NewSet()
-			for _, t := range blockTasks {
-				blockCids.Add(t.Identifier.(cid.Cid))
-			}
-			blks := e.bsm.getBlocks(ctx, blockCids.Keys())
+		// Get requested blocks from the blockstore
+		blockTasks := filterWantBlocks(nextTasks)
+		blockCids := cid.NewSet()
+		for _, t := range blockTasks {
+			blockCids.Add(t.Topic.(cid.Cid))
+		}
+		blks := e.bsm.getBlocks(ctx, blockCids.Keys())
 
-			for _, t := range blockTasks {
-				c := t.Identifier.(cid.Cid)
-				blk := blks[c]
-				// If the block was not found (it has been removed)
-				if blk == nil {
-					// If the client requested DONT_HAVE, add DONT_HAVE to the message
-					if t.SendDontHave {
-						// log.Debugf("  make evlp %s->%s DONT_HAVE (expected block) %s", lu.P(e.self), lu.P(p), lu.C(c))
-						msg.AddDontHave(c)
-					}
-				} else {
-					// Add the block to the message
-					// log.Debugf("  make evlp %s->%s block: %s (%d bytes)", lu.P(e.self), lu.P(p), lu.C(c), len(blk.RawData()))
-					msg.AddBlock(blk)
+		for _, t := range blockTasks {
+			c := t.Topic.(cid.Cid)
+			blk := blks[c]
+			// If the block was not found (it has been removed)
+			if blk == nil {
+				// If the client requested DONT_HAVE, add DONT_HAVE to the message
+				if t.Data.(*taskData).SendDontHave {
+					// log.Debugf("  make evlp %s->%s DONT_HAVE (expected block) %s", lu.P(e.self), lu.P(p), lu.C(c))
+					msg.AddDontHave(c)
 				}
+			} else {
+				// Add the block to the message
+				// log.Debugf("  make evlp %s->%s block: %s (%d bytes)", lu.P(e.self), lu.P(p), lu.C(c), len(blk.RawData()))
+				msg.AddBlock(blk)
 			}
-
-			// Ask the request queue for as much data as will fit into the
-			// remaining space in the message
-			maxTasksSize := maxMessageSize - msg.Size()
-			_, nextTasks = e.peerRequestQueue.PopTasks(p, maxTasksSize)
-			// log.Debugf("  asked rq %s->%s for %d bytes, got %d tasks", lu.P(e.self), lu.P(p), maxTasksSize, len(nextTasks))
 		}
 
 		// If there's nothing in the message, bail out
 		if msg.Empty() {
-			e.peerRequestQueue.TasksDone(p, msgTasks...)
+			e.peerRequestQueue.TasksDone(p, nextTasks...)
 			continue
 		}
 
@@ -461,46 +446,13 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			Sent: func() {
 				// Once the message has been sent, signal the request queue so
 				// it can be cleared from the queue
-				e.peerRequestQueue.TasksDone(p, msgTasks...)
+				e.peerRequestQueue.TasksDone(p, nextTasks...)
 
 				// Signal the worker to check for more work
 				e.signalNewWork()
 			},
 		}, nil
 	}
-}
-
-// Filter for DONT_HAVEs (ie the local node doesn't have the block)
-func (e *Engine) filterDontHaves(tasks []peertask.Task) []cid.Cid {
-	var ks []cid.Cid
-	for _, t := range tasks {
-		if !t.HaveBlock {
-			ks = append(ks, t.Identifier.(cid.Cid))
-		}
-	}
-	return ks
-}
-
-// Filter for want-haves
-func (e *Engine) filterWantHaves(tasks []peertask.Task) []cid.Cid {
-	var ks []cid.Cid
-	for _, t := range tasks {
-		if t.HaveBlock && !t.IsWantBlock {
-			ks = append(ks, t.Identifier.(cid.Cid))
-		}
-	}
-	return ks
-}
-
-// Filter for want-blocks
-func (e *Engine) filterWantBlocks(tasks []peertask.Task) []peertask.Task {
-	var res []peertask.Task
-	for _, t := range tasks {
-		if t.HaveBlock && t.IsWantBlock {
-			res = append(res, t)
-		}
-	}
-	return res
 }
 
 // Outbox returns a channel of one-time use Envelope channels.
@@ -626,13 +578,15 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 				// }
 
 				activeEntries = append(activeEntries, peertask.Task{
-					Identifier:   c,
-					Priority:     entry.Priority,
-					EntrySize:    e.getBlockPresenceSize(c),
-					BlockSize:    0,
-					HaveBlock:    false,
-					IsWantBlock:  isWantBlock,
-					SendDontHave: entry.SendDontHave,
+					Topic:    c,
+					Priority: entry.Priority,
+					Size:     e.getBlockPresenceSize(c),
+					Data: &taskData{
+						BlockSize:    0,
+						HaveBlock:    false,
+						IsWantBlock:  isWantBlock,
+						SendDontHave: entry.SendDontHave,
+					},
 				})
 			}
 			// log.Debugf("  not putting rq %s->%s %s (not found, SendDontHave false)\n", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
@@ -657,13 +611,15 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 				entrySize = e.getBlockPresenceSize(c)
 			}
 			activeEntries = append(activeEntries, peertask.Task{
-				Identifier:   c,
-				Priority:     entry.Priority,
-				EntrySize:    entrySize,
-				BlockSize:    blockSize,
-				HaveBlock:    true,
-				IsWantBlock:  isWantBlock,
-				SendDontHave: entry.SendDontHave,
+				Topic:    c,
+				Priority: entry.Priority,
+				Size:     entrySize,
+				Data: &taskData{
+					BlockSize:    blockSize,
+					HaveBlock:    true,
+					IsWantBlock:  isWantBlock,
+					SendDontHave: entry.SendDontHave,
+				},
 			})
 		}
 	}
@@ -738,13 +694,15 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 				}
 
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
-					Identifier:   entry.Cid,
-					Priority:     entry.Priority,
-					EntrySize:    entrySize,
-					BlockSize:    blockSize,
-					HaveBlock:    true,
-					IsWantBlock:  isWantBlock,
-					SendDontHave: false,
+					Topic:    entry.Cid,
+					Priority: entry.Priority,
+					Size:     entrySize,
+					Data: &taskData{
+						BlockSize:    blockSize,
+						HaveBlock:    true,
+						IsWantBlock:  isWantBlock,
+						SendDontHave: false,
+					},
 				})
 			}
 		}
