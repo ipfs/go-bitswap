@@ -12,12 +12,12 @@ require (
 	github.com/ipfs/go-ipfs-blocksutil v0.0.1
 	github.com/ipfs/go-ipfs-delay v0.0.1
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
-	github.com/ipfs/go-ipfs-pq v0.0.1
+	github.com/ipfs/go-ipfs-pq v0.0.0-20191101181110-8122fa6a9529
 	github.com/ipfs/go-ipfs-routing v0.1.0
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-peertaskqueue v0.1.2-0.20191028140841-a62f9b47895a
+	github.com/ipfs/go-peertaskqueue v0.1.2-0.20191101184001-142b9715f2d2
 	github.com/jbenet/goprocess v0.1.3
 	github.com/libp2p/go-buffer-pool v0.0.2
 	github.com/libp2p/go-libp2p v0.4.0
