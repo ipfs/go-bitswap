@@ -14,7 +14,7 @@ func TestPushHaveVsBlock(t *testing.T) {
 	wantHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1,
+		Work:     1,
 		Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    10,
@@ -25,7 +25,7 @@ func TestPushHaveVsBlock(t *testing.T) {
 	wantBlock := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     10,
+		Work:     10,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    10,
@@ -70,7 +70,7 @@ func TestPushSizeInfo(t *testing.T) {
 	wantBlock := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     10,
+		Work:     10,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    wantBlockBlockSize,
@@ -81,7 +81,7 @@ func TestPushSizeInfo(t *testing.T) {
 	wantBlockDontHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     2,
+		Work:     2,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    wantBlockDontHaveBlockSize,
@@ -92,7 +92,7 @@ func TestPushSizeInfo(t *testing.T) {
 	wantHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1, Data: &taskData{
+		Work:     1, Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    wantHaveBlockSize,
 			HaveBlock:    true,
@@ -102,7 +102,7 @@ func TestPushSizeInfo(t *testing.T) {
 	wantHaveDontHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1,
+		Work:     1,
 		Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    wantHaveDontHaveBlockSize,
@@ -119,12 +119,12 @@ func TestPushSizeInfo(t *testing.T) {
 		if len(popped) != 1 {
 			t.Fatalf("Expected 1 task, received %d tasks", len(popped))
 		}
-		if popped[0].Size != expSize {
-			t.Fatalf("Expected task.Size to be %d, received %d", expSize, popped[0].Size)
+		if popped[0].Work != expSize {
+			t.Fatalf("Expected task.Work to be %d, received %d", expSize, popped[0].Work)
 		}
 		td := popped[0].Data.(*taskData)
 		if td.BlockSize != expBlockSize {
-			t.Fatalf("Expected task.Size to be %d, received %d", expBlockSize, td.BlockSize)
+			t.Fatalf("Expected task.Work to be %d, received %d", expBlockSize, td.BlockSize)
 		}
 		if td.IsWantBlock != expIsWantBlock {
 			t.Fatalf("Expected task.IsWantBlock to be %t, received %t", expIsWantBlock, td.IsWantBlock)
@@ -135,41 +135,41 @@ func TestPushSizeInfo(t *testing.T) {
 	isWantHave := false
 
 	// want-block (DONT_HAVE) should have no effect on existing want-block (DONT_HAVE)
-	runTestCase([]peertask.Task{wantBlockDontHave, wantBlockDontHave}, wantBlockDontHave.Size, wantBlockDontHaveBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlockDontHave, wantBlockDontHave}, wantBlockDontHave.Work, wantBlockDontHaveBlockSize, isWantBlock)
 	// want-have (DONT_HAVE) should have no effect on existing want-block (DONT_HAVE)
-	runTestCase([]peertask.Task{wantBlockDontHave, wantHaveDontHave}, wantBlockDontHave.Size, wantBlockDontHaveBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlockDontHave, wantHaveDontHave}, wantBlockDontHave.Work, wantBlockDontHaveBlockSize, isWantBlock)
 	// want-block with size should update existing want-block (DONT_HAVE)
-	runTestCase([]peertask.Task{wantBlockDontHave, wantBlock}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlockDontHave, wantBlock}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-have with size should update existing want-block (DONT_HAVE) size,
 	// but leave it as a want-block (ie should not change it to want-have)
 	runTestCase([]peertask.Task{wantBlockDontHave, wantHave}, wantHaveBlockSize, wantHaveBlockSize, isWantBlock)
 
 	// want-block (DONT_HAVE) size should not update existing want-block with size
-	runTestCase([]peertask.Task{wantBlock, wantBlockDontHave}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlock, wantBlockDontHave}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-have (DONT_HAVE) should have no effect on existing want-block with size
-	runTestCase([]peertask.Task{wantBlock, wantHaveDontHave}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlock, wantHaveDontHave}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-block with size should have no effect on existing want-block with size
-	runTestCase([]peertask.Task{wantBlock, wantBlock}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlock, wantBlock}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-have with size should have no effect on existing want-block with size
-	runTestCase([]peertask.Task{wantBlock, wantHave}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantBlock, wantHave}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 
 	// want-block (DONT_HAVE) should update type and entry size of existing want-have (DONT_HAVE)
-	runTestCase([]peertask.Task{wantHaveDontHave, wantBlockDontHave}, wantBlockDontHave.Size, wantBlockDontHaveBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantHaveDontHave, wantBlockDontHave}, wantBlockDontHave.Work, wantBlockDontHaveBlockSize, isWantBlock)
 	// want-have (DONT_HAVE) should have no effect on existing want-have (DONT_HAVE)
-	runTestCase([]peertask.Task{wantHaveDontHave, wantHaveDontHave}, wantHaveDontHave.Size, wantHaveDontHaveBlockSize, isWantHave)
+	runTestCase([]peertask.Task{wantHaveDontHave, wantHaveDontHave}, wantHaveDontHave.Work, wantHaveDontHaveBlockSize, isWantHave)
 	// want-block with size should update existing want-have (DONT_HAVE)
-	runTestCase([]peertask.Task{wantHaveDontHave, wantBlock}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantHaveDontHave, wantBlock}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-have with size should update existing want-have (DONT_HAVE)
-	runTestCase([]peertask.Task{wantHaveDontHave, wantHave}, wantHave.Size, wantHaveBlockSize, isWantHave)
+	runTestCase([]peertask.Task{wantHaveDontHave, wantHave}, wantHave.Work, wantHaveBlockSize, isWantHave)
 
 	// want-block (DONT_HAVE) should update type and entry size of existing want-have with size
 	runTestCase([]peertask.Task{wantHave, wantBlockDontHave}, wantHaveBlockSize, wantHaveBlockSize, isWantBlock)
 	// want-have (DONT_HAVE) should not update existing want-have with size
-	runTestCase([]peertask.Task{wantHave, wantHaveDontHave}, wantHave.Size, wantHaveBlockSize, isWantHave)
+	runTestCase([]peertask.Task{wantHave, wantHaveDontHave}, wantHave.Work, wantHaveBlockSize, isWantHave)
 	// want-block with size should update type and entry size of existing want-have with size
-	runTestCase([]peertask.Task{wantHave, wantBlock}, wantBlock.Size, wantBlockBlockSize, isWantBlock)
+	runTestCase([]peertask.Task{wantHave, wantBlock}, wantBlock.Work, wantBlockBlockSize, isWantBlock)
 	// want-have should have no effect on existing want-have
-	runTestCase([]peertask.Task{wantHave, wantHave}, wantHave.Size, wantHaveBlockSize, isWantHave)
+	runTestCase([]peertask.Task{wantHave, wantHave}, wantHave.Work, wantHaveBlockSize, isWantHave)
 }
 
 func TestPushHaveVsBlockActive(t *testing.T) {
@@ -178,7 +178,7 @@ func TestPushHaveVsBlockActive(t *testing.T) {
 	wantBlock := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     10,
+		Work:     10,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    10,
@@ -189,7 +189,7 @@ func TestPushHaveVsBlockActive(t *testing.T) {
 	wantHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1,
+		Work:     1,
 		Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    10,
@@ -232,7 +232,7 @@ func TestPushSizeInfoActive(t *testing.T) {
 	wantBlock := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     10,
+		Work:     10,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    10,
@@ -243,7 +243,7 @@ func TestPushSizeInfoActive(t *testing.T) {
 	wantBlockDontHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     2,
+		Work:     2,
 		Data: &taskData{
 			IsWantBlock:  true,
 			BlockSize:    0,
@@ -254,7 +254,7 @@ func TestPushSizeInfoActive(t *testing.T) {
 	wantHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1,
+		Work:     1,
 		Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    10,
@@ -265,7 +265,7 @@ func TestPushSizeInfoActive(t *testing.T) {
 	wantHaveDontHave := peertask.Task{
 		Topic:    "1",
 		Priority: 10,
-		Size:     1,
+		Work:     1,
 		Data: &taskData{
 			IsWantBlock:  false,
 			BlockSize:    0,
@@ -294,8 +294,8 @@ func TestPushSizeInfoActive(t *testing.T) {
 			if td.IsWantBlock != expTd.IsWantBlock {
 				t.Fatalf("Expected IsWantBlock to be %t, received %t", expTd.IsWantBlock, td.IsWantBlock)
 			}
-			if task.Size != expTasks[i].Size {
-				t.Fatalf("Expected Size to be %d, received %d", expTasks[i].Size, task.Size)
+			if task.Work != expTasks[i].Work {
+				t.Fatalf("Expected Size to be %d, received %d", expTasks[i].Work, task.Work)
 			}
 		}
 	}
@@ -344,7 +344,7 @@ func cloneTasks(tasks []peertask.Task) []peertask.Task {
 		cp = append(cp, peertask.Task{
 			Topic:    t.Topic,
 			Priority: t.Priority,
-			Size:     t.Size,
+			Work:     t.Work,
 			Data: &taskData{
 				IsWantBlock:  td.IsWantBlock,
 				BlockSize:    td.BlockSize,

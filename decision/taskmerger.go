@@ -76,14 +76,14 @@ func (*taskMerger) Merge(task peertask.Task, existing *peertask.Task) {
 		if !existingTask.HaveBlock || newTask.HaveBlock {
 			// Update the entry size
 			existingTask.HaveBlock = newTask.HaveBlock
-			existing.Size = task.Size
+			existing.Work = task.Work
 		}
 	}
 
 	// If the task is a want-block, make sure the entry size is equal
 	// to the block size (because we will send the whole block)
 	if existingTask.IsWantBlock && existingTask.HaveBlock {
-		existing.Size = existingTask.BlockSize
+		existing.Work = existingTask.BlockSize
 	}
 }
 

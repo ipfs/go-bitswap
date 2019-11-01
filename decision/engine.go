@@ -582,7 +582,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 				activeEntries = append(activeEntries, peertask.Task{
 					Topic:    c,
 					Priority: entry.Priority,
-					Size:     e.getBlockPresenceSize(c),
+					Work:     e.getBlockPresenceSize(c),
 					Data: &taskData{
 						BlockSize:    0,
 						HaveBlock:    false,
@@ -615,7 +615,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 			activeEntries = append(activeEntries, peertask.Task{
 				Topic:    c,
 				Priority: entry.Priority,
-				Size:     entrySize,
+				Work:     entrySize,
 				Data: &taskData{
 					BlockSize:    blockSize,
 					HaveBlock:    true,
@@ -698,7 +698,7 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
 					Topic:    entry.Cid,
 					Priority: entry.Priority,
-					Size:     entrySize,
+					Work:     entrySize,
 					Data: &taskData{
 						BlockSize:    blockSize,
 						HaveBlock:    true,
