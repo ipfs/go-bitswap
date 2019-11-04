@@ -256,7 +256,20 @@ func (nn *netNotifiee) impl() *impl {
 	return (*impl)(nn)
 }
 
-func (nn *netNotifiee) Connected(n network.Network, v network.Conn) {}
+func (nn *netNotifiee) Connected(n network.Network, v network.Conn) {
+	netImpl := nn.impl()
+	// TODO: Detect supportsHave
+	netImpl.receiver.PeerConnected(v.RemotePeer(), true)
+}
+func (nn *netNotifiee) OpenedStream(n network.Network, s network.Stream) {
+	// netImpl := nn.impl()
+	// if !netImpl.hasConn {
+	// 	// TODO: DO I need a lock around hasConn?
+	// 	netImpl.hasConn = true
+	// 	supportsHave := netImpl.SupportsHave(s.Protocol())
+	// 	netImpl.receiver.PeerConnected(s.Conn().RemotePeer(), supportsHave)
+	// }
+}
 func (nn *netNotifiee) Disconnected(n network.Network, v network.Conn) {
 	netImpl := nn.impl()
 	// TODO: DO I need a lock around hasConn?
@@ -264,15 +277,6 @@ func (nn *netNotifiee) Disconnected(n network.Network, v network.Conn) {
 	netImpl.receiver.PeerDisconnected(v.RemotePeer())
 }
 
-func (nn *netNotifiee) OpenedStream(n network.Network, s network.Stream) {
-	netImpl := nn.impl()
-	if !netImpl.hasConn {
-		// TODO: DO I need a lock around hasConn?
-		netImpl.hasConn = true
-		supportsHave := netImpl.SupportsHave(s.Protocol())
-		netImpl.receiver.PeerConnected(s.Conn().RemotePeer(), supportsHave)
-	}
-}
 func (nn *netNotifiee) ClosedStream(n network.Network, v network.Stream) {}
 func (nn *netNotifiee) Listen(n network.Network, a ma.Multiaddr)         {}
 func (nn *netNotifiee) ListenClose(n network.Network, a ma.Multiaddr)    {}
