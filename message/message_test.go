@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	pb "github.com/ipfs/go-bitswap/message/pb"
-	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -289,102 +288,4 @@ func TestAddWantlistEntry(t *testing.T) {
 	if !e.Cancel {
 		t.Fatal("want should not override cancel")
 	}
-}
-
-func TestSplitByWantlistSizeEmptyMsg(t *testing.T) {
-	msg := New(true)
-	primary, remaining := msg.SplitByWantlistSize(10)
-	if primary == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	if len(primary.Wantlist()) != 0 {
-		t.Fatal("Expected empty want list")
-	}
-	if remaining != nil {
-		t.Fatal("Expected nil remaining BitSwapMessage")
-	}
-}
-
-func TestSplitByWantlistSizePopAll(t *testing.T) {
-	cids := generateCids(2)
-	msg := New(true)
-	msg.AddEntry(cids[0], 1, pb.Message_Wantlist_Block, true)
-	msg.AddEntry(cids[1], 1, pb.Message_Wantlist_Block, true)
-
-	primary, remaining := msg.SplitByWantlistSize(500)
-	if primary == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	if len(primary.Wantlist()) != 2 {
-		t.Fatal("Expected matching want list")
-	}
-	if remaining != nil {
-		t.Fatal("Expected nil remaining BitSwapMessage")
-	}
-}
-
-func TestSplitByWantlistSizePopNone(t *testing.T) {
-	cids := generateCids(2)
-	msg := New(true)
-	msg.AddEntry(cids[0], 1, pb.Message_Wantlist_Block, true)
-	msg.AddEntry(cids[1], 1, pb.Message_Wantlist_Block, true)
-
-	primary, remaining := msg.SplitByWantlistSize(0)
-	if primary == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	if len(primary.Wantlist()) != 0 {
-		t.Fatal("Expected nothing in primary message want list")
-	}
-	if remaining == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	if len(remaining.Wantlist()) != 2 {
-		t.Fatal("Expected all entries to be in remaining message want list")
-	}
-}
-
-func TestSplitByWantlistSizePopOrder(t *testing.T) {
-	cids := generateCids(3)
-	msg := New(true)
-	msg.AddEntry(cids[0], 1, pb.Message_Wantlist_Block, true)
-	msg.AddEntry(cids[1], 3, pb.Message_Wantlist_Block, true)
-	msg.AddEntry(cids[2], 2, pb.Message_Wantlist_Block, true)
-
-	// Should order by priority: cid1(3), cid2(2), cid0(1)
-	// primary: cid1, cid2
-	// remaining: cid0
-	// Note: entry size is 40
-	primary, remaining := msg.SplitByWantlistSize(80)
-	if primary == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	primarywl := primary.Wantlist()
-	if len(primarywl) != 2 {
-		t.Fatal("Expected top 2 entries in primary message want list")
-	}
-	if !primarywl[0].Cid.Equals(cids[1]) && !primarywl[0].Cid.Equals(cids[2]) {
-		t.Fatal("Expected top 2 entries in primary message want list")
-	}
-	if !primarywl[1].Cid.Equals(cids[1]) && !primarywl[1].Cid.Equals(cids[2]) {
-		t.Fatal("Expected top 2 entries in primary message want list")
-	}
-	if remaining == nil {
-		t.Fatal("Expected BitSwapMessage")
-	}
-	if len(remaining.Wantlist()) != 1 || !remaining.Wantlist()[0].Cid.Equals(cids[0]) {
-		t.Fatal("Expected last entry to be in remaining message want list")
-	}
-}
-
-// Note: Can't import testutil because of a circular dependency
-var blockGenerator = blocksutil.NewBlockGenerator()
-
-func generateCids(n int) []cid.Cid {
-	cids := make([]cid.Cid, 0, n)
-	for i := 0; i < n; i++ {
-		c := blockGenerator.Next().Cid()
-		cids = append(cids, c)
-	}
-	return cids
 }

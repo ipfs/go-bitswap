@@ -17,7 +17,6 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	"github.com/libp2p/go-libp2p-core/peer"
-	protocol "github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/libp2p/go-libp2p-core/routing"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -241,6 +240,10 @@ func (mp *messagePasser) Reset() error {
 	return nil
 }
 
+func (mp *messagePasser) SupportsHave() bool {
+	return true
+}
+
 func (nc *networkClient) NewMessageSender(ctx context.Context, p peer.ID) (bsnet.MessageSender, error) {
 	return &messagePasser{
 		net:    nc,
@@ -257,10 +260,6 @@ func (nc *networkClient) Provide(ctx context.Context, k cid.Cid) error {
 
 func (nc *networkClient) SetDelegate(r bsnet.Receiver) {
 	nc.Receiver = r
-}
-
-func (nc *networkClient) SupportsHave(proto protocol.ID) bool {
-	return true
 }
 
 func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
@@ -280,8 +279,8 @@ func (nc *networkClient) ConnectTo(_ context.Context, p peer.ID) error {
 	nc.network.conns[tag] = struct{}{}
 	nc.network.mu.Unlock()
 
-	otherClient.receiver.PeerConnected(nc.local, true)
-	nc.Receiver.PeerConnected(p, true)
+	otherClient.receiver.PeerConnected(nc.local)
+	nc.Receiver.PeerConnected(p)
 	return nil
 }
 

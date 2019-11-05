@@ -68,14 +68,26 @@ func (w *Wantlist) Add(c cid.Cid, priority int, wantType pb.Message_Wantlist_Wan
 }
 
 // Remove removes the given cid from the wantlist.
-func (w *Wantlist) Remove(c cid.Cid, wantType pb.Message_Wantlist_WantType) bool {
+func (w *Wantlist) Remove(c cid.Cid) bool {
+	_, ok := w.set[c]
+	if !ok {
+		return false
+	}
+
+	delete(w.set, c)
+	return true
+}
+
+// Remove removes the given cid from the wantlist, respecting the type:
+// Remove with want-have will not remove an existing want-block.
+func (w *Wantlist) RemoveType(c cid.Cid, wantType pb.Message_Wantlist_WantType) bool {
 	e, ok := w.set[c]
 	if !ok {
 		return false
 	}
 
 	// Removing want-have should not remove want-block
-	if e.WantType == pb.Message_Wantlist_Block && wantType == pb.Message_Wantlist_Have {	
+	if e.WantType == pb.Message_Wantlist_Block && wantType == pb.Message_Wantlist_Have {
 		return false
 	}
 
@@ -104,4 +116,11 @@ func (w *Wantlist) SortedEntries() []Entry {
 	es := w.Entries()
 	sort.Sort(entrySlice(es))
 	return es
+}
+
+// Absorb all the entries in other into this want list
+func (w *Wantlist) Absorb(other *Wantlist) {
+	for _, e := range other.Entries() {
+		w.Add(e.Cid, e.Priority, e.WantType)
+	}
 }

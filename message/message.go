@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sort"
 
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	"github.com/ipfs/go-bitswap/wantlist"
@@ -31,9 +30,9 @@ type BitSwapMessage interface {
 	DontHaves() []cid.Cid
 
 	// AddEntry adds an entry to the Wantlist.
-	AddEntry(key cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool)
+	AddEntry(key cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) int
 
-	Cancel(key cid.Cid)
+	Cancel(key cid.Cid) int
 
 	Empty() bool
 	Size() int
@@ -46,8 +45,6 @@ type BitSwapMessage interface {
 	AddHave(cid.Cid)
 	AddDontHave(cid.Cid)
 	Exportable
-
-	SplitByWantlistSize(maxSize int) (BitSwapMessage, BitSwapMessage)
 
 	Loggable() map[string]interface{}
 }
@@ -195,15 +192,15 @@ func (m *impl) getBlockPresenceByType(t pb.Message_BlockPresenceType) []cid.Cid 
 	return cids
 }
 
-func (m *impl) Cancel(k cid.Cid) {
-	m.addEntry(k, 0, true, pb.Message_Wantlist_Block, false)
+func (m *impl) Cancel(k cid.Cid) int {
+	return m.addEntry(k, 0, true, pb.Message_Wantlist_Block, false)
 }
 
-func (m *impl) AddEntry(k cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) {
-	m.addEntry(k, priority, false, wantType, sendDontHave)
+func (m *impl) AddEntry(k cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) int {
+	return m.addEntry(k, priority, false, wantType, sendDontHave)
 }
 
-func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Message_Wantlist_WantType, sendDontHave bool) {
+func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Message_Wantlist_WantType, sendDontHave bool) int {
 	e, exists := m.wantlist[c]
 	if exists {
 		// Only change priority if want is of the same type
@@ -223,17 +220,22 @@ func (m *impl) addEntry(c cid.Cid, priority int, cancel bool, wantType pb.Messag
 			e.WantType = wantType
 		}
 		m.wantlist[c] = e
-	} else {
-		m.wantlist[c] = &Entry{
-			Entry: wantlist.Entry{
-				Cid:      c,
-				Priority: priority,
-				WantType: wantType,
-			},
-			SendDontHave: sendDontHave,
-			Cancel:       cancel,
-		}
+		return 0
 	}
+
+	e = &Entry{
+		Entry: wantlist.Entry{
+			Cid:      c,
+			Priority: priority,
+			WantType: wantType,
+		},
+		SendDontHave: sendDontHave,
+		Cancel:       cancel,
+	}
+	m.wantlist[c] = e
+
+	aspb := entryToPB(e)
+	return aspb.Size()
 }
 
 func (m *impl) AddBlock(b blocks.Block) {
@@ -273,8 +275,10 @@ func (m *impl) Size() int {
 }
 
 func BlockPresenceSize(c cid.Cid) int {
-	// TODO: is type actually one byte when we the message is marshalled?
-	return len(c.Bytes()) + 1
+	return (&pb.Message_BlockPresence{
+		Cid:  c.Bytes(),
+		Type: pb.Message_Have,
+	}).Size()
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.
@@ -360,42 +364,6 @@ func (m *impl) ToNetV0(w io.Writer) error {
 
 func (m *impl) ToNetV1(w io.Writer) error {
 	return write(w, m.ToProtoV1())
-}
-
-func (m *impl) SplitByWantlistSize(maxSize int) (BitSwapMessage, BitSwapMessage) {
-	// Order entries by priority
-	entries := m.Wantlist()
-	sort.Slice(entries, func(i int, j int) bool {
-		return entries[i].Priority > entries[j].Priority
-	})
-
-	// Create a new message and add entries to it up to the size limit
-	message := New(m.Full()).(*impl)
-	total := 0
-	added := 0
-	for i := 0; i < len(entries) && total < maxSize; i++ {
-		e := entries[i]
-		epb := entryToPB(&e)
-		size := epb.Size()
-		total += size
-		if total <= maxSize {
-			added++
-			message.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
-		}
-	}
-
-	// If all the entries were added, we're done
-	if added >= len(entries) {
-		return message, nil
-	}
-
-	// Add the remaining entries to a second message
-	remainder := New(m.Full()).(*impl)
-	for i := added; i < len(entries); i++ {
-		e := entries[i]
-		remainder.addEntry(e.Cid, e.Priority, e.Cancel, e.WantType, e.SendDontHave)
-	}
-	return message, remainder
 }
 
 func write(w io.Writer, m *pb.Message) error {

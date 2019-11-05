@@ -66,7 +66,7 @@ func TestBasicWantlist(t *testing.T) {
 		t.Fatal("should have had two items")
 	}
 
-	if !wl.Remove(testcids[0], pb.Message_Wantlist_Block) {
+	if !wl.RemoveType(testcids[0], pb.Message_Wantlist_Block) {
 		t.Fatal("should have gotten true")
 	}
 
@@ -110,7 +110,7 @@ func TestAddHaveThenRemoveBlock(t *testing.T) {
 	wl := New()
 
 	wl.Add(testcids[0], 5, pb.Message_Wantlist_Have)
-	wl.Remove(testcids[0], pb.Message_Wantlist_Block)
+	wl.RemoveType(testcids[0], pb.Message_Wantlist_Block)
 
 	_, ok := wl.Contains(testcids[0])
 	if ok {
@@ -122,7 +122,7 @@ func TestAddBlockThenRemoveHave(t *testing.T) {
 	wl := New()
 
 	wl.Add(testcids[0], 5, pb.Message_Wantlist_Block)
-	wl.Remove(testcids[0], pb.Message_Wantlist_Have)
+	wl.RemoveType(testcids[0], pb.Message_Wantlist_Have)
 
 	e, ok := wl.Contains(testcids[0])
 	if !ok {
@@ -130,6 +130,76 @@ func TestAddBlockThenRemoveHave(t *testing.T) {
 	}
 	if e.WantType != pb.Message_Wantlist_Block {
 		t.Fatal("expected to be ", pb.Message_Wantlist_Block)
+	}
+}
+
+func TestAddHaveThenRemoveAny(t *testing.T) {
+	wl := New()
+
+	wl.Add(testcids[0], 5, pb.Message_Wantlist_Have)
+	wl.Remove(testcids[0])
+
+	_, ok := wl.Contains(testcids[0])
+	if ok {
+		t.Fatal("expected not to have ", testcids[0])
+	}
+}
+
+func TestAddBlockThenRemoveAny(t *testing.T) {
+	wl := New()
+
+	wl.Add(testcids[0], 5, pb.Message_Wantlist_Block)
+	wl.Remove(testcids[0])
+
+	_, ok := wl.Contains(testcids[0])
+	if ok {
+		t.Fatal("expected not to have ", testcids[0])
+	}
+}
+
+func TestAbsort(t *testing.T) {
+	wl := New()
+	wl.Add(testcids[0], 5, pb.Message_Wantlist_Block)
+	wl.Add(testcids[1], 4, pb.Message_Wantlist_Have)
+	wl.Add(testcids[2], 3, pb.Message_Wantlist_Have)
+
+	wl2 := New()
+	wl2.Add(testcids[0], 2, pb.Message_Wantlist_Have)
+	wl2.Add(testcids[1], 1, pb.Message_Wantlist_Block)
+
+	wl.Absorb(wl2)
+
+	e, ok := wl.Contains(testcids[0])
+	if !ok {
+		t.Fatal("expected to have ", testcids[0])
+	}
+	if e.Priority != 5 {
+		t.Fatal("expected priority 5")
+	}
+	if e.WantType != pb.Message_Wantlist_Block {
+		t.Fatal("expected type ", pb.Message_Wantlist_Block)
+	}
+
+	e, ok = wl.Contains(testcids[1])
+	if !ok {
+		t.Fatal("expected to have ", testcids[1])
+	}
+	if e.Priority != 1 {
+		t.Fatal("expected priority 1")
+	}
+	if e.WantType != pb.Message_Wantlist_Block {
+		t.Fatal("expected type ", pb.Message_Wantlist_Block)
+	}
+
+	e, ok = wl.Contains(testcids[2])
+	if !ok {
+		t.Fatal("expected to have ", testcids[2])
+	}
+	if e.Priority != 3 {
+		t.Fatal("expected priority 3")
+	}
+	if e.WantType != pb.Message_Wantlist_Have {
+		t.Fatal("expected type ", pb.Message_Wantlist_Have)
 	}
 }
 

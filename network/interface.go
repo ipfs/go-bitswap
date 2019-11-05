@@ -43,8 +43,6 @@ type BitSwapNetwork interface {
 
 	ConnectionManager() connmgr.ConnManager
 
-	SupportsHave(protocol.ID) bool
-
 	Stats() Stats
 
 	Routing
@@ -56,6 +54,8 @@ type MessageSender interface {
 	SendMsg(context.Context, bsmsg.BitSwapMessage) error
 	Close() error
 	Reset() error
+	// Indicates whether the remote peer supports HAVE / DONT_HAVE messages
+	SupportsHave() bool
 }
 
 // Receiver is an interface that can receive messages from the BitSwapNetwork.
@@ -68,7 +68,7 @@ type Receiver interface {
 	ReceiveError(error)
 
 	// Connected/Disconnected warns bitswap about peer connections.
-	PeerConnected(peer.ID, bool)
+	PeerConnected(peer.ID)
 	PeerDisconnected(peer.ID)
 }
 

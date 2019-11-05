@@ -94,7 +94,7 @@ func (lam *lambdaImpl) ReceiveError(err error) {
 	// TODO log error
 }
 
-func (lam *lambdaImpl) PeerConnected(p peer.ID, supportsHave bool) {
+func (lam *lambdaImpl) PeerConnected(p peer.ID) {
 	// TODO
 }
 func (lam *lambdaImpl) PeerDisconnected(peer.ID) {

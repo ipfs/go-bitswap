@@ -766,7 +766,7 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 	// Remove sent blocks from the want list for the peer
 	for _, block := range m.Blocks() {
 		l.SentBytes(len(block.RawData()))
-		l.wantList.Remove(block.Cid(), pb.Message_Wantlist_Block)
+		l.wantList.RemoveType(block.Cid(), pb.Message_Wantlist_Block)
 	}
 
 	// Remove sent block presences from the want list for the peer
@@ -778,7 +778,7 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 			if err != nil {
 				panic(err)
 			}
-			l.wantList.Remove(c, pb.Message_Wantlist_Have)
+			l.wantList.RemoveType(c, pb.Message_Wantlist_Have)
 		}
 	}
 }

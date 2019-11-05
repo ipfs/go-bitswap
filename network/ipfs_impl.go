@@ -82,6 +82,10 @@ func (s *streamMessageSender) SendMsg(ctx context.Context, msg bsmsg.BitSwapMess
 	return s.bsnet.msgToStream(ctx, s.s, msg)
 }
 
+func (s *streamMessageSender) SupportsHave() bool {
+	return s.bsnet.SupportsHave(s.s.Protocol())
+}
+
 func (bsnet *impl) Self() peer.ID {
 	return bsnet.host.ID()
 }
@@ -257,26 +261,12 @@ func (nn *netNotifiee) impl() *impl {
 }
 
 func (nn *netNotifiee) Connected(n network.Network, v network.Conn) {
-	netImpl := nn.impl()
-	// TODO: Detect supportsHave
-	netImpl.receiver.PeerConnected(v.RemotePeer(), true)
-}
-func (nn *netNotifiee) OpenedStream(n network.Network, s network.Stream) {
-	// netImpl := nn.impl()
-	// if !netImpl.hasConn {
-	// 	// TODO: DO I need a lock around hasConn?
-	// 	netImpl.hasConn = true
-	// 	supportsHave := netImpl.SupportsHave(s.Protocol())
-	// 	netImpl.receiver.PeerConnected(s.Conn().RemotePeer(), supportsHave)
-	// }
+	nn.impl().receiver.PeerConnected(v.RemotePeer())
 }
 func (nn *netNotifiee) Disconnected(n network.Network, v network.Conn) {
-	netImpl := nn.impl()
-	// TODO: DO I need a lock around hasConn?
-	netImpl.hasConn = false
-	netImpl.receiver.PeerDisconnected(v.RemotePeer())
+	nn.impl().receiver.PeerDisconnected(v.RemotePeer())
 }
-
+func (nn *netNotifiee) OpenedStream(n network.Network, s network.Stream) {}
 func (nn *netNotifiee) ClosedStream(n network.Network, v network.Stream) {}
 func (nn *netNotifiee) Listen(n network.Network, a ma.Multiaddr)         {}
 func (nn *netNotifiee) ListenClose(n network.Network, a ma.Multiaddr)    {}

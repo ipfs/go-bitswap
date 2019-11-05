@@ -39,14 +39,16 @@ type fakeMessageSender struct {
 	fullClosed   chan<- struct{}
 	reset        chan<- struct{}
 	messagesSent chan<- bsmsg.BitSwapMessage
+	supportsHave bool
 }
 
 func (fms *fakeMessageSender) SendMsg(ctx context.Context, msg bsmsg.BitSwapMessage) error {
 	fms.messagesSent <- msg
 	return fms.sendError
 }
-func (fms *fakeMessageSender) Close() error { fms.fullClosed <- struct{}{}; return nil }
-func (fms *fakeMessageSender) Reset() error { fms.reset <- struct{}{}; return nil }
+func (fms *fakeMessageSender) Close() error       { fms.fullClosed <- struct{}{}; return nil }
+func (fms *fakeMessageSender) Reset() error       { fms.reset <- struct{}{}; return nil }
+func (fms *fakeMessageSender) SupportsHave() bool { return fms.supportsHave }
 
 func collectMessages(ctx context.Context,
 	t *testing.T,
@@ -78,10 +80,10 @@ func TestStartupAndShutdown(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, true, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	bcstwh := testutil.GenerateCids(10)
 
 	messageQueue.Startup()
@@ -119,10 +121,10 @@ func TestSendingMessagesDeduped(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, true, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
 
@@ -141,10 +143,10 @@ func TestSendingMessagesPartialDupe(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, true, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
 
@@ -163,10 +165,10 @@ func TestSendingMessagesPriority(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, true, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	wantHaves1 := testutil.GenerateCids(5)
 	wantHaves2 := testutil.GenerateCids(5)
 	wantHaves := append(wantHaves1, wantHaves2...)
@@ -231,10 +233,10 @@ func TestWantlistRebroadcast(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
-	messageQueue := New(ctx, peerID, true, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	bcstwh := testutil.GenerateCids(10)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks := testutil.GenerateCids(10)
@@ -327,23 +329,24 @@ func TestSendingLargeMessages(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 
 	wantBlocks := testutil.GenerateCids(10)
-	maxMsgSize := 46 * 3 // 3 wants
-	messageQueue := newMessageQueue(ctx, peerID, true, fakenet, maxMsgSize)
+	entrySize := 44
+	maxMsgSize := entrySize * 3 // 3 wants
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize)
 
 	messageQueue.Startup()
 	messageQueue.AddWants(wantBlocks, []cid.Cid{})
 	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
 
-	// want-block has size 46, so with maxMsgSize 46 * 3 (3 want-blocks), then if
+	// want-block has size 44, so with maxMsgSize 44 * 3 (3 want-blocks), then if
 	// we send 10 want-blocks we should expect 4 messages:
 	// [***] [***] [***] [*]
 	if len(messages) != 4 {
-		t.Fatal("wrong number of messages were sent", len(messages))
+		t.Fatal("expected 4 messages to be sent, got", len(messages))
 	}
 	if totalEntriesLength(messages) != len(wantBlocks) {
 		t.Fatal("wrong number of wants")
@@ -355,12 +358,11 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 	messagesSent := make(chan bsmsg.BitSwapMessage)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, false}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 
-	supportsHave := false
-	messageQueue := New(ctx, peerID, supportsHave, fakenet)
+	messageQueue := New(ctx, peerID, fakenet)
 	messageQueue.Startup()
 
 	// If the remote peer doesn't support HAVE / DONT_HAVE messages

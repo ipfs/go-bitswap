@@ -2,13 +2,11 @@ package network_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
-	"github.com/ipfs/go-bitswap/network"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
@@ -42,7 +40,7 @@ func (r *receiver) ReceiveMessage(
 func (r *receiver) ReceiveError(err error) {
 }
 
-func (r *receiver) PeerConnected(p peer.ID, supportsHave bool) {
+func (r *receiver) PeerConnected(p peer.ID) {
 	r.peers[p] = struct{}{}
 	r.connectionEvent <- struct{}{}
 }
@@ -51,6 +49,7 @@ func (r *receiver) PeerDisconnected(p peer.ID) {
 	delete(r.peers, p)
 	r.connectionEvent <- struct{}{}
 }
+
 func TestMessageSendAndReceive(t *testing.T) {
 	// create network
 	ctx := context.Background()
@@ -172,18 +171,42 @@ func TestSupportsHave(t *testing.T) {
 		t.Fatal("Unable to setup network")
 	}
 	p1 := tnet.RandIdentityOrFatal(t)
-	bsnet1 := streamNet.Adapter(p1)
+	p2 := tnet.RandIdentityOrFatal(t)
 
-	if bsnet1.SupportsHave(network.ProtocolBitswapNoVers) {
-		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapNoVers))
+	bsnet1 := streamNet.Adapter(p1)
+	bsnet2 := streamNet.Adapter(p2)
+
+	r1 := &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
 	}
-	if bsnet1.SupportsHave(network.ProtocolBitswapOne) {
-		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapOne))
+	r2 := &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
 	}
-	if bsnet1.SupportsHave(network.ProtocolBitswapOneOne) {
-		t.Fatal(fmt.Sprintf("Expected %s not to support HAVEs", network.ProtocolBitswapOneOne))
+
+	bsnet1.SetDelegate(r1)
+	bsnet2.SetDelegate(r2)
+
+	err = mn.LinkAll()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !bsnet1.SupportsHave(network.ProtocolBitswap) {
-		t.Fatal(fmt.Sprintf("Expected %s to support HAVEs", network.ProtocolBitswap))
+
+	sender, err := bsnet1.NewMessageSender(ctx, p2.ID())
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	if !sender.SupportsHave() {
+		t.Fatal("Expected sender to support have messages")
+	}
+
+	// TODO: Test that peers with the following protocols do not support have messages:
+	// network.ProtocolBitswapNoVers
+	// network.ProtocolBitswapOne
+	// network.ProtocolBitswapOneOne
+	// network.ProtocolBitswap
 }
