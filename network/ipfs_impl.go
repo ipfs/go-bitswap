@@ -29,21 +29,38 @@ var sendMessageTimeout = time.Minute * 10
 
 // NewFromIpfsHost returns a BitSwapNetwork supported by underlying IPFS host.
 func NewFromIpfsHost(host host.Host, r routing.ContentRouting, opts ...NetOpt) BitSwapNetwork {
-	s := Settings{}
-	for _, opt := range opts {
-		opt(&s)
-	}
+	s := processSettings(opts...)
 
 	bitswapNetwork := impl{
 		host:    host,
 		routing: r,
 
-		protocolBitswapNoVers: s.ProtocolPrefix + ProtocolBitswapNoVers,
-		protocolBitswapOne:    s.ProtocolPrefix + ProtocolBitswapOne,
-		protocolBitswapOneOne: s.ProtocolPrefix + ProtocolBitswapOneOne,
-		protocolBitswap:       s.ProtocolPrefix + ProtocolBitswap,
+		protocolBitswapNoVers:  s.ProtocolPrefix + ProtocolBitswapNoVers,
+		protocolBitswapOneZero: s.ProtocolPrefix + ProtocolBitswapOneZero,
+		protocolBitswapOneOne:  s.ProtocolPrefix + ProtocolBitswapOneOne,
+		protocolBitswap:        s.ProtocolPrefix + ProtocolBitswap,
+
+		supportedProtocols: s.SupportedProtocols,
 	}
 	return &bitswapNetwork
+}
+
+func processSettings(opts ...NetOpt) Settings {
+	s := Settings{
+		SupportedProtocols: []protocol.ID{
+			ProtocolBitswap,
+			ProtocolBitswapOneOne,
+			ProtocolBitswapOneZero,
+			ProtocolBitswapNoVers,
+		},
+	}
+	for _, opt := range opts {
+		opt(&s)
+	}
+	for i, proto := range s.SupportedProtocols {
+		s.SupportedProtocols[i] = s.ProtocolPrefix + proto
+	}
+	return s
 }
 
 // impl transforms the ipfs network interface, which sends and receives
@@ -52,10 +69,12 @@ type impl struct {
 	host    host.Host
 	routing routing.ContentRouting
 
-	protocolBitswapNoVers protocol.ID
-	protocolBitswapOne    protocol.ID
-	protocolBitswapOneOne protocol.ID
-	protocolBitswap       protocol.ID
+	protocolBitswapNoVers  protocol.ID
+	protocolBitswapOneZero protocol.ID
+	protocolBitswapOneOne  protocol.ID
+	protocolBitswap        protocol.ID
+
+	supportedProtocols []protocol.ID
 
 	hasConn bool
 
@@ -92,7 +111,7 @@ func (bsnet *impl) Self() peer.ID {
 
 func (bsnet *impl) SupportsHave(proto protocol.ID) bool {
 	switch proto {
-	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswapOne, bsnet.protocolBitswapNoVers:
+	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswapOneZero, bsnet.protocolBitswapNoVers:
 		return false
 	}
 	return true
@@ -114,7 +133,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 			log.Debugf("error: %s", err)
 			return err
 		}
-	case bsnet.protocolBitswapOne, bsnet.protocolBitswapNoVers:
+	case bsnet.protocolBitswapOneZero, bsnet.protocolBitswapNoVers:
 		if err := msg.ToNetV0(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
@@ -142,7 +161,7 @@ func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stre
 	return bsnet.host.NewStream(ctx, p,
 		bsnet.protocolBitswap,
 		bsnet.protocolBitswapOneOne,
-		bsnet.protocolBitswapOne,
+		bsnet.protocolBitswapOneZero,
 		bsnet.protocolBitswapNoVers)
 }
 
@@ -171,10 +190,9 @@ func (bsnet *impl) SendMessage(
 
 func (bsnet *impl) SetDelegate(r Receiver) {
 	bsnet.receiver = r
-	bsnet.host.SetStreamHandler(bsnet.protocolBitswap, bsnet.handleNewStream)
-	bsnet.host.SetStreamHandler(bsnet.protocolBitswapOneOne, bsnet.handleNewStream)
-	bsnet.host.SetStreamHandler(bsnet.protocolBitswapOne, bsnet.handleNewStream)
-	bsnet.host.SetStreamHandler(bsnet.protocolBitswapNoVers, bsnet.handleNewStream)
+	for _, proto := range bsnet.supportedProtocols {
+		bsnet.host.SetStreamHandler(proto, bsnet.handleNewStream)
+	}
 	bsnet.host.Network().Notify((*netNotifiee)(bsnet))
 	// TODO: StopNotify.
 

@@ -7,11 +7,13 @@ import (
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
+	bsnet "github.com/ipfs/go-bitswap/network"
 	tn "github.com/ipfs/go-bitswap/testnet"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
@@ -23,6 +25,14 @@ type receiver struct {
 	connectionEvent chan struct{}
 	lastMessage     bsmsg.BitSwapMessage
 	lastSender      peer.ID
+}
+
+func newReceiver() *receiver {
+	return &receiver{
+		peers:           make(map[peer.ID]struct{}),
+		messageReceived: make(chan struct{}),
+		connectionEvent: make(chan struct{}, 1),
+	}
 }
 
 func (r *receiver) ReceiveMessage(
@@ -66,16 +76,8 @@ func TestMessageSendAndReceive(t *testing.T) {
 
 	bsnet1 := streamNet.Adapter(p1)
 	bsnet2 := streamNet.Adapter(p2)
-	r1 := &receiver{
-		peers:           make(map[peer.ID]struct{}),
-		messageReceived: make(chan struct{}),
-		connectionEvent: make(chan struct{}, 1),
-	}
-	r2 := &receiver{
-		peers:           make(map[peer.ID]struct{}),
-		messageReceived: make(chan struct{}),
-		connectionEvent: make(chan struct{}, 1),
-	}
+	r1 := newReceiver()
+	r2 := newReceiver()
 	bsnet1.SetDelegate(r1)
 	bsnet2.SetDelegate(r2)
 
@@ -170,43 +172,40 @@ func TestSupportsHave(t *testing.T) {
 	if err != nil {
 		t.Fatal("Unable to setup network")
 	}
-	p1 := tnet.RandIdentityOrFatal(t)
-	p2 := tnet.RandIdentityOrFatal(t)
 
-	bsnet1 := streamNet.Adapter(p1)
-	bsnet2 := streamNet.Adapter(p2)
-
-	r1 := &receiver{
-		peers:           make(map[peer.ID]struct{}),
-		messageReceived: make(chan struct{}),
-		connectionEvent: make(chan struct{}, 1),
-	}
-	r2 := &receiver{
-		peers:           make(map[peer.ID]struct{}),
-		messageReceived: make(chan struct{}),
-		connectionEvent: make(chan struct{}, 1),
+	type testCase struct {
+		proto           protocol.ID
+		expSupportsHave bool
 	}
 
-	bsnet1.SetDelegate(r1)
-	bsnet2.SetDelegate(r2)
-
-	err = mn.LinkAll()
-	if err != nil {
-		t.Fatal(err)
+	testCases := []testCase{
+		testCase{bsnet.ProtocolBitswap, true},
+		testCase{bsnet.ProtocolBitswapOneOne, false},
+		testCase{bsnet.ProtocolBitswapOneZero, false},
+		testCase{bsnet.ProtocolBitswapNoVers, false},
 	}
 
-	sender, err := bsnet1.NewMessageSender(ctx, p2.ID())
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, tc := range testCases {
+		p1 := tnet.RandIdentityOrFatal(t)
+		bsnet1 := streamNet.Adapter(p1)
+		bsnet1.SetDelegate(newReceiver())
 
-	if !sender.SupportsHave() {
-		t.Fatal("Expected sender to support have messages")
-	}
+		p2 := tnet.RandIdentityOrFatal(t)
+		bsnet2 := streamNet.Adapter(p2, bsnet.SupportedProtocols([]protocol.ID{tc.proto}))
+		bsnet2.SetDelegate(newReceiver())
 
-	// TODO: Test that peers with the following protocols do not support have messages:
-	// network.ProtocolBitswapNoVers
-	// network.ProtocolBitswapOne
-	// network.ProtocolBitswapOneOne
-	// network.ProtocolBitswap
+		err = mn.LinkAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		senderCurrent, err := bsnet1.NewMessageSender(ctx, p2.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if senderCurrent.SupportsHave() != tc.expSupportsHave {
+			t.Fatal("Expected sender HAVE message support", tc.proto, tc.expSupportsHave)
+		}
+	}
 }

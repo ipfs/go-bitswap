@@ -13,7 +13,7 @@ import (
 )
 
 type PeerHandler interface {
-	Connected(p peer.ID, supportsHave bool, initialWants []cid.Cid)
+	Connected(p peer.ID, initialWants []cid.Cid)
 	Disconnected(p peer.ID)
 	BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid)
 	SendCancels(context.Context, []cid.Cid)
@@ -89,10 +89,10 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 }
 
 // Connected is called when a new peer connects
-func (wm *WantManager) Connected(p peer.ID, supportsHave bool) {
+func (wm *WantManager) Connected(p peer.ID) {
 	// Tell the peer handler that there is a new connection and give it the
 	// list of outstanding broadcast wants
-	wm.peerHandler.Connected(p, supportsHave, wm.bcwl.Keys())
+	wm.peerHandler.Connected(p, wm.bcwl.Keys())
 }
 
 // Disconnected is called when a peer disconnects

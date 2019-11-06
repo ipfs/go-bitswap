@@ -19,7 +19,7 @@ type fakePeerHandler struct {
 	lastCancels      []cid.Cid
 }
 
-func (fph *fakePeerHandler) Connected(p peer.ID, supportsHave bool, initialWants []cid.Cid) {
+func (fph *fakePeerHandler) Connected(p peer.ID, initialWants []cid.Cid) {
 	fph.lastInitialWants = initialWants
 }
 func (fph *fakePeerHandler) Disconnected(p peer.ID) {
@@ -51,7 +51,7 @@ func TestInitialBroadcastWantsAddedCorrectly(t *testing.T) {
 	peers := testutil.GeneratePeers(3)
 
 	// Connect peer 0. Should not receive anything yet.
-	wm.Connected(peers[0], true)
+	wm.Connected(peers[0])
 	if len(ph.lastInitialWants) != 0 {
 		t.Fatal("expected no initial wants")
 	}
@@ -64,7 +64,7 @@ func TestInitialBroadcastWantsAddedCorrectly(t *testing.T) {
 	}
 
 	// Connect peer 1. Should receive all wants broadcast so far.
-	wm.Connected(peers[1], true)
+	wm.Connected(peers[1])
 	if len(ph.lastInitialWants) != 2 {
 		t.Fatal("expected broadcast wants")
 	}
@@ -77,7 +77,7 @@ func TestInitialBroadcastWantsAddedCorrectly(t *testing.T) {
 	}
 
 	// Connect peer 2. Should receive all wants broadcast so far.
-	wm.Connected(peers[2], true)
+	wm.Connected(peers[2])
 	if len(ph.lastInitialWants) != 5 {
 		t.Fatal("expected all wants to be broadcast")
 	}
@@ -102,7 +102,7 @@ func TestReceiveFromRemovesBroadcastWants(t *testing.T) {
 	}
 
 	// Connect peer 0. Should receive all wants.
-	wm.Connected(peers[0], true)
+	wm.Connected(peers[0])
 	if len(ph.lastInitialWants) != 2 {
 		t.Fatal("expected broadcast wants")
 	}
@@ -115,7 +115,7 @@ func TestReceiveFromRemovesBroadcastWants(t *testing.T) {
 
 	// Connect peer 2. Should get remaining want (the one that the block has
 	// not yet been received for).
-	wm.Connected(peers[2], true)
+	wm.Connected(peers[2])
 	if len(ph.lastInitialWants) != 1 {
 		t.Fatal("expected remaining wants")
 	}
@@ -141,7 +141,7 @@ func TestRemoveSessionRemovesBroadcastWants(t *testing.T) {
 	wm.BroadcastWantHaves(ctx, ses1, ses1wants)
 
 	// Connect peer 0. Should receive all wants.
-	wm.Connected(peers[0], true)
+	wm.Connected(peers[0])
 	if len(ph.lastInitialWants) != 4 {
 		t.Fatal("expected broadcast wants")
 	}
@@ -151,7 +151,7 @@ func TestRemoveSessionRemovesBroadcastWants(t *testing.T) {
 
 	// Connect peer 1. Should receive all wants from session that has not been
 	// removed.
-	wm.Connected(peers[1], true)
+	wm.Connected(peers[1])
 	if len(ph.lastInitialWants) != 2 {
 		t.Fatal("expected broadcast wants")
 	}

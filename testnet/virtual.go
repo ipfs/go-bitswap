@@ -84,7 +84,7 @@ type receiverQueue struct {
 	lk       sync.Mutex
 }
 
-func (n *network) Adapter(p tnet.Identity) bsnet.BitSwapNetwork {
+func (n *network) Adapter(p tnet.Identity, opts ...bsnet.NetOpt) bsnet.BitSwapNetwork {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
