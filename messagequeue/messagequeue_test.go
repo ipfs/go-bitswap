@@ -458,3 +458,56 @@ func TestResendAfterError(t *testing.T) {
 		t.Fatal("Expected subsequent send to succeed")
 	}
 }
+
+func TestResendAfterMaxRetries(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
+	resetChan := make(chan struct{}, maxRetries*2)
+	fullClosedChan := make(chan struct{}, 1)
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	sendErrBackoff := 2 * time.Millisecond
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff)
+	wantBlocks := testutil.GenerateCids(10)
+	wantHaves := testutil.GenerateCids(10)
+	wantBlocks2 := testutil.GenerateCids(10)
+	wantHaves2 := testutil.GenerateCids(10)
+
+	messageQueue.Startup()
+
+	var errs []error
+	go func() {
+		for len(errs) < maxRetries {
+			err := <-sendErrors
+			errs = append(errs, err)
+		}
+	}()
+
+	// Make the first group of send attempts error out
+	fakeSender.sendError = errors.New("send err")
+	messageQueue.AddWants(wantBlocks, wantHaves)
+	messages := collectMessages(ctx, t, messagesSent, 50*time.Millisecond)
+
+	if len(errs) != maxRetries {
+		t.Fatal("Expected maxRetries errors, got", len(errs))
+	}
+
+	// No successful send after max retries, so expect no messages sent
+	if totalEntriesLength(messages) != 0 {
+		t.Fatal("Expected no messages")
+	}
+
+	// Clear sendError so that subsequent sends will not error
+	fakeSender.sendError = nil
+
+	// Add a new batch of wants
+	messageQueue.AddWants(wantBlocks2, wantHaves2)
+	messages = collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	// All wants from previous and new send should be sent
+	if totalEntriesLength(messages) != len(wantHaves)+len(wantBlocks)+len(wantHaves2)+len(wantBlocks2) {
+		t.Fatal("Expected subsequent send to send first and second batches of wants")
+	}
+}
