@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	debounce "github.com/bep/debounce"
+
 	lu "github.com/ipfs/go-bitswap/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -50,8 +52,9 @@ type MessageQueue struct {
 	maxMessageSize   int
 	sendErrorBackoff time.Duration
 
-	outgoingWork chan struct{}
-	done         chan struct{}
+	signalWorkReady func()
+	outgoingWork    chan struct{}
+	done            chan struct{}
 
 	// Take lock whenever any of these variables are modified
 	wllock    sync.Mutex
@@ -106,7 +109,7 @@ func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
 
 // This constructor is used by the tests
 func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int, sendErrorBackoff time.Duration) *MessageQueue {
-	return &MessageQueue{
+	mq := &MessageQueue{
 		ctx:                 ctx,
 		p:                   p,
 		network:             network,
@@ -120,6 +123,12 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, max
 		sendErrorBackoff:    sendErrorBackoff,
 		priority:            maxPriority,
 	}
+
+	// Apply debounce to the work ready signal (which triggers sending a message)
+	debounced := debounce.New(sendMessageDebounce)
+	mq.signalWorkReady = func() { debounced(mq.onWorkReady) }
+
+	return mq
 }
 
 func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
@@ -203,14 +212,12 @@ func (mq *MessageQueue) Shutdown() {
 }
 
 func (mq *MessageQueue) runQueue() {
-	debounceSendMessage := Debounce(sendMessageDebounce, mq.sendIfReady)
-
 	for {
 		select {
 		case <-mq.rebroadcastTimer.C:
 			mq.rebroadcastWantlist()
 		case <-mq.outgoingWork:
-			debounceSendMessage()
+			mq.sendIfReady()
 		case <-mq.done:
 			if mq.sender != nil {
 				mq.sender.Close()
@@ -252,6 +259,13 @@ func (mq *MessageQueue) transferRebroadcastWants() bool {
 	mq.peerWants.current.Absorb(mq.peerWants.allWants)
 
 	return true
+}
+
+func (mq *MessageQueue) onWorkReady() {
+	select {
+	case mq.outgoingWork <- struct{}{}:
+	default:
+	}
 }
 
 func (mq *MessageQueue) sendIfReady() {
@@ -453,11 +467,4 @@ func openSender(ctx context.Context, network MessageNetwork, p peer.ID) (bsnet.M
 	}
 
 	return nsender, nil
-}
-
-func (mq *MessageQueue) signalWorkReady() {
-	select {
-	case mq.outgoingWork <- struct{}{}:
-	default:
-	}
 }
