@@ -2,7 +2,6 @@ package messagequeue
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -348,7 +347,6 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) (bsmsg.BitSwap
 			mq.peerWants.RemoveType(e.Cid, pb.Message_Wantlist_Have)
 		} else {
 			msgSize += msg.AddEntry(e.Cid, e.Priority, e.WantType, true)
-			fmt.Println(msgSize)
 		}
 	}
 
