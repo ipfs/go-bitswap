@@ -20,7 +20,9 @@ var log = logging.Logger("bitswap")
 
 const (
 	defaultRebroadcastInterval = 30 * time.Second
-	maxRetries                 = 10
+	// maxRetries is the number of times to attempt to send a message before
+	// giving up
+	maxRetries = 10
 	// maxMessageSize is the maximum message size in bytes
 	maxMessageSize = 1024 * 1024 * 2
 	// sendErrorBackoff is the time to wait before retrying to connect after
