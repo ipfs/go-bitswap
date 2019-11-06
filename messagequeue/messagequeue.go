@@ -21,11 +21,14 @@ var log = logging.Logger("bitswap")
 const (
 	defaultRebroadcastInterval = 30 * time.Second
 	maxRetries                 = 10
-	// Maximum message size in bytes
+	// maxMessageSize is the maximum message size in bytes
 	maxMessageSize = 1024 * 1024 * 2
+	// sendErrorBackoff is the time to wait before retrying to connect after
+	// an error when trying to send a message
+	sendErrorBackoff = 100 * time.Millisecond
 	// maxPriority is the max priority as defined by the bitswap protocol
 	maxPriority = math.MaxInt32
-	// sendMessageDebounce is the debounce duration when calling sendMessage():
+	// sendMessageDebounce is the debounce duration when calling sendMessage()
 	sendMessageDebounce = time.Millisecond
 )
 
@@ -39,10 +42,11 @@ type MessageNetwork interface {
 
 // MessageQueue implements queue of want messages to send to peers.
 type MessageQueue struct {
-	ctx            context.Context
-	p              peer.ID
-	network        MessageNetwork
-	maxMessageSize int
+	ctx              context.Context
+	p                peer.ID
+	network          MessageNetwork
+	maxMessageSize   int
+	sendErrorBackoff time.Duration
 
 	outgoingWork chan struct{}
 	done         chan struct{}
@@ -61,6 +65,8 @@ type MessageQueue struct {
 	rebroadcastTimer      *time.Timer
 }
 
+// recallWantlist keeps a list of current wants, and a list of all wants that
+// have ever been requested
 type recallWantlist struct {
 	allWants *bswl.Wantlist
 	current  *bswl.Wantlist
@@ -73,16 +79,19 @@ func newRecallWantList() *recallWantlist {
 	}
 }
 
+// Add want to both the current list and the list of all wants
 func (r *recallWantlist) Add(c cid.Cid, priority int, wtype pb.Message_Wantlist_WantType) {
 	r.allWants.Add(c, priority, wtype)
 	r.current.Add(c, priority, wtype)
 }
 
+// Remove wants from both the current list and the list of all wants
 func (r *recallWantlist) Remove(c cid.Cid) {
 	r.allWants.Remove(c)
 	r.current.Remove(c)
 }
 
+// Remove wants by type from both the current list and the list of all wants
 func (r *recallWantlist) RemoveType(c cid.Cid, wtype pb.Message_Wantlist_WantType) {
 	r.allWants.RemoveType(c, wtype)
 	r.current.RemoveType(c, wtype)
@@ -90,11 +99,11 @@ func (r *recallWantlist) RemoveType(c cid.Cid, wtype pb.Message_Wantlist_WantTyp
 
 // New creats a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork) *MessageQueue {
-	return newMessageQueue(ctx, p, network, maxMessageSize)
+	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff)
 }
 
 // This constructor is used by the tests
-func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int) *MessageQueue {
+func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int, sendErrorBackoff time.Duration) *MessageQueue {
 	return &MessageQueue{
 		ctx:                 ctx,
 		p:                   p,
@@ -106,6 +115,7 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, max
 		outgoingWork:        make(chan struct{}, 1),
 		done:                make(chan struct{}),
 		rebroadcastInterval: defaultRebroadcastInterval,
+		sendErrorBackoff:    sendErrorBackoff,
 		priority:            maxPriority,
 	}
 }
@@ -403,8 +413,8 @@ func (mq *MessageQueue) attemptSendAndRecovery(message bsmsg.BitSwapMessage) boo
 		return true
 	case <-mq.ctx.Done():
 		return true
-	case <-time.After(time.Millisecond * 100):
-		// wait 100ms in case disconnect notifications are still propogating
+	case <-time.After(mq.sendErrorBackoff):
+		// wait 100ms in case disconnect notifications are still propagating
 		log.Warning("SendMsg errored but neither 'done' nor context.Done() were set")
 	}
 

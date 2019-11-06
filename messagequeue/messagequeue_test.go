@@ -2,6 +2,7 @@ package messagequeue
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -39,12 +40,17 @@ type fakeMessageSender struct {
 	fullClosed   chan<- struct{}
 	reset        chan<- struct{}
 	messagesSent chan<- bsmsg.BitSwapMessage
+	sendErrors   chan<- error
 	supportsHave bool
 }
 
 func (fms *fakeMessageSender) SendMsg(ctx context.Context, msg bsmsg.BitSwapMessage) error {
+	if fms.sendError != nil {
+		fms.sendErrors <- fms.sendError
+		return fms.sendError
+	}
 	fms.messagesSent <- msg
-	return fms.sendError
+	return nil
 }
 func (fms *fakeMessageSender) Close() error       { fms.fullClosed <- struct{}{}; return nil }
 func (fms *fakeMessageSender) Reset() error       { fms.reset <- struct{}{}; return nil }
@@ -78,9 +84,10 @@ func totalEntriesLength(messages []bsmsg.BitSwapMessage) int {
 func TestStartupAndShutdown(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet)
@@ -119,9 +126,10 @@ func TestStartupAndShutdown(t *testing.T) {
 func TestSendingMessagesDeduped(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet)
@@ -141,9 +149,10 @@ func TestSendingMessagesDeduped(t *testing.T) {
 func TestSendingMessagesPartialDupe(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet)
@@ -163,9 +172,10 @@ func TestSendingMessagesPartialDupe(t *testing.T) {
 func TestSendingMessagesPriority(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet)
@@ -231,9 +241,10 @@ func TestSendingMessagesPriority(t *testing.T) {
 func TestWantlistRebroadcast(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet)
@@ -327,16 +338,17 @@ func TestWantlistRebroadcast(t *testing.T) {
 func TestSendingLargeMessages(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, true}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 
 	wantBlocks := testutil.GenerateCids(10)
 	entrySize := 44
 	maxMsgSize := entrySize * 3 // 3 wants
-	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize)
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize, sendErrorBackoff)
 
 	messageQueue.Startup()
 	messageQueue.AddWants(wantBlocks, []cid.Cid{})
@@ -356,9 +368,10 @@ func TestSendingLargeMessages(t *testing.T) {
 func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
 	resetChan := make(chan struct{}, 1)
 	fullClosedChan := make(chan struct{}, 1)
-	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, false}
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, false}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 
@@ -405,5 +418,43 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 		if entry.WantType != pb.Message_Wantlist_Block {
 			t.Fatal("should only send want-blocks")
 		}
+	}
+}
+
+func TestResendAfterError(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
+	resetChan := make(chan struct{}, 1)
+	fullClosedChan := make(chan struct{}, 1)
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	sendErrBackoff := 5 * time.Millisecond
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff)
+	wantBlocks := testutil.GenerateCids(10)
+	wantHaves := testutil.GenerateCids(10)
+
+	messageQueue.Startup()
+
+	var errs []error
+	go func() {
+		// After the first error is received, clear sendError so that
+		// subsequent sends will not error
+		errs = append(errs, <-sendErrors)
+		fakeSender.sendError = nil
+	}()
+
+	// Make the first send error out
+	fakeSender.sendError = errors.New("send err")
+	messageQueue.AddWants(wantBlocks, wantHaves)
+	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	if len(errs) != 1 {
+		t.Fatal("Expected first send to error")
+	}
+
+	if totalEntriesLength(messages) != len(wantHaves)+len(wantBlocks) {
+		t.Fatal("Expected subsequent send to succeed")
 	}
 }
