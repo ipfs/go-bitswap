@@ -29,7 +29,7 @@ require (
 	github.com/libp2p/go-libp2p-testing v0.0.4
 	github.com/libp2p/go-msgio v0.0.4
 	github.com/mattn/go-colorable v0.1.2 // indirect
-	github.com/multiformats/go-multiaddr v0.0.4
+	github.com/multiformats/go-multiaddr v0.1.2
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	golang.org/x/crypto v0.0.0-20190611184440-5c40567a22f8 // indirect
 	golang.org/x/net v0.0.0-20190611141213-3f473d35a33a // indirect
