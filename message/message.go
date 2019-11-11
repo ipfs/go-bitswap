@@ -28,6 +28,7 @@ type BitSwapMessage interface {
 	BlockPresences() []pb.Message_BlockPresence
 	Haves() []cid.Cid
 	DontHaves() []cid.Cid
+	PendingBytes() int32
 
 	// AddEntry adds an entry to the Wantlist.
 	AddEntry(key cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) int
@@ -44,6 +45,7 @@ type BitSwapMessage interface {
 	AddBlockPresence(cid.Cid, pb.Message_BlockPresenceType)
 	AddHave(cid.Cid)
 	AddDontHave(cid.Cid)
+	SetPendingBytes(int32)
 	Exportable
 
 	Loggable() map[string]interface{}
@@ -63,6 +65,7 @@ type impl struct {
 	wantlist       map[cid.Cid]*Entry
 	blocks         map[cid.Cid]blocks.Block
 	blockPresences map[cid.Cid]pb.Message_BlockPresenceType
+	pendingBytes   int32
 }
 
 // New returns a new, empty bitswap message
@@ -136,6 +139,8 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 		m.AddBlockPresence(c, t)
 	}
 
+	m.pendingBytes = pbm.PendingBytes
+
 	return m, nil
 }
 
@@ -190,6 +195,14 @@ func (m *impl) getBlockPresenceByType(t pb.Message_BlockPresenceType) []cid.Cid 
 		}
 	}
 	return cids
+}
+
+func (m *impl) PendingBytes() int32 {
+	return m.pendingBytes
+}
+
+func (m *impl) SetPendingBytes(pendingBytes int32) {
+	m.pendingBytes = pendingBytes
 }
 
 func (m *impl) Cancel(k cid.Cid) int {
@@ -354,6 +367,8 @@ func (m *impl) ToProtoV1() *pb.Message {
 			Type: t,
 		})
 	}
+
+	pbm.PendingBytes = m.PendingBytes()
 
 	return pbm
 }

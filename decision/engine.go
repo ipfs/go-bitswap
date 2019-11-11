@@ -377,19 +377,19 @@ func (e *Engine) taskWorkerExit() {
 func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 	for {
 		// Pop some tasks off the request queue
-		p, nextTasks := e.peerRequestQueue.PopTasks(targetMessageSize)
+		p, nextTasks, pendingBytes := e.peerRequestQueue.PopTasks(targetMessageSize)
 		for len(nextTasks) == 0 {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-e.workSignal:
-				p, nextTasks = e.peerRequestQueue.PopTasks(targetMessageSize)
+				p, nextTasks, pendingBytes = e.peerRequestQueue.PopTasks(targetMessageSize)
 			case <-e.ticker.C:
 				// When a task is cancelled, the queue may be "frozen" for a
 				// period of time. We periodically "thaw" the queue to make
 				// sure it doesn't get stuck in a frozen state.
 				e.peerRequestQueue.ThawRound()
-				p, nextTasks = e.peerRequestQueue.PopTasks(targetMessageSize)
+				p, nextTasks, pendingBytes = e.peerRequestQueue.PopTasks(targetMessageSize)
 			}
 		}
 
@@ -397,6 +397,9 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		msg := bsmsg.New(true)
 
 		// log.Debugf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
+
+		// Amount of data in the request queue still waiting to be popped
+		msg.SetPendingBytes(int32(pendingBytes))
 
 		// Add DONT_HAVEs to the message
 		for _, c := range filterDontHaves(nextTasks) {

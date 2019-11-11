@@ -18,7 +18,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-peertaskqueue v0.1.2-0.20191101184001-142b9715f2d2
+	github.com/ipfs/go-peertaskqueue v0.1.2-0.20191111123636-50bce64f2bcb
 	github.com/jbenet/goprocess v0.1.3
 	github.com/libp2p/go-buffer-pool v0.0.2
 	github.com/libp2p/go-libp2p v0.4.0

@@ -38,7 +38,7 @@ func TestPushHaveVsBlock(t *testing.T) {
 		tasks = cloneTasks(tasks)
 		ptq := peertaskqueue.New(peertaskqueue.TaskMerger(newTaskMerger()))
 		ptq.PushTasks(partner, tasks...)
-		_, popped := ptq.PopTasks(100)
+		_, popped, _ := ptq.PopTasks(100)
 		if len(popped) != 1 {
 			t.Fatalf("Expected 1 task, received %d tasks", len(popped))
 		}
@@ -115,7 +115,7 @@ func TestPushSizeInfo(t *testing.T) {
 		tasks = cloneTasks(tasks)
 		ptq := peertaskqueue.New(peertaskqueue.TaskMerger(newTaskMerger()))
 		ptq.PushTasks(partner, tasks...)
-		_, popped := ptq.PopTasks(100)
+		_, popped, _ := ptq.PopTasks(100)
 		if len(popped) != 1 {
 			t.Fatalf("Expected 1 task, received %d tasks", len(popped))
 		}
@@ -208,7 +208,7 @@ func TestPushHaveVsBlockActive(t *testing.T) {
 			// tracker.PushTasks([]peertask.Task{task})
 			ptq.PushTasks(partner, task)
 			// Pop the task (which makes it active)
-			_, poppedTasks := ptq.PopTasks(10)
+			_, poppedTasks, _ := ptq.PopTasks(10)
 			popped = append(popped, poppedTasks...)
 		}
 		if len(popped) != expCount {
@@ -282,7 +282,7 @@ func TestPushSizeInfoActive(t *testing.T) {
 			// Push the task
 			ptq.PushTasks(partner, task)
 			// Pop the task (which makes it active)
-			_, poppedTasks := ptq.PopTasks(10)
+			_, poppedTasks, _ := ptq.PopTasks(10)
 			popped = append(popped, poppedTasks...)
 		}
 		if len(popped) != len(expTasks) {
