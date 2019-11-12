@@ -228,8 +228,9 @@ func (pm *PeerManager) UnregisterSession(ses uint64) {
 }
 
 func (pm *PeerManager) RequestToken(p peer.ID) bool {
-	// TODO: rate limiting
-	return true
+	// If the peer disconnects, peerQueues[p] will be deleted
+	_, ok := pm.peerQueues[p]
+	return ok
 }
 
 func (pm *PeerManager) signalAvailability(p peer.ID, isConnected bool) {
