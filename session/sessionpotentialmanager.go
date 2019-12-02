@@ -47,6 +47,30 @@ type change struct {
 type onSendFn func(peer.ID, []cid.Cid, []cid.Cid)
 type onPeersExhaustedFn func([]cid.Cid)
 
+//
+// sessionPotentialManager keeps a table of the want potential for each want
+// at each peer. The want potential is the likelihood that a particular peer
+// has a block for the given want. For example:
+//         Peer A   Peer B   Peer C
+// CID 1      0.6      0.8      0.2
+// CID 2      0.2      0.8      0.4
+// CID 3      0.4      0.0      0.3
+//
+// As the session receives new information such as HAVE / DONT_HAVE messages
+// this table is updated.
+//
+// The sessionPotentialManager also keeps a table of sent potential. When a
+// want-block message is sent to a peer, the potential moves from the
+// want potential to the sent potential for that peer.
+//
+// The sessionPotentialManager keeps track of hits and misses for each peer.
+// A hit is when the peer is the first to respond with a block. A miss is when
+// the peer responds with DONT_HAVE.
+//
+// sessionPotentialManager tries to send the minimum number of want-blocks so
+// as to avoid receiving duplicate blocks, and tries to send want-block to the
+// peers that are most likely to have the block.
+//
 type sessionPotentialManager struct {
 	ctx         context.Context
 	sessionID   uint64
@@ -73,6 +97,7 @@ func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPres
 	return newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 }
 
+// Used by tests
 func newSessionPotentialManagerInternal(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager,
 	onSend onSendFn, onPeersExhausted onPeersExhaustedFn, ptm PotentialThresholdManager) sessionPotentialManager {
 
@@ -100,6 +125,7 @@ func (spm *sessionPotentialManager) ID() uint64 {
 	return spm.sessionID
 }
 
+// Add is called when new wants are added to the session
 func (spm *sessionPotentialManager) Add(ks []cid.Cid) {
 	if len(ks) == 0 {
 		return
@@ -107,6 +133,8 @@ func (spm *sessionPotentialManager) Add(ks []cid.Cid) {
 	spm.changes <- change{add: ks}
 }
 
+// Update is called when the session receives a message with incoming blocks
+// or HAVE / DONT_HAVE
 func (spm *sessionPotentialManager) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, isNewPeer bool) {
 	// fmt.Printf("Update(%s, %d, %d, %d, %t)\n", lu.P(from), len(ks), len(haves), len(dontHaves), isNewPeer)
 	hasUpdate := len(ks) > 0 || len(haves) > 0 || len(dontHaves) > 0
@@ -120,6 +148,7 @@ func (spm *sessionPotentialManager) Update(from peer.ID, ks []cid.Cid, haves []c
 		ch.update = &update{from, ks, haves, dontHaves}
 	}
 
+	// If the message came from a new peer register with the peer manager
 	if isNewPeer {
 		availability := make(map[peer.ID]bool)
 		availability[from] = spm.pm.RegisterSession(from, spm)
@@ -130,6 +159,8 @@ func (spm *sessionPotentialManager) Update(from peer.ID, ks []cid.Cid, haves []c
 	spm.changes <- ch
 }
 
+// SignalAvailability is called by the PeerManager to signal that a peer has
+// connected / disconnected
 func (spm *sessionPotentialManager) SignalAvailability(p peer.ID, isAvailable bool) {
 	// fmt.Printf("SignalAvailability(%s, %t)\n", lu.P(p), isAvailable)
 	availability := make(map[peer.ID]bool)
@@ -137,6 +168,7 @@ func (spm *sessionPotentialManager) SignalAvailability(p peer.ID, isAvailable bo
 	spm.changes <- change{availability: availability}
 }
 
+// triggerSend is called to process any changes and send out messages to peers
 func (spm *sessionPotentialManager) triggerSend() {
 	select {
 	case spm.sendTrigger <- struct{}{}:
@@ -144,11 +176,10 @@ func (spm *sessionPotentialManager) triggerSend() {
 	}
 }
 
+// Run is the main loop for processing incoming changes
 func (spm *sessionPotentialManager) Run(ctx context.Context) {
 	spm.ctx = ctx
 
-	// TODO: use a second thread to consolidate changes then pass them to the main thread?
-	// (this would prevent spm.changes from ever filling up, and blocking the caller)
 	for {
 		select {
 		case ch := <-spm.changes:
@@ -162,10 +193,12 @@ func (spm *sessionPotentialManager) Run(ctx context.Context) {
 	}
 }
 
+// shutdown unregisters the session with the PeerManager
 func (spm *sessionPotentialManager) shutdown() {
 	spm.pm.UnregisterSession(spm.sessionID)
 }
 
+// collectChanges collects all the changes that have occurred
 func (spm *sessionPotentialManager) collectChanges(changes []change) []change {
 	for {
 		select {
@@ -177,6 +210,7 @@ func (spm *sessionPotentialManager) collectChanges(changes []change) []change {
 	}
 }
 
+// onChange processes the next set of changes
 func (spm *sessionPotentialManager) onChange(changes []change) {
 	// Several changes may have been recorded since the last time we checked,
 	// so pop all outstanding changes from the channel
@@ -221,6 +255,8 @@ func (spm *sessionPotentialManager) onChange(changes []change) {
 	}
 }
 
+// processAvailability updates the want queue with any changes in
+// peer availability
 func (spm *sessionPotentialManager) processAvailability(availability map[peer.ID]bool) []peer.ID {
 	var newlyAvailable []peer.ID
 	changed := false
@@ -249,6 +285,7 @@ func (spm *sessionPotentialManager) processAvailability(availability map[peer.ID
 	return newlyAvailable
 }
 
+// trackPotential creates a new entry in the map of CID -> want potential
 func (spm *sessionPotentialManager) trackPotential(c cid.Cid) {
 	// fmt.Printf("trackPotential %s\n", lu.C(c))
 	if _, ok := spm.wants[c]; ok {
@@ -265,6 +302,7 @@ func (spm *sessionPotentialManager) trackPotential(c cid.Cid) {
 	spm.wantQueue.Push(wp)
 }
 
+// processUpdates processes incoming blocks and HAVE / DONT_HAVEs
 func (spm *sessionPotentialManager) processUpdates(updates []update) {
 	hits := 0
 	misses := 0
@@ -352,6 +390,8 @@ type allWants struct {
 	wantHaves  *cid.Set
 }
 
+// sendNextWants sends wants to peers according to the latest information
+// about which peers have / dont have blocks
 func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 	var skipped []*wantPotential
 	toSend := make(map[peer.ID]*allWants)
@@ -482,6 +522,7 @@ func (spm *sessionPotentialManager) sendNextWants(newlyAvailable []peer.ID) {
 	onComplete()
 }
 
+// sendWants sends want-have and want-blocks to the appropriate peers
 func (spm *sessionPotentialManager) sendWants(sends map[peer.ID]*allWants) {
 	// fmt.Printf(" send wants to %d peers\n", len(sends))
 	sentWantBlocks := cid.NewSet()
@@ -524,6 +565,8 @@ func (spm *sessionPotentialManager) sendWants(sends map[peer.ID]*allWants) {
 	}
 }
 
+// getPiggybackWantHaves gets the want-haves that should be piggybacked onto
+// a request that we are making to send want-blocks to a peer
 func (spm *sessionPotentialManager) getPiggybackWantHaves(p peer.ID, wantBlocks *cid.Set) []cid.Cid {
 	// TODO: Should do this in a smarter way (eg choose the most recent that haven't been sent to this peer)
 	var whs []cid.Cid
@@ -537,12 +580,15 @@ func (spm *sessionPotentialManager) getPiggybackWantHaves(p peer.ID, wantBlocks 
 	return whs
 }
 
+// markPeerUnavailable indicates that the given peer has disonnected
 func (spm *sessionPotentialManager) markPeerUnavailable(p peer.ID) {
 	spm.peerAvlMgr.setPeerAvailability(p, false)
 	spm.updatePotentialAvailability(p, false)
 	spm.rewantQueueAll()
 }
 
+// newlyExhausted filters the list of keys for wants that have not already
+// been marked as exhausted (all peers indicated they don't have the block)
 func (spm *sessionPotentialManager) newlyExhausted(ks []cid.Cid) []cid.Cid {
 	var res []cid.Cid
 	for _, c := range ks {
@@ -556,6 +602,8 @@ func (spm *sessionPotentialManager) newlyExhausted(ks []cid.Cid) []cid.Cid {
 	return res
 }
 
+// rewantQueueAll is called when peer availability changes, meaning that
+// we need to update the position of all wants in the queue
 func (spm *sessionPotentialManager) rewantQueueAll() {
 	// TODO: if this performs poorly, may need to only update rows where
 	// best potential has changed
