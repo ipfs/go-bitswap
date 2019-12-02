@@ -116,7 +116,7 @@ func TestSendWants(t *testing.T) {
 	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 1.0
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 
@@ -252,7 +252,7 @@ func TestThresholdIncrease(t *testing.T) {
 	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 
@@ -324,7 +324,7 @@ func TestReceiveBlock(t *testing.T) {
 	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 1.0
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 
@@ -384,7 +384,7 @@ func TestReceiveDontHave(t *testing.T) {
 	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 
@@ -453,7 +453,7 @@ func TestPeerUnavailable(t *testing.T) {
 	onPeersExhausted := func([]cid.Cid) {}
 	potentialThreshold := 0.5
 	ptm := &mockThresholdManager{potentialThreshold}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 
@@ -525,7 +525,7 @@ func TestPeersExhausted(t *testing.T) {
 	onPeersExhausted := func(ks []cid.Cid) {
 		exhausted = append(exhausted, ks...)
 	}
-	spm := newSessionPotentialManager(sid, pm, bpm, ptm, onSend, onPeersExhausted)
+	spm := newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
 
 	go spm.Run(context.Background())
 

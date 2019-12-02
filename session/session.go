@@ -129,7 +129,7 @@ func New(ctx context.Context,
 		periodicSearchDelay: periodicSearchDelay,
 		self:                self,
 	}
-	s.spm = newSessionPotentialManager(id, pm, bpm, nil, s.onWantsSent, s.onPeersExhausted)
+	s.spm = newSessionPotentialManager(id, pm, bpm, s.onWantsSent, s.onPeersExhausted)
 
 	go s.run(ctx)
 

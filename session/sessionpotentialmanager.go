@@ -66,7 +66,15 @@ type sessionPotentialManager struct {
 }
 
 func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager,
-	ptm PotentialThresholdManager, onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionPotentialManager {
+	onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionPotentialManager {
+
+	ptm := newPotentialThresholdManager(
+		basePotentialGain, rcvdHavePotentialGain, dontHaveTolerance, maxPotentialThresholdRecent, minPotentialThresholdItemCount)
+	return newSessionPotentialManagerInternal(sid, pm, bpm, onSend, onPeersExhausted, ptm)
+}
+
+func newSessionPotentialManagerInternal(sid uint64, pm PeerManager, bpm *bsbpm.BlockPresenceManager,
+	onSend onSendFn, onPeersExhausted onPeersExhaustedFn, ptm PotentialThresholdManager) sessionPotentialManager {
 
 	spm := sessionPotentialManager{
 		sessionID:   sid,
@@ -84,13 +92,6 @@ func newSessionPotentialManager(sid uint64, pm PeerManager, bpm *bsbpm.BlockPres
 		onPeersExhausted:      onPeersExhausted,
 	}
 	spm.wantQueue = pq.New(wrapCompare(spm.wantCompare))
-
-	// The PotentialThresholdManager is a parameter to the constructor so that
-	// it can be provided by the tests
-	if spm.potentialThresholdMgr == nil {
-		spm.potentialThresholdMgr = newPotentialThresholdManager(
-			basePotentialGain, rcvdHavePotentialGain, dontHaveTolerance, maxPotentialThresholdRecent, minPotentialThresholdItemCount)
-	}
 
 	return spm
 }
