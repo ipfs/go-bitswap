@@ -612,6 +612,7 @@ func (spm *sessionPotentialManager) rewantQueueAll() {
 	}
 }
 
+// removeWant is called when the corresponding block is received
 func (spm *sessionPotentialManager) removeWant(c cid.Cid) *wantPotential {
 	if wp, ok := spm.wants[c]; ok {
 		delete(spm.wants, c)
@@ -620,6 +621,7 @@ func (spm *sessionPotentialManager) removeWant(c cid.Cid) *wantPotential {
 	return nil
 }
 
+// clearPotential is called when the want is sent to the given peer
 func (spm *sessionPotentialManager) clearPotential(c cid.Cid, p peer.ID) float64 {
 	if wp, ok := spm.wants[c]; ok {
 		return wp.clearPeerPotential(p)
@@ -627,6 +629,8 @@ func (spm *sessionPotentialManager) clearPotential(c cid.Cid, p peer.ID) float64
 	return 0.0
 }
 
+// updatePotential is called when a HAVE / DONT_HAVE is received for the given
+// want / peer
 func (spm *sessionPotentialManager) updatePotential(c cid.Cid, p peer.ID) {
 	wp, ok := spm.wants[c]
 	if !ok {
@@ -634,7 +638,7 @@ func (spm *sessionPotentialManager) updatePotential(c cid.Cid, p peer.ID) {
 	}
 
 	potential := basePotentialGain
-	// If the peer sent us a HAVE or HAVE_NOT for the cid, adjust the
+	// If the peer sent us a HAVE or DONT_HAVE for the cid, adjust the
 	// potential for the peer / cid combination
 	if spm.bpm.PeerHasBlock(p, c) {
 		potential = rcvdHavePotentialGain
@@ -645,6 +649,8 @@ func (spm *sessionPotentialManager) updatePotential(c cid.Cid, p peer.ID) {
 	wp.setPeerPotential(p, potential)
 }
 
+// updatePotentialAvailability is called when the availability changes for a
+// peer. It updates the want potential accordingly.
 func (spm *sessionPotentialManager) updatePotentialAvailability(p peer.ID, isNowAvailable bool) {
 	for c, wp := range spm.wants {
 		if isNowAvailable {
@@ -656,6 +662,8 @@ func (spm *sessionPotentialManager) updatePotentialAvailability(p peer.ID, isNow
 	}
 }
 
+// addSentPotential is called when a want-block is sent to a peer, changing
+// the potential from want to sent
 func (spm *sessionPotentialManager) addSentPotential(c cid.Cid, p peer.ID, gain float64) {
 	if wp, ok := spm.wants[c]; ok {
 		if existing, sok := wp.sent[p]; sok {
@@ -666,6 +674,8 @@ func (spm *sessionPotentialManager) addSentPotential(c cid.Cid, p peer.ID, gain 
 	}
 }
 
+// removeSentPotential reduces the sent potential for the want by the want
+// potential amount
 func (spm *sessionPotentialManager) removeSentPotential(c cid.Cid, p peer.ID) {
 	if wp, ok := spm.wants[c]; ok {
 		if existing, sok := wp.sent[p]; sok {
@@ -675,6 +685,7 @@ func (spm *sessionPotentialManager) removeSentPotential(c cid.Cid, p peer.ID) {
 	}
 }
 
+// String returns the want potential and sent potential tables as a String
 func (spm *sessionPotentialManager) String() string {
 	var b bytes.Buffer
 	var wantCids []cid.Cid
@@ -722,6 +733,7 @@ func (spm *sessionPotentialManager) String() string {
 	return b.String()
 }
 
+// wantPotential keeps track of the potential information for a want
 type wantPotential struct {
 	startIndex    int
 	index         int
@@ -756,6 +768,7 @@ func (wp *wantPotential) Index() int {
 	return wp.index
 }
 
+// setPeerPotential sets the potential for the given peer
 func (wp *wantPotential) setPeerPotential(p peer.ID, potential float64) {
 	wp.byPeer[p] = potential
 	wp.calculateBestPeer()
@@ -764,6 +777,7 @@ func (wp *wantPotential) setPeerPotential(p peer.ID, potential float64) {
 	}
 }
 
+// clearPeerPotential clears the potential for the given peer
 func (wp *wantPotential) clearPeerPotential(p peer.ID) float64 {
 	if potential, ok := wp.byPeer[p]; ok {
 		wp.byPeer[p] = 0
@@ -773,11 +787,13 @@ func (wp *wantPotential) clearPeerPotential(p peer.ID) float64 {
 	return 0
 }
 
+// removePeerPotential deletes the given peer from the want potential
 func (wp *wantPotential) removePeerPotential(p peer.ID) {
 	delete(wp.byPeer, p)
 	wp.calculateBestPeer()
 }
 
+// calculateBestPeer finds the peer with the highest potential
 func (wp *wantPotential) calculateBestPeer() {
 	// Recalculate the best peer
 	wp.bestPeer = ""
