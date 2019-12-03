@@ -166,7 +166,6 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		option(bs)
 	}
 
-	// bs.wm.Startup()
 	bs.pqm.Startup()
 	network.SetDelegate(bs)
 

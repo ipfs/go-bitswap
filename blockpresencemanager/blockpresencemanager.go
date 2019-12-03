@@ -7,6 +7,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// BlockPresenceManager keeps track of which peers have indicated that they
+// have or explicitly don't have a block
 type BlockPresenceManager struct {
 	sync.RWMutex
 	presence map[cid.Cid]map[peer.ID]bool
@@ -18,6 +20,8 @@ func New() *BlockPresenceManager {
 	}
 }
 
+// ReceiveFrom is called when a peer sends us information about which blocks
+// it has and does not have
 func (bpm *BlockPresenceManager) ReceiveFrom(p peer.ID, haves []cid.Cid, dontHaves []cid.Cid) {
 	bpm.Lock()
 	defer bpm.Unlock()
@@ -44,28 +48,23 @@ func (bpm *BlockPresenceManager) updateBlockPresence(p peer.ID, c cid.Cid, prese
 	bpm.presence[c][p] = present
 }
 
+// PeerHasBlock indicates whether the given peer has sent a HAVE for the given
+// cid
 func (bpm *BlockPresenceManager) PeerHasBlock(p peer.ID, c cid.Cid) bool {
 	bpm.RLock()
 	defer bpm.RUnlock()
 
-	if ps, cok := bpm.presence[c]; cok {
-		if has, pok := ps[p]; pok && has {
-			return true
-		}
-	}
-	return false
+	return bpm.presence[c][p]
 }
 
+// PeerDoesNotHaveBlock indicates whether the given peer has sent a DONT_HAVE
+// for the given cid
 func (bpm *BlockPresenceManager) PeerDoesNotHaveBlock(p peer.ID, c cid.Cid) bool {
 	bpm.RLock()
 	defer bpm.RUnlock()
 
-	if ps, cok := bpm.presence[c]; cok {
-		if has, pok := ps[p]; pok && !has {
-			return true
-		}
-	}
-	return false
+	have, known := bpm.presence[c][p]
+	return known && !have
 }
 
 // Filters the keys such that all the given peers have received a DONT_HAVE
@@ -78,27 +77,30 @@ func (bpm *BlockPresenceManager) AllPeersDoNotHaveBlock(peers []peer.ID, ks []ci
 
 	var res []cid.Cid
 	for _, c := range ks {
-		// Check if we know anything about the cid's block presence
-		ps, cok := bpm.presence[c]
-		if !cok {
-			continue
-		}
-
-		// Check if we explicitly know that all the given peers do not have the cid
-		allDontHave := true
-		for i := 0; i < len(peers) && allDontHave; i++ {
-			allDontHave = false
-			if has, pok := ps[peers[i]]; pok && !has {
-				allDontHave = true
-			}
-		}
-		if allDontHave {
+		if bpm.allDontHave(peers, c) {
 			res = append(res, c)
 		}
 	}
 	return res
 }
 
+func (bpm *BlockPresenceManager) allDontHave(peers []peer.ID, c cid.Cid) bool {
+	// Check if we know anything about the cid's block presence
+	ps, cok := bpm.presence[c]
+	if !cok {
+		return false
+	}
+
+	// Check if we explicitly know that all the given peers do not have the cid
+	for _, p := range peers {
+		if has, pok := ps[p]; !pok || has {
+			return false
+		}
+	}
+	return true
+}
+
+// RemoveKeys cleans up the given keys from the block presence map
 func (bpm *BlockPresenceManager) RemoveKeys(ks []cid.Cid) {
 	bpm.Lock()
 	defer bpm.Unlock()
