@@ -131,6 +131,7 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, max
 	return mq
 }
 
+// Add want-haves that are part of a broadcast to all connected peers
 func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	if len(wantHaves) == 0 {
 		return
@@ -148,6 +149,7 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	mq.signalWorkReady()
 }
 
+// Add want-haves and want-blocks for the peer for this message queue.
 func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	if len(wantBlocks) == 0 && len(wantHaves) == 0 {
 		return
@@ -169,6 +171,7 @@ func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	mq.signalWorkReady()
 }
 
+// Add cancel messages for the given keys.
 func (mq *MessageQueue) AddCancels(cancelKs []cid.Cid) {
 	if len(cancelKs) == 0 {
 		return
@@ -197,8 +200,7 @@ func (mq *MessageQueue) SetRebroadcastInterval(delay time.Duration) {
 	mq.rebroadcastIntervalLk.Unlock()
 }
 
-// Startup starts the processing of messages, and creates an initial message
-// based on the given initial wantlist.
+// Startup starts the processing of messages and rebroadcasting.
 func (mq *MessageQueue) Startup() {
 	mq.rebroadcastIntervalLk.RLock()
 	mq.rebroadcastTimer = time.NewTimer(mq.rebroadcastInterval)
@@ -245,6 +247,7 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 	}
 }
 
+// Transfer wants from the rebroadcast lists into the current lists.
 func (mq *MessageQueue) transferRebroadcastWants() bool {
 	mq.wllock.Lock()
 	defer mq.wllock.Unlock()
