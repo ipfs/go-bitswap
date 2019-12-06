@@ -76,7 +76,7 @@ type Session struct {
 	sim  *bssim.SessionInterestManager
 
 	sw  sessionWants
-	spm sessionPotentialManager
+	sws sessionWantSender
 
 	latencyTrkr latencyTracker
 
@@ -129,7 +129,7 @@ func New(ctx context.Context,
 		periodicSearchDelay: periodicSearchDelay,
 		self:                self,
 	}
-	s.spm = newSessionPotentialManager(id, pm, bpm, s.onWantsSent, s.onPeersExhausted)
+	s.sws = newSessionWantSender(id, pm, bpm, s.onWantsSent, s.onPeersExhausted)
 
 	go s.run(ctx)
 
@@ -159,7 +159,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	}
 
 	// Update want potential
-	s.spm.Update(from, ks, haves, dontHaves, isNewPeer)
+	s.sws.Update(from, ks, haves, dontHaves, isNewPeer)
 
 	if len(ks) == 0 {
 		return
@@ -250,7 +250,7 @@ func (s *Session) SetBaseTickDelay(baseTickDelay time.Duration) {
 // Session run loop -- everything function below here should not be called
 // of this loop
 func (s *Session) run(ctx context.Context) {
-	go s.spm.Run(ctx)
+	go s.sws.Run(ctx)
 
 	s.idleTick = time.NewTimer(s.initialSearchDelay)
 	s.periodicSearchTimer = time.NewTimer(s.periodicSearchDelay.NextWaitTime())
@@ -342,7 +342,7 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	if len(newks) > 0 {
 		s.sim.RecordSessionInterest(s.id, newks)
 		s.sw.BlocksRequested(newks)
-		s.spm.Add(newks)
+		s.sws.Add(newks)
 	}
 
 	// If we have discovered peers already, the SessionPotentialManager will
