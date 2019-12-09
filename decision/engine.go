@@ -518,53 +518,38 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 
 	// Get the ledger for the peer
 	l := e.findOrCreate(p)
+	l.lk.Lock()
+	defer l.lk.Unlock()
 
 	// Record how many bytes were received in the ledger
 	blks := m.Blocks()
-	if len(blks) > 0 {
-		l.lk.Lock()
-		for _, block := range blks {
-			log.Debugf("got block %s %d bytes", block, len(block.RawData()))
-			l.ReceivedBytes(len(block.RawData()))
-		}
-		l.lk.Unlock()
+	for _, block := range blks {
+		log.Debugf("got block %s %d bytes", block, len(block.RawData()))
+		l.ReceivedBytes(len(block.RawData()))
 	}
 
 	// If the peer sent a full wantlist, replace the ledger's wantlist
 	if m.Full() {
-		l.lk.Lock()
 		l.wantList = wl.New()
-		l.lk.Unlock()
 	}
 
 	var activeEntries []peertask.Task
 
 	// Remove cancelled blocks from the queue
-	if len(cancels) > 0 {
-		l.lk.Lock()
-		for _, entry := range cancels {
-			// log.Debugf("%s<-%s cancel %s", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
-			if l.CancelWant(entry.Cid) {
-				e.peerRequestQueue.Remove(entry.Cid, p)
-			}
+	for _, entry := range cancels {
+		// log.Debugf("%s<-%s cancel %s", lu.P(e.self), lu.P(p), lu.C(entry.Cid))
+		if l.CancelWant(entry.Cid) {
+			e.peerRequestQueue.Remove(entry.Cid, p)
 		}
-		l.lk.Unlock()
-	}
-
-	// Add each want-have / want-block to the ledger (we do this separately
-	// from the for loop below so as to keep the lock for a shorter time)
-	if len(wants) > 0 {
-		l.lk.Lock()
-		for _, entry := range wants {
-			l.Wants(entry.Cid, entry.Priority, entry.WantType)
-		}
-		l.lk.Unlock()
 	}
 
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
 		blockSize, found := blockSizes[entry.Cid]
+
+		// Add each want-have / want-block to the ledger
+		l.Wants(c, entry.Priority, entry.WantType)
 
 		// If the block was not found
 		if !found {
