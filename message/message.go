@@ -169,14 +169,14 @@ func (m *impl) Blocks() []blocks.Block {
 }
 
 func (m *impl) BlockPresences() []pb.Message_BlockPresence {
-	bis := make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
+	bps := make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
 	for c, t := range m.blockPresences {
-		bis = append(bis, pb.Message_BlockPresence{
+		bps = append(bps, pb.Message_BlockPresence{
 			Cid:  c.Bytes(),
 			Type: t,
 		})
 	}
-	return bis
+	return bps
 }
 
 func (m *impl) Haves() []cid.Cid {
@@ -188,9 +188,9 @@ func (m *impl) DontHaves() []cid.Cid {
 }
 
 func (m *impl) getBlockPresenceByType(t pb.Message_BlockPresenceType) []cid.Cid {
-	cids := make([]cid.Cid, 0)
-	for c, bit := range m.blockPresences {
-		if bit == t {
+	cids := make([]cid.Cid, 0, len(m.blockPresences))
+	for c, bpt := range m.blockPresences {
+		if bpt == t {
 			cids = append(cids, c)
 		}
 	}
