@@ -570,7 +570,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 				activeEntries = append(activeEntries, peertask.Task{
 					Topic:    c,
 					Priority: entry.Priority,
-					Work:     e.getBlockPresenceSize(c),
+					Work:     bsmsg.BlockPresenceSize(c),
 					Data: &taskData{
 						BlockSize:    0,
 						HaveBlock:    false,
@@ -598,7 +598,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 			// a block presence entry.
 			entrySize := blockSize
 			if !isWantBlock {
-				entrySize = e.getBlockPresenceSize(c)
+				entrySize = bsmsg.BlockPresenceSize(c)
 			}
 			activeEntries = append(activeEntries, peertask.Task{
 				Topic:    c,
@@ -618,11 +618,6 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 	if len(activeEntries) > 0 {
 		e.peerRequestQueue.PushTasks(p, activeEntries...)
 	}
-}
-
-// Get the size of a HAVE / HAVE_NOT entry
-func (e *Engine) getBlockPresenceSize(c cid.Cid) int {
-	return bsmsg.BlockPresenceSize(c)
 }
 
 // Split the want-have / want-block entries from the cancel entries
@@ -680,7 +675,7 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 
 				entrySize := blockSize
 				if !isWantBlock {
-					entrySize = e.getBlockPresenceSize(k)
+					entrySize = bsmsg.BlockPresenceSize(k)
 				}
 
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
