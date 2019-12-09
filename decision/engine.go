@@ -622,8 +622,8 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 
 // Split the want-have / want-block entries from the cancel entries
 func (e *Engine) splitWantsCancels(es []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Entry) {
-	var wants []bsmsg.Entry
-	var cancels []bsmsg.Entry
+	wants := make([]bsmsg.Entry, 0, len(es))
+	cancels := make([]bsmsg.Entry, 0, len(es))
 	for _, et := range es {
 		if et.Cancel {
 			cancels = append(cancels, et)
