@@ -433,12 +433,6 @@ func (spm *sessionWantSender) getPiggybackWantHaves(p peer.ID, wantBlocks *cid.S
 	return whs
 }
 
-// markPeerUnavailable indicates that the given peer has disonnected
-func (spm *sessionWantSender) markPeerUnavailable(p peer.ID) {
-	spm.peerAvlMgr.setPeerAvailability(p, false)
-	spm.updateWantsPeerAvailability(p, false)
-}
-
 // newlyExhausted filters the list of keys for wants that have not already
 // been marked as exhausted (all peers indicated they don't have the block)
 func (spm *sessionWantSender) newlyExhausted(ks []cid.Cid) []cid.Cid {

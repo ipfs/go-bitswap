@@ -8,7 +8,6 @@ import (
 
 	debounce "github.com/bep/debounce"
 
-	lu "github.com/ipfs/go-bitswap/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -312,24 +311,24 @@ func (mq *MessageQueue) sendMessage() {
 	}
 }
 
-func (mq *MessageQueue) logOutgoingMessage(msg bsmsg.BitSwapMessage) {
-	entries := msg.Wantlist()
-	for _, e := range entries {
-		if e.Cancel {
-			if e.WantType == pb.Message_Wantlist_Have {
-				log.Debugf("send %s->%s: cancel-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
-			} else {
-				log.Debugf("send %s->%s: cancel-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
-			}
-		} else {
-			if e.WantType == pb.Message_Wantlist_Have {
-				log.Debugf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
-			} else {
-				log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
-			}
-		}
-	}
-}
+// func (mq *MessageQueue) logOutgoingMessage(msg bsmsg.BitSwapMessage) {
+// 	entries := msg.Wantlist()
+// 	for _, e := range entries {
+// 		if e.Cancel {
+// 			if e.WantType == pb.Message_Wantlist_Have {
+// 				log.Debugf("send %s->%s: cancel-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+// 			} else {
+// 				log.Debugf("send %s->%s: cancel-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+// 			}
+// 		} else {
+// 			if e.WantType == pb.Message_Wantlist_Have {
+// 				log.Debugf("send %s->%s: want-have %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+// 			} else {
+// 				log.Debugf("send %s->%s: want-block %s\n", lu.P(mq.network.Self()), lu.P(mq.p), lu.C(e.Cid))
+// 			}
+// 		}
+// 	}
+// }
 
 func (mq *MessageQueue) hasPendingWants() bool {
 	mq.wllock.Lock()

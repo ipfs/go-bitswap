@@ -8,7 +8,6 @@ import (
 	// lu "github.com/ipfs/go-bitswap/logutil"
 	bsbpm "github.com/ipfs/go-bitswap/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/getter"
-	lu "github.com/ipfs/go-bitswap/logutil"
 	notifications "github.com/ipfs/go-bitswap/notifications"
 	bspm "github.com/ipfs/go-bitswap/peermanager"
 	bssim "github.com/ipfs/go-bitswap/sessioninterestmanager"
@@ -184,19 +183,19 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	}
 }
 
-func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
-	// log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
-	// 	s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
-	for _, c := range interestedKs {
-		log.Warningf("Ses%d %s<-%s: block %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
-	}
-	for _, c := range haves {
-		log.Warningf("Ses%d %s<-%s: HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
-	}
-	for _, c := range dontHaves {
-		log.Warningf("Ses%d %s<-%s: DONT_HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
-	}
-}
+// func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
+// 	// log.Infof("Ses%d<-%s: %d blocks, %d haves, %d dont haves\n",
+// 	// 	s.id, from, len(interestedKs), len(wantedHaves), len(wantedDontHaves))
+// 	for _, c := range interestedKs {
+// 		log.Warningf("Ses%d %s<-%s: block %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
+// 	}
+// 	for _, c := range haves {
+// 		log.Warningf("Ses%d %s<-%s: HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
+// 	}
+// 	for _, c := range dontHaves {
+// 		log.Warningf("Ses%d %s<-%s: DONT_HAVE %s\n", s.id, lu.P(s.self), lu.P(from), lu.C(c))
+// 	}
+// }
 
 func (s *Session) onWantsSent(p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	allBlks := append(wantBlocks, wantHaves...)

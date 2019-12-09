@@ -76,8 +76,6 @@ type impl struct {
 
 	supportedProtocols []protocol.ID
 
-	hasConn bool
-
 	// inbound messages from the network are forwarded to the receiver
 	receiver Receiver
 
