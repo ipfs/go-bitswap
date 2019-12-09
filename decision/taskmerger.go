@@ -1,7 +1,6 @@
 package decision
 
 import (
-	cid "github.com/ipfs/go-cid"
 	"github.com/ipfs/go-peertaskqueue/peertask"
 )
 
@@ -85,39 +84,4 @@ func (*taskMerger) Merge(task peertask.Task, existing *peertask.Task) {
 	if existingTask.IsWantBlock && existingTask.HaveBlock {
 		existing.Work = existingTask.BlockSize
 	}
-}
-
-// Filter for DONT_HAVEs (ie the local node doesn't have the block)
-func filterDontHaves(tasks []*peertask.Task) []cid.Cid {
-	var ks []cid.Cid
-	for _, t := range tasks {
-		if !t.Data.(*taskData).HaveBlock {
-			ks = append(ks, t.Topic.(cid.Cid))
-		}
-	}
-	return ks
-}
-
-// Filter for want-haves
-func filterWantHaves(tasks []*peertask.Task) []cid.Cid {
-	var ks []cid.Cid
-	for _, t := range tasks {
-		td := t.Data.(*taskData)
-		if td.HaveBlock && !td.IsWantBlock {
-			ks = append(ks, t.Topic.(cid.Cid))
-		}
-	}
-	return ks
-}
-
-// Filter for want-blocks
-func filterWantBlocks(tasks []*peertask.Task) []*peertask.Task {
-	var res []*peertask.Task
-	for _, t := range tasks {
-		td := t.Data.(*taskData)
-		if td.HaveBlock && td.IsWantBlock {
-			res = append(res, t)
-		}
-	}
-	return res
 }

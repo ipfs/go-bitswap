@@ -393,7 +393,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			}
 		}
 
-		// While there are more tasks to process
+		// Create a new message
 		msg := bsmsg.New(true)
 
 		// log.Debugf("  %s got %d tasks", lu.P(e.self), len(nextTasks))
@@ -401,33 +401,35 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		// Amount of data in the request queue still waiting to be popped
 		msg.SetPendingBytes(int32(pendingBytes))
 
-		// Add DONT_HAVEs to the message
-		for _, c := range filterDontHaves(nextTasks) {
-			// log.Debugf("  make evlp %s->%s DONT_HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
-			msg.AddDontHave(c)
-		}
-
-		// Add HAVEs to the message
-		for _, c := range filterWantHaves(nextTasks) {
-			// log.Debugf("  make evlp %s->%s HAVE %s", lu.P(e.self), lu.P(p), lu.C(c))
-			msg.AddHave(c)
-		}
-
-		// Get requested blocks from the blockstore
-		blockTasks := filterWantBlocks(nextTasks)
-		blockCids := cid.NewSet()
-		for _, t := range blockTasks {
-			blockCids.Add(t.Topic.(cid.Cid))
-		}
-		blks := e.bsm.getBlocks(ctx, blockCids.Keys())
-
-		for _, t := range blockTasks {
+		// Split out want-blocks, want-haves and DONT_HAVEs
+		blockCids := make([]cid.Cid, 0, len(nextTasks))
+		blockTasks := make(map[cid.Cid]*taskData, len(nextTasks))
+		for _, t := range nextTasks {
 			c := t.Topic.(cid.Cid)
+			td := t.Data.(*taskData)
+			if td.HaveBlock {
+				if td.IsWantBlock {
+					blockCids = append(blockCids, c)
+					blockTasks[c] = td
+				} else {
+					// Add HAVES to the message
+					msg.AddHave(c)
+				}
+			} else {
+				// Add DONT_HAVEs to the message
+				msg.AddDontHave(c)
+			}
+		}
+
+		// Fetch blocks from datastore
+		blks := e.bsm.getBlocks(ctx, blockCids)
+
+		for c, t := range blockTasks {
 			blk := blks[c]
 			// If the block was not found (it has been removed)
 			if blk == nil {
 				// If the client requested DONT_HAVE, add DONT_HAVE to the message
-				if t.Data.(*taskData).SendDontHave {
+				if t.SendDontHave {
 					// log.Debugf("  make evlp %s->%s DONT_HAVE (expected block) %s", lu.P(e.self), lu.P(p), lu.C(c))
 					msg.AddDontHave(c)
 				}
