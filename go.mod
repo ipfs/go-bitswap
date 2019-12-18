@@ -26,7 +26,7 @@ require (
 	github.com/libp2p/go-libp2p-testing v0.1.1
 	github.com/libp2p/go-msgio v0.0.4
 	github.com/mattn/go-colorable v0.1.2 // indirect
-	github.com/multiformats/go-multiaddr v0.1.2
+	github.com/multiformats/go-multiaddr v0.2.0
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 )
 
