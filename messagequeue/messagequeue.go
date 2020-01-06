@@ -57,8 +57,8 @@ type MessageQueue struct {
 
 	// Take lock whenever any of these variables are modified
 	wllock    sync.Mutex
-	bcstWants *recallWantlist
-	peerWants *recallWantlist
+	bcstWants recallWantlist
+	peerWants recallWantlist
 	cancels   *cid.Set
 	priority  int
 
@@ -76,8 +76,8 @@ type recallWantlist struct {
 	current  *bswl.Wantlist
 }
 
-func newRecallWantList() *recallWantlist {
-	return &recallWantlist{
+func newRecallWantList() recallWantlist {
+	return recallWantlist{
 		allWants: bswl.New(),
 		current:  bswl.New(),
 	}
