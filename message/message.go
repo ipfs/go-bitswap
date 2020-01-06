@@ -25,26 +25,42 @@ type BitSwapMessage interface {
 
 	// Blocks returns a slice of unique blocks.
 	Blocks() []blocks.Block
+	// BlockPresences returns the list of HAVE / DONT_HAVE in the message
 	BlockPresences() []pb.Message_BlockPresence
+	// Haves returns the Cids for each HAVE
 	Haves() []cid.Cid
+	// DontHaves returns the Cids for each DONT_HAVE
 	DontHaves() []cid.Cid
+	// PendingBytes returns the number of outstanding bytes of data that the
+	// engine has yet to send to the client (because they didn't fit in this
+	// message)
 	PendingBytes() int32
 
 	// AddEntry adds an entry to the Wantlist.
 	AddEntry(key cid.Cid, priority int, wantType pb.Message_Wantlist_WantType, sendDontHave bool) int
 
+	// Cancel adds a CANCEL for the given CID to the message
+	// Returns the size of the CANCEL entry in the protobuf
 	Cancel(key cid.Cid) int
 
+	// Empty indicates whether the message has any information
 	Empty() bool
+	// Size returns the size of the message in bytes
 	Size() int
 
 	// A full wantlist is an authoritative copy, a 'non-full' wantlist is a patch-set
 	Full() bool
 
+	// AddBlock adds a block to the message
 	AddBlock(blocks.Block)
+	// AddBlockPresence adds a HAVE / DONT_HAVE for the given Cid to the message
 	AddBlockPresence(cid.Cid, pb.Message_BlockPresenceType)
+	// AddHave adds a HAVE for the given Cid to the message
 	AddHave(cid.Cid)
+	// AddDontHave adds a DONT_HAVE for the given Cid to the message
 	AddDontHave(cid.Cid)
+	// SetPendingBytes sets the number of bytes of data that are yet to be sent
+	// to the client (because they didn't fit in this message)
 	SetPendingBytes(int32)
 	Exportable
 
