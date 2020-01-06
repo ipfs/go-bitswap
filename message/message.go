@@ -70,6 +70,9 @@ type BitSwapMessage interface {
 // Exportable is an interface for structures than can be
 // encoded in a bitswap protobuf.
 type Exportable interface {
+	// Note that older Bitswap versions use a different wire format, so we need
+	// to convert the message to the appropriate format depending on which
+	// version of the protocol the remote peer supports.
 	ToProtoV0() *pb.Message
 	ToProtoV1() *pb.Message
 	ToNetV0(w io.Writer) error

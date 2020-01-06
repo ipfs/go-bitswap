@@ -107,6 +107,7 @@ func (bsnet *impl) Self() peer.ID {
 	return bsnet.host.ID()
 }
 
+// Indicates whether the given protocol supports HAVE / DONT_HAVE messages
 func (bsnet *impl) SupportsHave(proto protocol.ID) bool {
 	switch proto {
 	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswapOneZero, bsnet.protocolBitswapNoVers:
@@ -125,6 +126,9 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 		log.Warningf("error setting deadline: %s", err)
 	}
 
+	// Older Bitswap versions use a slightly different wire format so we need
+	// to convert the message to the appropriate format depending on the remote
+	// peer's Bitswap version.
 	switch s.Protocol() {
 	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap:
 		if err := msg.ToNetV1(s); err != nil {
@@ -156,11 +160,7 @@ func (bsnet *impl) NewMessageSender(ctx context.Context, p peer.ID) (MessageSend
 }
 
 func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stream, error) {
-	return bsnet.host.NewStream(ctx, p,
-		bsnet.protocolBitswap,
-		bsnet.protocolBitswapOneOne,
-		bsnet.protocolBitswapOneZero,
-		bsnet.protocolBitswapNoVers)
+	return bsnet.host.NewStream(ctx, p, bsnet.supportedProtocols...)
 }
 
 func (bsnet *impl) SendMessage(
