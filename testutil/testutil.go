@@ -39,17 +39,6 @@ func GenerateCids(n int) []cid.Cid {
 	return cids
 }
 
-// GenerateWantlist makes a populated wantlist.
-// func GenerateWantlist(n int, ses uint64) *wantlist.SessionTrackedWantlist {
-// 	wl := wantlist.NewSessionTrackedWantlist()
-// 	for i := 0; i < n; i++ {
-// 		prioritySeq++
-// 		entry := wantlist.NewRefEntry(blockGenerator.Next().Cid(), prioritySeq, false, false)
-// 		wl.AddEntry(entry, ses)
-// 	}
-// 	return wl
-// }
-
 // GenerateMessageEntries makes fake bitswap message entries.
 func GenerateMessageEntries(n int, isCancel bool) []bsmsg.Entry {
 	bsmsgs := make([]bsmsg.Entry, 0, n)
