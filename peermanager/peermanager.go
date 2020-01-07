@@ -38,8 +38,8 @@ type peerQueueInstance struct {
 
 // PeerManager manages a pool of peers and sends messages to peers in the pool.
 type PeerManager struct {
-	sync.RWMutex
-
+	// sync access to peerQueues and peerWantManager
+	pqLk sync.RWMutex
 	// peerQueues -- interact through internal utility functions get/set/remove/iterate
 	peerQueues map[peer.ID]*peerQueueInstance
 	pwm        *peerWantManager
@@ -76,8 +76,8 @@ func (pm *PeerManager) AvailablePeers() []peer.ID {
 
 // ConnectedPeers returns a list of peers this PeerManager is managing.
 func (pm *PeerManager) ConnectedPeers() []peer.ID {
-	pm.RLock()
-	defer pm.RUnlock()
+	pm.pqLk.RLock()
+	defer pm.pqLk.RUnlock()
 
 	peers := make([]peer.ID, 0, len(pm.peerQueues))
 	for p := range pm.peerQueues {
@@ -89,8 +89,8 @@ func (pm *PeerManager) ConnectedPeers() []peer.ID {
 // Connected is called to add a new peer to the pool, and send it an initial set
 // of wants.
 func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
-	pm.Lock()
-	defer pm.Unlock()
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
 
 	pq := pm.getOrCreate(p)
 
@@ -107,8 +107,8 @@ func (pm *PeerManager) Connected(p peer.ID, initialWantHaves []cid.Cid) {
 
 // Disconnected is called to remove a peer from the pool.
 func (pm *PeerManager) Disconnected(p peer.ID) {
-	pm.Lock()
-	defer pm.Unlock()
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
 
 	pq, ok := pm.peerQueues[p]
 
@@ -131,8 +131,8 @@ func (pm *PeerManager) Disconnected(p peer.ID) {
 }
 
 func (pm *PeerManager) BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid) {
-	pm.Lock()
-	defer pm.Unlock()
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
 
 	for p, ks := range pm.pwm.BroadcastWantHaves(wantHaves) {
 		if pqi, ok := pm.peerQueues[p]; ok {
@@ -142,8 +142,8 @@ func (pm *PeerManager) BroadcastWantHaves(ctx context.Context, wantHaves []cid.C
 }
 
 func (pm *PeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
-	pm.Lock()
-	defer pm.Unlock()
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
 
 	if pqi, ok := pm.peerQueues[p]; ok {
 		wblks, whvs := pm.pwm.SendWants(p, wantBlocks, wantHaves)
@@ -152,8 +152,8 @@ func (pm *PeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []ci
 }
 
 func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
-	pm.Lock()
-	defer pm.Unlock()
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
 
 	// Send a CANCEL to each peer that has been sent a want-block or want-have
 	for p, ks := range pm.pwm.SendCancels(cancelKs) {
@@ -164,15 +164,15 @@ func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
 }
 
 func (pm *PeerManager) CurrentWants() []cid.Cid {
-	pm.RLock()
-	defer pm.RUnlock()
+	pm.pqLk.RLock()
+	defer pm.pqLk.RUnlock()
 
 	return pm.pwm.GetWantBlocks()
 }
 
 func (pm *PeerManager) CurrentWantHaves() []cid.Cid {
-	pm.RLock()
-	defer pm.RUnlock()
+	pm.pqLk.RLock()
+	defer pm.pqLk.RUnlock()
 
 	return pm.pwm.GetWantHaves()
 }
