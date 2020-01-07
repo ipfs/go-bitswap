@@ -238,6 +238,73 @@ func TestSendingMessagesPriority(t *testing.T) {
 	}
 }
 
+func TestCancelOverridesPendingWants(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
+	resetChan := make(chan struct{}, 1)
+	fullClosedChan := make(chan struct{}, 1)
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	messageQueue := New(ctx, peerID, fakenet)
+	wantHaves := testutil.GenerateCids(2)
+	wantBlocks := testutil.GenerateCids(2)
+
+	messageQueue.Startup()
+	messageQueue.AddWants(wantBlocks, wantHaves)
+	messageQueue.AddCancels([]cid.Cid{wantBlocks[0], wantHaves[0]})
+	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	if totalEntriesLength(messages) != len(wantHaves)+len(wantBlocks) {
+		t.Fatal("Wrong message count")
+	}
+
+	wb, wh, cl := filterWantTypes(messages[0].Wantlist())
+	if len(wb) != 1 || !wb[0].Equals(wantBlocks[1]) {
+		t.Fatal("Expected 1 want-block")
+	}
+	if len(wh) != 1 || !wh[0].Equals(wantHaves[1]) {
+		t.Fatal("Expected 1 want-have")
+	}
+	if len(cl) != 2 {
+		t.Fatal("Expected 2 cancels")
+	}
+}
+
+func TestWantOverridesPendingCancels(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan bsmsg.BitSwapMessage)
+	sendErrors := make(chan error)
+	resetChan := make(chan struct{}, 1)
+	fullClosedChan := make(chan struct{}, 1)
+	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, true}
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	messageQueue := New(ctx, peerID, fakenet)
+	cancels := testutil.GenerateCids(3)
+
+	messageQueue.Startup()
+	messageQueue.AddCancels(cancels)
+	messageQueue.AddWants([]cid.Cid{cancels[0]}, []cid.Cid{cancels[1]})
+	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+
+	if totalEntriesLength(messages) != len(cancels) {
+		t.Fatal("Wrong message count")
+	}
+
+	wb, wh, cl := filterWantTypes(messages[0].Wantlist())
+	if len(wb) != 1 || !wb[0].Equals(cancels[0]) {
+		t.Fatal("Expected 1 want-block")
+	}
+	if len(wh) != 1 || !wh[0].Equals(cancels[1]) {
+		t.Fatal("Expected 1 want-have")
+	}
+	if len(cl) != 1 || !cl[0].Equals(cancels[2]) {
+		t.Fatal("Expected 1 cancel")
+	}
+}
+
 func TestWantlistRebroadcast(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan bsmsg.BitSwapMessage)
@@ -510,4 +577,20 @@ func TestResendAfterMaxRetries(t *testing.T) {
 	if totalEntriesLength(messages) != len(wantHaves)+len(wantBlocks)+len(wantHaves2)+len(wantBlocks2) {
 		t.Fatal("Expected subsequent send to send first and second batches of wants")
 	}
+}
+
+func filterWantTypes(wantlist []bsmsg.Entry) ([]cid.Cid, []cid.Cid, []cid.Cid) {
+	var wbs []cid.Cid
+	var whs []cid.Cid
+	var cls []cid.Cid
+	for _, e := range wantlist {
+		if e.Cancel {
+			cls = append(cls, e.Cid)
+		} else if e.WantType == pb.Message_Wantlist_Block {
+			wbs = append(wbs, e.Cid)
+		} else {
+			whs = append(whs, e.Cid)
+		}
+	}
+	return wbs, whs, cls
 }

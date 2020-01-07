@@ -69,36 +69,39 @@ type MessageQueue struct {
 	rebroadcastTimer      *time.Timer
 }
 
-// recallWantlist keeps a list of current wants, and a list of all wants that
+// recallWantlist keeps a list of pending wants, and a list of all wants that
 // have ever been requested
 type recallWantlist struct {
+	// The list of all wants that have been requested, including wants that
+	// have been sent and wants that have not yet been sent
 	allWants *bswl.Wantlist
-	current  *bswl.Wantlist
+	// The list of wants that have not yet been sent
+	pending *bswl.Wantlist
 }
 
 func newRecallWantList() recallWantlist {
 	return recallWantlist{
 		allWants: bswl.New(),
-		current:  bswl.New(),
+		pending:  bswl.New(),
 	}
 }
 
-// Add want to both the current list and the list of all wants
+// Add want to both the pending list and the list of all wants
 func (r *recallWantlist) Add(c cid.Cid, priority int, wtype pb.Message_Wantlist_WantType) {
 	r.allWants.Add(c, priority, wtype)
-	r.current.Add(c, priority, wtype)
+	r.pending.Add(c, priority, wtype)
 }
 
-// Remove wants from both the current list and the list of all wants
+// Remove wants from both the pending list and the list of all wants
 func (r *recallWantlist) Remove(c cid.Cid) {
 	r.allWants.Remove(c)
-	r.current.Remove(c)
+	r.pending.Remove(c)
 }
 
-// Remove wants by type from both the current list and the list of all wants
+// Remove wants by type from both the pending list and the list of all wants
 func (r *recallWantlist) RemoveType(c cid.Cid, wtype pb.Message_Wantlist_WantType) {
 	r.allWants.RemoveType(c, wtype)
-	r.current.RemoveType(c, wtype)
+	r.pending.RemoveType(c, wtype)
 }
 
 // New creats a new MessageQueue.
@@ -142,6 +145,10 @@ func (mq *MessageQueue) AddBroadcastWantHaves(wantHaves []cid.Cid) {
 	for _, c := range wantHaves {
 		mq.bcstWants.Add(c, mq.priority, pb.Message_Wantlist_Have)
 		mq.priority--
+
+		// We're adding a want-have for the cid, so clear any pending cancel
+		// for the cid
+		mq.cancels.Remove(c)
 	}
 
 	// Schedule a message send
@@ -160,10 +167,18 @@ func (mq *MessageQueue) AddWants(wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	for _, c := range wantHaves {
 		mq.peerWants.Add(c, mq.priority, pb.Message_Wantlist_Have)
 		mq.priority--
+
+		// We're adding a want-have for the cid, so clear any pending cancel
+		// for the cid
+		mq.cancels.Remove(c)
 	}
 	for _, c := range wantBlocks {
 		mq.peerWants.Add(c, mq.priority, pb.Message_Wantlist_Block)
 		mq.priority--
+
+		// We're adding a want-block for the cid, so clear any pending cancel
+		// for the cid
+		mq.cancels.Remove(c)
 	}
 
 	// Schedule a message send
@@ -246,7 +261,7 @@ func (mq *MessageQueue) rebroadcastWantlist() {
 	}
 }
 
-// Transfer wants from the rebroadcast lists into the current lists.
+// Transfer wants from the rebroadcast lists into the pending lists.
 func (mq *MessageQueue) transferRebroadcastWants() bool {
 	mq.wllock.Lock()
 	defer mq.wllock.Unlock()
@@ -256,9 +271,9 @@ func (mq *MessageQueue) transferRebroadcastWants() bool {
 		return false
 	}
 
-	// Copy all wants into current wants lists
-	mq.bcstWants.current.Absorb(mq.bcstWants.allWants)
-	mq.peerWants.current.Absorb(mq.peerWants.allWants)
+	// Copy all wants into pending wants lists
+	mq.bcstWants.pending.Absorb(mq.bcstWants.allWants)
+	mq.peerWants.pending.Absorb(mq.peerWants.allWants)
 
 	return true
 }
@@ -271,7 +286,7 @@ func (mq *MessageQueue) onWorkReady() {
 }
 
 func (mq *MessageQueue) sendIfReady() {
-	if mq.hasPendingWants() {
+	if mq.hasPendingWork() {
 		mq.sendMessage()
 	}
 }
@@ -281,7 +296,8 @@ func (mq *MessageQueue) sendMessage() {
 	if err != nil {
 		log.Infof("cant open message sender to peer %s: %s", mq.p, err)
 		// TODO: cant connect, what now?
-		// TODO: should we disconnect and clear the want list to avoid using up memory?
+		// TODO: should we stop using this connection and clear the want list
+		// to avoid using up memory?
 		return
 	}
 
@@ -302,7 +318,7 @@ func (mq *MessageQueue) sendMessage() {
 			// If the message was too big and only a subset of wants could be
 			// sent, schedule sending the rest of the wants in the next
 			// iteration of the event loop.
-			if mq.hasPendingWants() {
+			if mq.hasPendingWork() {
 				mq.signalWorkReady()
 			}
 
@@ -330,11 +346,11 @@ func (mq *MessageQueue) sendMessage() {
 // 	}
 // }
 
-func (mq *MessageQueue) hasPendingWants() bool {
+func (mq *MessageQueue) hasPendingWork() bool {
 	mq.wllock.Lock()
 	defer mq.wllock.Unlock()
 
-	return mq.bcstWants.current.Len() > 0 || mq.peerWants.current.Len() > 0 || mq.cancels.Len() > 0
+	return mq.bcstWants.pending.Len() > 0 || mq.peerWants.pending.Len() > 0 || mq.cancels.Len() > 0
 }
 
 func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) (bsmsg.BitSwapMessage, func()) {
@@ -345,8 +361,8 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) (bsmsg.BitSwap
 	defer mq.wllock.Unlock()
 
 	// Get broadcast and regular wantlist entries
-	bcstEntries := mq.bcstWants.current.SortedEntries()
-	peerEntries := mq.peerWants.current.SortedEntries()
+	bcstEntries := mq.bcstWants.pending.SortedEntries()
+	peerEntries := mq.peerWants.pending.SortedEntries()
 
 	// Size of the message so far
 	msgSize := 0
@@ -397,8 +413,8 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) (bsmsg.BitSwap
 		defer mq.wllock.Unlock()
 
 		for _, e := range msg.Wantlist() {
-			mq.bcstWants.current.Remove(e.Cid)
-			mq.peerWants.current.RemoveType(e.Cid, e.WantType)
+			mq.bcstWants.pending.Remove(e.Cid)
+			mq.peerWants.pending.RemoveType(e.Cid, e.WantType)
 		}
 	}
 
