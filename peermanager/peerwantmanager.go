@@ -44,7 +44,6 @@ func (pwm *peerWantManager) AddPeer(p peer.ID) {
 }
 
 func (pwm *peerWantManager) RemovePeer(p peer.ID) {
-	// TODO: does this leak memory for cid sets?
 	delete(pwm.peerWants, p)
 }
 
