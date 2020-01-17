@@ -20,7 +20,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.1
 	github.com/ipfs/go-log v0.0.1
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-peertaskqueue v0.0.4
+	github.com/ipfs/go-peertaskqueue v0.0.5
 	github.com/jbenet/goprocess v0.1.3
 	github.com/libp2p/go-libp2p v0.0.30
 	github.com/libp2p/go-libp2p-host v0.0.3
