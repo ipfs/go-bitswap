@@ -2,6 +2,7 @@ package decision
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	blocks "github.com/ipfs/go-block-format"
@@ -14,9 +15,11 @@ import (
 type blockstoreManager struct {
 	bs          bstore.Blockstore
 	workerCount int
-	jobs        chan func()
+	jobs        chan func(error)
 	px          process.Process
 }
+
+var scheduleErr = fmt.Errorf("Could not schedule worker - blockstore manager shut down")
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
 // and number of workers
@@ -24,7 +27,7 @@ func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount
 	return &blockstoreManager{
 		bs:          bs,
 		workerCount: workerCount,
-		jobs:        make(chan func()),
+		jobs:        make(chan func(error)),
 	}
 }
 
@@ -43,17 +46,32 @@ func (bsm *blockstoreManager) worker() {
 	for {
 		select {
 		case <-bsm.px.Closing():
+			// If the process is closing, shut down the worker
+			bsm.shutdownWorker()
 			return
 		case job := <-bsm.jobs:
-			job()
+			job(nil)
 		}
 	}
 }
 
-func (bsm *blockstoreManager) addJob(ctx context.Context, job func()) {
+func (bsm *blockstoreManager) shutdownWorker() {
+	// Drain the queue of outstanding jobs
+	for len(bsm.jobs) > 0 {
+		select {
+		case job := <-bsm.jobs:
+			job(scheduleErr)
+		default:
+		}
+	}
+}
+
+func (bsm *blockstoreManager) addJob(ctx context.Context, job func(error)) {
 	select {
 	case <-ctx.Done():
+		job(scheduleErr)
 	case <-bsm.px.Closing():
+		job(scheduleErr)
 	case bsm.jobs <- job:
 	}
 }
@@ -109,8 +127,11 @@ func (bsm *blockstoreManager) jobPerKey(ctx context.Context, ks []cid.Cid, jobFn
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
-		bsm.addJob(ctx, func() {
-			jobFn(c)
+		bsm.addJob(ctx, func(err error) {
+			// Check if there was a scheduling error (because the manager was shut down)
+			if err == nil {
+				jobFn(c)
+			}
 			wg.Done()
 		})
 	}

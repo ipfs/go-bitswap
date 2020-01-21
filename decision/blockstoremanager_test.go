@@ -209,13 +209,24 @@ func TestBlockstoreManagerClose(t *testing.T) {
 	case <-fnCallDone:
 		t.Fatal("call to BlockstoreManager should be cancelled")
 	case <-px.Closed():
+		// px should be closed before getBlockSizes() returns
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel2()
+	select {
+	case <-fnCallDone:
+		// getBlockSizes() should return before context times out
+	case <-ctx2.Done():
+		t.Fatal("call to BlockstoreManager should eventually return")
 	}
 }
 
 func TestBlockstoreManagerCtxDone(t *testing.T) {
 	delayTime := 20 * time.Millisecond
+	cancelTime := delayTime / 2
 	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(context.Background(), delayTime/2)
+	ctx, cancel := context.WithTimeout(context.Background(), cancelTime)
 	defer cancel()
 	bsdelay := delay.Fixed(delayTime)
 
@@ -243,9 +254,23 @@ func TestBlockstoreManagerCtxDone(t *testing.T) {
 		fnCallDone <- struct{}{}
 	}()
 
+	// Context should be cancelled before getBlockSizes() returns
+	// because cancelTime = delayTime / 2
+	// ie the delay in getting a block from the blockstore is longer than the
+	// delay on canceling the context
 	select {
 	case <-fnCallDone:
 		t.Fatal("call to BlockstoreManager should be cancelled")
 	case <-ctx.Done():
+		// context should be cancelled before getBlockSizes() returns
+	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel2()
+	select {
+	case <-fnCallDone:
+		// getBlockSizes() should return before context times out
+	case <-ctx2.Done():
+		t.Fatal("call to BlockstoreManager should eventually return")
 	}
 }
