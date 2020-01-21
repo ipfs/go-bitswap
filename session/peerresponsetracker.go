@@ -24,11 +24,7 @@ func (prt *peerResponseTracker) receivedBlockFrom(from peer.ID) {
 	prt.Lock()
 	defer prt.Unlock()
 
-	count, ok := prt.firstResponder[from]
-	if !ok {
-		count = 0
-	}
-	prt.firstResponder[from] = count + 1
+	prt.firstResponder[from]++
 }
 
 func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
@@ -36,7 +32,7 @@ func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
 		return ""
 	}
 
-	// rand makes a syscall so get it outside the lock
+	// rand may be slow so get it outside the lock
 	rnd := rand.Float64()
 
 	prt.RLock()
@@ -60,8 +56,11 @@ func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
 		}
 	}
 
-	index := int(rnd * float64(len(peers)))
-	// log.Warningf("  chose random (indx %d) %s from %s (%d) / %s (%d) with pivot %.2f",
+	// We shouldn't get here unless there is some weirdness with floating point
+	// math that doesn't quite cover the whole range of peers in the for loop
+	// so just choose the last peer.
+	index := len(peers) - 1
+	// log.Warningf("  chose last (indx %d) %s from %s (%d) / %s (%d) with pivot %.2f",
 	// 	index, lu.P(peers[index]), lu.P(peers[0]), prt.firstResponder[peers[0]], lu.P(peers[1]), prt.firstResponder[peers[1]], rnd)
 	return peers[index]
 }
