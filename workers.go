@@ -98,15 +98,16 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 
 	for _, blockPresence := range env.Message.BlockPresences() {
 		c := blockPresence.Cid
-		if blockPresence.Type == pb.Message_Have {
+		switch blockPresence.Type {
+		case pb.Message_Have:
 			log.Infof("Sending HAVE %s to %s", c.String()[2:8], env.Peer)
-		} else if blockPresence.Type == pb.Message_DontHave {
+		case pb.Message_DontHave:
 			log.Infof("Sending DONT_HAVE %s to %s", c.String()[2:8], env.Peer)
-		} else {
+		default:
 			panic(fmt.Sprintf("unrecognized BlockPresence type %v", blockPresence.Type))
 		}
-		// TODO: should msgSize include len(c.Bytes()) + len(enum)?
-		// msgSize += len(block.RawData())
+
+		msgSize += bsmsg.BlockPresenceSize(c)
 		msg.AddBlockPresence(c, blockPresence.Type)
 	}
 	for _, block := range env.Message.Blocks() {
