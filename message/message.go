@@ -26,7 +26,7 @@ type BitSwapMessage interface {
 	// Blocks returns a slice of unique blocks.
 	Blocks() []blocks.Block
 	// BlockPresences returns the list of HAVE / DONT_HAVE in the message
-	BlockPresences() []pb.Message_BlockPresence
+	BlockPresences() []BlockPresence
 	// Haves returns the Cids for each HAVE
 	Haves() []cid.Cid
 	// DontHaves returns the Cids for each DONT_HAVE
@@ -77,6 +77,12 @@ type Exportable interface {
 	ToProtoV1() *pb.Message
 	ToNetV0(w io.Writer) error
 	ToNetV1(w io.Writer) error
+}
+
+// BlockPresence represents a HAVE / DONT_HAVE for a given Cid
+type BlockPresence struct {
+	Cid  cid.Cid
+	Type pb.Message_BlockPresenceType
 }
 
 type impl struct {
@@ -187,13 +193,14 @@ func (m *impl) Blocks() []blocks.Block {
 	return bs
 }
 
-func (m *impl) BlockPresences() []pb.Message_BlockPresence {
-	bps := make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
-	for c, t := range m.blockPresences {
-		bps = append(bps, pb.Message_BlockPresence{
-			Cid:  c.Bytes(),
-			Type: t,
-		})
+func (m *impl) BlockPresences() []BlockPresence {
+	bps := make([]BlockPresence, 0, len(m.blockPresences))
+	for k, t := range m.blockPresences {
+		c, err := cid.Cast(k.Bytes())
+		if err != nil {
+			panic(err)
+		}
+		bps = append(bps, BlockPresence{c, t})
 	}
 	return bps
 }

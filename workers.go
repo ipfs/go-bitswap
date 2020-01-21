@@ -67,11 +67,7 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					outgoing.AddBlock(block)
 				}
 				for _, blockPresence := range envelope.Message.BlockPresences() {
-					c, err := cid.Cast(blockPresence.Cid)
-					if err != nil {
-						panic(err)
-					}
-					outgoing.AddBlockPresence(c, blockPresence.Type)
+					outgoing.AddBlockPresence(blockPresence.Cid, blockPresence.Type)
 				}
 				// TODO: Only record message as sent if there was no error?
 				bs.engine.MessageSent(envelope.Peer, outgoing)
@@ -101,10 +97,7 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 	msg := bsmsg.New(false)
 
 	for _, blockPresence := range env.Message.BlockPresences() {
-		c, err := cid.Cast(blockPresence.Cid)
-		if err != nil {
-			panic(err)
-		}
+		c := blockPresence.Cid
 		if blockPresence.Type == pb.Message_Have {
 			log.Infof("Sending HAVE %s to %s", c.String()[2:8], env.Peer)
 		} else if blockPresence.Type == pb.Message_DontHave {

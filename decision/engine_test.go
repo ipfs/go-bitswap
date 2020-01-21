@@ -752,18 +752,14 @@ func checkOutput(t *testing.T, e *Engine, envelope *Envelope, expBlks []string, 
 	return nil
 }
 
-func checkPresence(presences []pb.Message_BlockPresence, expPresence []string, presenceType pb.Message_BlockPresenceType) error {
+func checkPresence(presences []message.BlockPresence, expPresence []string, presenceType pb.Message_BlockPresenceType) error {
 	for _, k := range expPresence {
 		found := false
 		expected := blocks.NewBlock([]byte(k))
 		for _, p := range presences {
-			c, err := cid.Cast(p.GetCid())
-			if err != nil {
-				panic("could not parse cid")
-			}
-			if c.Equals(expected.Cid()) {
+			if p.Cid.Equals(expected.Cid()) {
 				found = true
-				if p.GetType() != presenceType {
+				if p.Type != presenceType {
 					return errors.New("type mismatch")
 				}
 				break
@@ -790,19 +786,15 @@ func formatBlocksDiff(blks []blocks.Block, expBlks []string) string {
 	return out.String()
 }
 
-func formatPresencesDiff(presences []pb.Message_BlockPresence, expHaves []string, expDontHaves []string) string {
+func formatPresencesDiff(presences []message.BlockPresence, expHaves []string, expDontHaves []string) string {
 	var out bytes.Buffer
 	out.WriteString(fmt.Sprintf("BlockPresences (%d):\n", len(presences)))
-	for _, b := range presences {
-		c, err := cid.Cast(b.GetCid())
-		if err != nil {
-			panic(err)
-		}
+	for _, p := range presences {
 		t := "HAVE"
-		if b.GetType() == pb.Message_DontHave {
+		if p.Type == pb.Message_DontHave {
 			t = "DONT_HAVE"
 		}
-		out.WriteString(fmt.Sprintf("  %s - %s\n", lu.C(c), t))
+		out.WriteString(fmt.Sprintf("  %s - %s\n", lu.C(p.Cid), t))
 	}
 	out.WriteString(fmt.Sprintf("Expected (%d):\n", len(expHaves)+len(expDontHaves)))
 	for _, k := range expHaves {
@@ -917,7 +909,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 		t.Fatal("expected 1 block")
 	}
 	sentHave := env.Message.BlockPresences()
-	if len(sentHave) != 1 || !bytes.Equal(sentHave[0].Cid, blks[0].Cid().Bytes()) || sentHave[0].Type != pb.Message_Have {
+	if len(sentHave) != 1 || !sentHave[0].Cid.Equals(blks[0].Cid()) || sentHave[0].Type != pb.Message_Have {
 		t.Fatal("expected 1 HAVE")
 	}
 }
@@ -954,12 +946,12 @@ func TestSendDontHave(t *testing.T) {
 	if len(sentDontHaves) != 2 {
 		t.Fatal("expected 2 DONT_HAVEs")
 	}
-	if !bytes.Equal(sentDontHaves[0].Cid, blks[1].Cid().Bytes()) &&
-		!bytes.Equal(sentDontHaves[1].Cid, blks[1].Cid().Bytes()) {
+	if !sentDontHaves[0].Cid.Equals(blks[1].Cid()) &&
+		!sentDontHaves[1].Cid.Equals(blks[1].Cid()) {
 		t.Fatal("expected DONT_HAVE for want-have")
 	}
-	if !bytes.Equal(sentDontHaves[0].Cid, blks[3].Cid().Bytes()) &&
-		!bytes.Equal(sentDontHaves[1].Cid, blks[3].Cid().Bytes()) {
+	if !sentDontHaves[0].Cid.Equals(blks[3].Cid()) &&
+		!sentDontHaves[1].Cid.Equals(blks[3].Cid()) {
 		t.Fatal("expected DONT_HAVE for want-block")
 	}
 

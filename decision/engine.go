@@ -721,11 +721,7 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 		// TODO: record block presence bytes as well?
 		// l.SentBytes(?)
 		if bp.Type == pb.Message_Have {
-			c, err := cid.Cast(bp.Cid)
-			if err != nil {
-				panic(err)
-			}
-			l.wantList.RemoveType(c, pb.Message_Wantlist_Have)
+			l.wantList.RemoveType(bp.Cid, pb.Message_Wantlist_Have)
 		}
 	}
 }
