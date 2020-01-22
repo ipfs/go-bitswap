@@ -151,7 +151,7 @@ type Engine struct {
 func NewEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger) *Engine {
 	e := &Engine{
 		ledgerMap:       make(map[peer.ID]*ledger),
-		bsm:             newBlockstoreManager(ctx, bs, blockstoreWorkerCount),
+		bsm:             newBlockstoreManager(bs, blockstoreWorkerCount),
 		peerTagger:      peerTagger,
 		outbox:          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:      make(chan struct{}, 1),
@@ -367,7 +367,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		for _, t := range nextTask.Tasks {
 			blockCids.Add(t.Identifier.(cid.Cid))
 		}
-		blks := e.bsm.getBlocks(ctx, blockCids.Keys())
+		blks := e.bsm.getBlocks(blockCids.Keys())
 
 		msg := bsmsg.New(true)
 		for _, b := range blks {
@@ -417,7 +417,7 @@ func (e *Engine) Peers() []peer.ID {
 
 // MessageReceived performs book-keeping. Returns error if passed invalid
 // arguments.
-func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwapMessage) {
+func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) {
 	if m.Empty() {
 		log.Debugf("received empty message from %s", p)
 	}
@@ -437,7 +437,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 			wantKs.Add(entry.Cid)
 		}
 	}
-	blockSizes := e.bsm.getBlockSizes(ctx, wantKs.Keys())
+	blockSizes := e.bsm.getBlockSizes(wantKs.Keys())
 
 	l := e.findOrCreate(p)
 	l.lk.Lock()

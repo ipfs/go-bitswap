@@ -1,7 +1,6 @@
 package decision
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
@@ -23,7 +22,7 @@ var scheduleErr = fmt.Errorf("Could not schedule worker - blockstore manager shu
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
 // and number of workers
-func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount int) *blockstoreManager {
+func newBlockstoreManager(bs bstore.Blockstore, workerCount int) *blockstoreManager {
 	return &blockstoreManager{
 		bs:          bs,
 		workerCount: workerCount,
@@ -66,24 +65,22 @@ func (bsm *blockstoreManager) shutdownWorker() {
 	}
 }
 
-func (bsm *blockstoreManager) addJob(ctx context.Context, job func(error)) {
+func (bsm *blockstoreManager) addJob(job func(error)) {
 	select {
-	case <-ctx.Done():
-		job(scheduleErr)
 	case <-bsm.px.Closing():
 		job(scheduleErr)
 	case bsm.jobs <- job:
 	}
 }
 
-func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) map[cid.Cid]int {
+func (bsm *blockstoreManager) getBlockSizes(ks []cid.Cid) map[cid.Cid]int {
 	res := make(map[cid.Cid]int)
 	if len(ks) == 0 {
 		return res
 	}
 
 	var lk sync.Mutex
-	bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
+	bsm.jobPerKey(ks, func(c cid.Cid) {
 		size, err := bsm.bs.GetSize(c)
 		if err != nil {
 			if err != bstore.ErrNotFound {
@@ -99,14 +96,14 @@ func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) m
 	return res
 }
 
-func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) map[cid.Cid]blocks.Block {
+func (bsm *blockstoreManager) getBlocks(ks []cid.Cid) map[cid.Cid]blocks.Block {
 	res := make(map[cid.Cid]blocks.Block)
 	if len(ks) == 0 {
 		return res
 	}
 
 	var lk sync.Mutex
-	bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
+	bsm.jobPerKey(ks, func(c cid.Cid) {
 		blk, err := bsm.bs.Get(c)
 		if err != nil {
 			if err != bstore.ErrNotFound {
@@ -122,12 +119,12 @@ func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) map[c
 	return res
 }
 
-func (bsm *blockstoreManager) jobPerKey(ctx context.Context, ks []cid.Cid, jobFn func(c cid.Cid)) {
+func (bsm *blockstoreManager) jobPerKey(ks []cid.Cid, jobFn func(c cid.Cid)) {
 	wg := sync.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)
-		bsm.addJob(ctx, func(err error) {
+		bsm.addJob(func(err error) {
 			// Check if there was a scheduling error (because the manager was shut down)
 			if err == nil {
 				jobFn(c)

@@ -21,16 +21,15 @@ import (
 )
 
 func TestBlockstoreManagerNotFoundKey(t *testing.T) {
-	ctx := context.Background()
 	bsdelay := delay.Fixed(3 * time.Millisecond)
 	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
-	bsm := newBlockstoreManager(ctx, bstore, 5)
+	bsm := newBlockstoreManager(bstore, 5)
 	bsm.start(process.WithTeardown(func() error { return nil }))
 
 	cids := testutil.GenerateCids(4)
-	sizes := bsm.getBlockSizes(ctx, cids)
+	sizes := bsm.getBlockSizes(cids)
 	if len(sizes) != 0 {
 		t.Fatal("Wrong response length")
 	}
@@ -41,7 +40,7 @@ func TestBlockstoreManagerNotFoundKey(t *testing.T) {
 		}
 	}
 
-	blks := bsm.getBlocks(ctx, cids)
+	blks := bsm.getBlocks(cids)
 	if len(blks) != 0 {
 		t.Fatal("Wrong response length")
 	}
@@ -54,12 +53,11 @@ func TestBlockstoreManagerNotFoundKey(t *testing.T) {
 }
 
 func TestBlockstoreManager(t *testing.T) {
-	ctx := context.Background()
 	bsdelay := delay.Fixed(3 * time.Millisecond)
 	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
-	bsm := newBlockstoreManager(ctx, bstore, 5)
+	bsm := newBlockstoreManager(bstore, 5)
 	bsm.start(process.WithTeardown(func() error { return nil }))
 
 	exp := make(map[cid.Cid]blocks.Block)
@@ -82,7 +80,7 @@ func TestBlockstoreManager(t *testing.T) {
 		cids = append(cids, b.Cid())
 	}
 
-	sizes := bsm.getBlockSizes(ctx, cids)
+	sizes := bsm.getBlockSizes(cids)
 	if len(sizes) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
@@ -106,7 +104,7 @@ func TestBlockstoreManager(t *testing.T) {
 		}
 	}
 
-	fetched := bsm.getBlocks(ctx, cids)
+	fetched := bsm.getBlocks(cids)
 	if len(fetched) != len(blks)-1 {
 		t.Fatal("Wrong response length")
 	}
@@ -131,13 +129,12 @@ func TestBlockstoreManager(t *testing.T) {
 }
 
 func TestBlockstoreManagerConcurrency(t *testing.T) {
-	ctx := context.Background()
 	bsdelay := delay.Fixed(3 * time.Millisecond)
 	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
 	workerCount := 5
-	bsm := newBlockstoreManager(ctx, bstore, workerCount)
+	bsm := newBlockstoreManager(bstore, workerCount)
 	bsm.start(process.WithTeardown(func() error { return nil }))
 
 	blkSize := int64(8 * 1024)
@@ -160,7 +157,7 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 		go func(t *testing.T) {
 			defer wg.Done()
 
-			sizes := bsm.getBlockSizes(ctx, ks)
+			sizes := bsm.getBlockSizes(ks)
 			if len(sizes) != len(blks) {
 				err = errors.New("Wrong response length")
 			}
@@ -174,13 +171,12 @@ func TestBlockstoreManagerConcurrency(t *testing.T) {
 }
 
 func TestBlockstoreManagerClose(t *testing.T) {
-	ctx := context.Background()
 	delayTime := 20 * time.Millisecond
 	bsdelay := delay.Fixed(delayTime)
 	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
 
-	bsm := newBlockstoreManager(ctx, bstore, 3)
+	bsm := newBlockstoreManager(bstore, 3)
 	px := process.WithTeardown(func() error { return nil })
 	bsm.start(px)
 
@@ -201,7 +197,7 @@ func TestBlockstoreManagerClose(t *testing.T) {
 
 	fnCallDone := make(chan struct{})
 	go func() {
-		bsm.getBlockSizes(ctx, ks)
+		bsm.getBlockSizes(ks)
 		fnCallDone <- struct{}{}
 	}()
 
@@ -210,59 +206,6 @@ func TestBlockstoreManagerClose(t *testing.T) {
 		t.Fatal("call to BlockstoreManager should be cancelled")
 	case <-px.Closed():
 		// px should be closed before getBlockSizes() returns
-	}
-
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel2()
-	select {
-	case <-fnCallDone:
-		// getBlockSizes() should return before context times out
-	case <-ctx2.Done():
-		t.Fatal("call to BlockstoreManager should eventually return")
-	}
-}
-
-func TestBlockstoreManagerCtxDone(t *testing.T) {
-	delayTime := 20 * time.Millisecond
-	cancelTime := delayTime / 2
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(context.Background(), cancelTime)
-	defer cancel()
-	bsdelay := delay.Fixed(delayTime)
-
-	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
-	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
-
-	bsm := newBlockstoreManager(ctx, bstore, 3)
-	proc := process.WithTeardown(func() error { return nil })
-	bsm.start(proc)
-
-	blks := testutil.GenerateBlocksOfSize(3, 1024)
-	var ks []cid.Cid
-	for _, b := range blks {
-		ks = append(ks, b.Cid())
-	}
-
-	err := bstore.PutMany(blks)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fnCallDone := make(chan struct{})
-	go func() {
-		bsm.getBlockSizes(ctx, ks)
-		fnCallDone <- struct{}{}
-	}()
-
-	// Context should be cancelled before getBlockSizes() returns
-	// because cancelTime = delayTime / 2
-	// ie the delay in getting a block from the blockstore is longer than the
-	// delay on canceling the context
-	select {
-	case <-fnCallDone:
-		t.Fatal("call to BlockstoreManager should be cancelled")
-	case <-ctx.Done():
-		// context should be cancelled before getBlockSizes() returns
 	}
 
 	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
