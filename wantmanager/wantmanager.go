@@ -12,13 +12,21 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// PeerHandler sends wants / cancels to other peers
 type PeerHandler interface {
+	// Connected is called when a peer connects, with any initial want-haves
+	// that have been broadcast to all peers (as part of session discovery)
 	Connected(p peer.ID, initialWants []cid.Cid)
+	// Disconnected is called when a peer disconnects
 	Disconnected(p peer.ID)
+	// BroadcastWantHaves sends want-haves to all connected peers
 	BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid)
+	// SendCancels sends cancels to all peers that had previously been sent
+	// a want-block or want-have for the given key
 	SendCancels(context.Context, []cid.Cid)
 }
 
+// SessionManager receives incoming messages and distributes them to sessions
 type SessionManager interface {
 	ReceiveFrom(p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []sessionmanager.Session
 }
@@ -52,6 +60,7 @@ func (wm *WantManager) SetSessionManager(sm SessionManager) {
 	wm.sm = sm
 }
 
+// ReceiveFrom is called when a new message is received
 func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	// Record block presence for HAVE / DONT_HAVE
 	wm.bpm.ReceiveFrom(p, haves, dontHaves)
@@ -63,6 +72,8 @@ func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Ci
 	wm.peerHandler.SendCancels(ctx, blks)
 }
 
+// BroadcastWantHaves is called when want-haves should be broadcast to all
+// connected peers (as part of session discovery)
 func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantHaves []cid.Cid) {
 	// log.Warningf("BroadcastWantHaves session%d: %s", ses, wantHaves)
 
@@ -73,6 +84,7 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 	wm.peerHandler.BroadcastWantHaves(ctx, wantHaves)
 }
 
+// RemoveSession is called when the session is shut down
 func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 	// Remove session's interest in the given blocks
 	cancelKs := wm.sim.RemoveSessionInterest(ses)

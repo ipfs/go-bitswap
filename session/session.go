@@ -28,33 +28,57 @@ const (
 // WantManager is an interface that can be used to request blocks
 // from given peers.
 type WantManager interface {
+	// BroadcastWantHaves sends want-haves to all connected peers (used for
+	// session discovery)
 	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
+	// RemoveSession removes the session from the WantManager (when the
+	// session shuts down)
 	RemoveSession(context.Context, uint64)
 }
 
+// PeerManager keeps track of which sessions are interested in which peers
+// and takes care of sending wants for the sessions
 type PeerManager interface {
+	// RegisterSession tells the PeerManager that the session is interested
+	// in a peer's connection state
 	RegisterSession(peer.ID, bspm.Session) bool
+	// UnregisterSession tells the PeerManager that the session is no longer
+	// interested in a peer's connection state
 	UnregisterSession(uint64)
-	SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid)
+	// SendWants tells the PeerManager to send wants to the given peer
+	SendWants(ctx context.Context, peerId peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid)
 }
 
 // PeerManager provides an interface for tracking and optimize peers, and
 // requesting more when neccesary.
 type SessionPeerManager interface {
-	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid) bool
+	// ReceiveFrom is called when blocks and HAVEs are received from a peer.
+	// It returns a boolean indicating if the peer is new to the session.
+	ReceiveFrom(peerId peer.ID, blks []cid.Cid, haves []cid.Cid) bool
+	// Peers returns the set of peers in the session.
 	Peers() *peer.Set
+	// FindMorePeers queries Content Routing to discover providers of the given cid
 	FindMorePeers(context.Context, cid.Cid)
+	// RecordPeerRequests records the time that a cid was requested from a peer
 	RecordPeerRequests([]peer.ID, []cid.Cid)
+	// RecordPeerResponse records the time that a response for a cid arrived
+	// from a peer
 	RecordPeerResponse(peer.ID, []cid.Cid)
+	// RecordCancels records that cancels were sent for the given cids
 	RecordCancels([]cid.Cid)
 }
 
+// opType is the kind of operation that is being processed by the event loop
 type opType int
 
 const (
+	// Receive blocks
 	opReceive opType = iota
+	// Want blocks
 	opWant
+	// Cancel wants
 	opCancel
+	// Broadcast want-haves
 	opBroadcast
 )
 
