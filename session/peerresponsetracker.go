@@ -2,7 +2,6 @@ package session
 
 import (
 	"math/rand"
-	"sync"
 
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -10,7 +9,6 @@ import (
 // peerResponseTracker keeps track of how many times each peer was the first
 // to send us a block for a given CID (used to rank peers)
 type peerResponseTracker struct {
-	sync.RWMutex
 	firstResponder map[peer.ID]int
 }
 
@@ -21,9 +19,6 @@ func newPeerResponseTracker() *peerResponseTracker {
 }
 
 func (prt *peerResponseTracker) receivedBlockFrom(from peer.ID) {
-	prt.Lock()
-	defer prt.Unlock()
-
 	prt.firstResponder[from]++
 }
 
@@ -32,11 +27,7 @@ func (prt *peerResponseTracker) choose(peers []peer.ID) peer.ID {
 		return ""
 	}
 
-	// rand may be slow so get it outside the lock
 	rnd := rand.Float64()
-
-	prt.RLock()
-	defer prt.RUnlock()
 
 	// Find the total received blocks for all candidate peers
 	total := 0
