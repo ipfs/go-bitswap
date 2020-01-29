@@ -221,7 +221,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 // }
 
 func (s *Session) onWantsSent(p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
-	allBlks := append(wantBlocks, wantHaves...)
+	allBlks := append(wantBlocks[:len(wantBlocks):len(wantBlocks)], wantHaves...)
 	s.sw.WantsSent(allBlks)
 	s.sprm.RecordPeerRequests([]peer.ID{p}, allBlks)
 }

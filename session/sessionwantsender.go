@@ -37,6 +37,12 @@ type update struct {
 	dontHaves []cid.Cid
 }
 
+// peerAvailability indicates a peer's connection state
+type peerAvailability struct {
+	target    peer.ID
+	available bool
+}
+
 // change can be a new peer being discovered, a new message received by the
 // session, or a change in the connect status of a peer
 type change struct {
@@ -47,7 +53,7 @@ type change struct {
 	// new message received by session (blocks / HAVEs / DONT_HAVEs)
 	update *update
 	// peer has connected / disconnected
-	availability map[peer.ID]bool
+	availability peerAvailability
 }
 
 type onSendFn func(to peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid)
@@ -136,10 +142,9 @@ func (spm *sessionWantSender) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid
 
 	// If the message came from a new peer register with the peer manager
 	if isNewPeer {
-		availability := make(map[peer.ID]bool)
-		availability[from] = spm.pm.RegisterSession(from, spm)
+		available := spm.pm.RegisterSession(from, spm)
 		ch.addPeer = from
-		ch.availability = availability
+		ch.availability = peerAvailability{from, available}
 	}
 
 	spm.changes <- ch
@@ -149,8 +154,7 @@ func (spm *sessionWantSender) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid
 // connected / disconnected
 func (spm *sessionWantSender) SignalAvailability(p peer.ID, isAvailable bool) {
 	// fmt.Printf("SignalAvailability(%s, %t)\n", lu.P(p), isAvailable)
-	availability := make(map[peer.ID]bool)
-	availability[p] = isAvailable
+	availability := peerAvailability{p, isAvailable}
 	spm.changes <- change{availability: availability}
 }
 
@@ -193,7 +197,7 @@ func (spm *sessionWantSender) onChange(changes []change) {
 	changes = spm.collectChanges(changes)
 
 	// Apply each change
-	availability := make(map[peer.ID]bool)
+	availability := make(map[peer.ID]bool, len(changes))
 	var updates []update
 	for _, chng := range changes {
 		// Add newly discovered peers
@@ -210,10 +214,8 @@ func (spm *sessionWantSender) onChange(changes []change) {
 		if chng.update != nil {
 			updates = append(updates, *chng.update)
 		}
-		if chng.availability != nil {
-			for p, isAvailable := range chng.availability {
-				availability[p] = isAvailable
-			}
+		if chng.availability.target != "" {
+			availability[chng.availability.target] = chng.availability.available
 		}
 	}
 
