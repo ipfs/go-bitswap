@@ -36,10 +36,6 @@ func (pm *mockPeerManager) RegisterSession(p peer.ID, sess bspm.Session) bool {
 func (pm *mockPeerManager) UnregisterSession(sesid uint64) {
 }
 
-func (pm *mockPeerManager) RequestToken(peer.ID) bool {
-	return true
-}
-
 func (pm *mockPeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	swi, _ := pm.peerSends.LoadOrStore(p, sentWants{p, cid.NewSet(), cid.NewSet()})
 	sw := swi.(sentWants)

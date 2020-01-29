@@ -82,9 +82,6 @@ func newFakePeerManager() *fakePeerManager {
 	return &fakePeerManager{}
 }
 
-func (pm *fakePeerManager) RequestToken(peer.ID) bool {
-	return true
-}
 func (pm *fakePeerManager) RegisterSession(peer.ID, bspm.Session) bool {
 	return true
 }

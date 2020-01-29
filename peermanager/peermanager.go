@@ -227,12 +227,6 @@ func (pm *PeerManager) UnregisterSession(ses uint64) {
 	delete(pm.sessions, ses)
 }
 
-func (pm *PeerManager) RequestToken(p peer.ID) bool {
-	// If the peer disconnects, peerQueues[p] will be deleted
-	_, ok := pm.peerQueues[p]
-	return ok
-}
-
 func (pm *PeerManager) signalAvailability(p peer.ID, isConnected bool) {
 	for p, sesIds := range pm.peerSessions {
 		for sesId := range sesIds {

@@ -57,7 +57,6 @@ type fakePeerManager struct {
 
 func (*fakePeerManager) RegisterSession(peer.ID, bspm.Session) bool               { return true }
 func (*fakePeerManager) UnregisterSession(uint64)                                 {}
-func (*fakePeerManager) RequestToken(peer.ID) bool                                { return true }
 func (*fakePeerManager) SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid) {}
 
 func sessionFactory(ctx context.Context,

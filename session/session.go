@@ -35,7 +35,6 @@ type WantManager interface {
 type PeerManager interface {
 	RegisterSession(peer.ID, bspm.Session) bool
 	UnregisterSession(uint64)
-	RequestToken(peer.ID) bool
 	SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid)
 }
 
