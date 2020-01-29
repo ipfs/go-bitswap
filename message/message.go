@@ -195,11 +195,7 @@ func (m *impl) Blocks() []blocks.Block {
 
 func (m *impl) BlockPresences() []BlockPresence {
 	bps := make([]BlockPresence, 0, len(m.blockPresences))
-	for k, t := range m.blockPresences {
-		c, err := cid.Cast(k.Bytes())
-		if err != nil {
-			panic(err)
-		}
+	for c, t := range m.blockPresences {
 		bps = append(bps, BlockPresence{c, t})
 	}
 	return bps
