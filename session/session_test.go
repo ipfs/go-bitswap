@@ -383,3 +383,37 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 		t.Fatal("expected channel to be closed before timeout")
 	}
 }
+
+func TestSessionReceiveMessageAfterShutdown(t *testing.T) {
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	fwm := newFakeWantManager()
+	fpm := newFakeSessionPeerManager()
+	sim := bssim.New()
+	bpm := bsbpm.New()
+	notif := notifications.New()
+	defer notif.Shutdown()
+	id := testutil.GenerateSessionID()
+	session := New(ctx, id, fwm, fpm, sim, newFakePeerManager(), bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	blockGenerator := blocksutil.NewBlockGenerator()
+	blks := blockGenerator.Blocks(2)
+	cids := []cid.Cid{blks[0].Cid(), blks[1].Cid()}
+
+	_, err := session.GetBlocks(ctx, cids)
+	if err != nil {
+		t.Fatal("error getting blocks")
+	}
+
+	// Wait for initial want request
+	<-fwm.wantReqs
+
+	// Shut down session
+	cancelCtx()
+
+	// Simulate receiving block for a CID
+	peer := testutil.GeneratePeers(1)[0]
+	session.ReceiveFrom(peer, []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{})
+
+	time.Sleep(5 * time.Millisecond)
+
+	// If we don't get a panic then the test is considered passing
+}
