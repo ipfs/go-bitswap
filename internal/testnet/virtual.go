@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
+	protocol "github.com/libp2p/go-libp2p-protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
@@ -88,10 +89,23 @@ func (n *network) Adapter(p tnet.Identity, opts ...bsnet.NetOpt) bsnet.BitSwapNe
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	s := bsnet.Settings{
+		SupportedProtocols: []protocol.ID{
+			bsnet.ProtocolBitswap,
+			bsnet.ProtocolBitswapOneOne,
+			bsnet.ProtocolBitswapOneZero,
+			bsnet.ProtocolBitswapNoVers,
+		},
+	}
+	for _, opt := range opts {
+		opt(&s)
+	}
+
 	client := &networkClient{
-		local:   p.ID(),
-		network: n,
-		routing: n.routingserver.Client(p),
+		local:              p.ID(),
+		network:            n,
+		routing:            n.routingserver.Client(p),
+		supportedProtocols: s.SupportedProtocols,
 	}
 	n.clients[p.ID()] = &receiverQueue{receiver: client}
 	return client
@@ -169,9 +183,10 @@ func (n *network) SendMessage(
 type networkClient struct {
 	local peer.ID
 	bsnet.Receiver
-	network *network
-	routing routing.Routing
-	stats   bsnet.Stats
+	network            *network
+	routing            routing.Routing
+	stats              bsnet.Stats
+	supportedProtocols []protocol.ID
 }
 
 func (nc *networkClient) Self() peer.ID {
@@ -240,8 +255,20 @@ func (mp *messagePasser) Reset() error {
 	return nil
 }
 
+var oldProtos = map[protocol.ID]struct{}{
+	bsnet.ProtocolBitswapNoVers:  struct{}{},
+	bsnet.ProtocolBitswapOneZero: struct{}{},
+	bsnet.ProtocolBitswapOneOne:  struct{}{},
+}
+
 func (mp *messagePasser) SupportsHave() bool {
-	return true
+	protos := mp.net.network.clients[mp.target].receiver.supportedProtocols
+	for _, proto := range protos {
+		if _, ok := oldProtos[proto]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (nc *networkClient) NewMessageSender(ctx context.Context, p peer.ID) (bsnet.MessageSender, error) {
