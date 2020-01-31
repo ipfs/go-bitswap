@@ -417,7 +417,7 @@ func TestSendingLargeMessages(t *testing.T) {
 	wantBlocks := testutil.GenerateCids(10)
 	entrySize := 44
 	maxMsgSize := entrySize * 3 // 3 wants
-	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize, sendErrorBackoff, mockTimeoutCb)
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMsgSize, sendErrorBackoff, dontHaveTimeout, mockTimeoutCb)
 
 	messageQueue.Startup()
 	messageQueue.AddWants(wantBlocks, []cid.Cid{})
@@ -443,8 +443,14 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 	fakeSender := &fakeMessageSender{nil, fullClosedChan, resetChan, messagesSent, sendErrors, false}
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
+	sendErrBackoff := 5 * time.Millisecond
 
-	messageQueue := New(ctx, peerID, fakenet, mockTimeoutCb)
+	var timedOutKs []cid.Cid
+	dontHaveTimeoutCb := func(p peer.ID, ks []cid.Cid) {
+		timedOutKs = append(timedOutKs, ks...)
+	}
+	dontHaveTimeout := time.Millisecond * 15
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, dontHaveTimeout, dontHaveTimeoutCb)
 	messageQueue.Startup()
 
 	// If the remote peer doesn't support HAVE / DONT_HAVE messages
@@ -488,6 +494,14 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 			t.Fatal("should only send want-blocks")
 		}
 	}
+
+	messageQueue.AddCancels(wbs[:5])
+	time.Sleep(20 * time.Millisecond)
+
+	// dontHaveTimeoutCb should be called after the timeout expires
+	if len(timedOutKs) != len(wbs)-5 {
+		t.Fatal("expected timeout callback to be called for want-blocks")
+	}
 }
 
 func TestResendAfterError(t *testing.T) {
@@ -500,7 +514,7 @@ func TestResendAfterError(t *testing.T) {
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	sendErrBackoff := 5 * time.Millisecond
-	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, mockTimeoutCb)
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, dontHaveTimeout, mockTimeoutCb)
 	wantBlocks := testutil.GenerateCids(10)
 	wantHaves := testutil.GenerateCids(10)
 
@@ -538,7 +552,7 @@ func TestResendAfterMaxRetries(t *testing.T) {
 	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
 	peerID := testutil.GeneratePeers(1)[0]
 	sendErrBackoff := 2 * time.Millisecond
-	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, mockTimeoutCb)
+	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, dontHaveTimeout, mockTimeoutCb)
 	wantBlocks := testutil.GenerateCids(10)
 	wantHaves := testutil.GenerateCids(10)
 	wantBlocks2 := testutil.GenerateCids(10)

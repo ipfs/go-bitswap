@@ -55,6 +55,7 @@ type MessageQueue struct {
 	network          MessageNetwork
 	maxMessageSize   int
 	sendErrorBackoff time.Duration
+	dontHaveTimeout  time.Duration
 
 	signalWorkReady func()
 	outgoingWork    chan struct{}
@@ -66,7 +67,7 @@ type MessageQueue struct {
 	peerWants         recallWantlist
 	cancels           *cid.Set
 	priority          int
-	dontHaveTimers    map[cid.Cid]*time.Timer
+	dontHaveTimers    map[cid.Cid]*dontHaveTimer
 	onDontHaveTimeout OnDontHaveTimeout
 
 	// Dont touch any of these variables outside of run loop
@@ -111,17 +112,26 @@ func (r *recallWantlist) RemoveType(c cid.Cid, wtype pb.Message_Wantlist_WantTyp
 	r.pending.RemoveType(c, wtype)
 }
 
+// dontHaveTimer is used to keep track of references to a timer
+// (see OnDontHaveTimeout)
+type dontHaveTimer struct {
+	timer *time.Timer
+	refs  int
+}
+
 // Fires when a timeout occurs waiting for a response from a peer running an
 // older version of Bitswap that doesn't support DONT_HAVE messages.
 type OnDontHaveTimeout func(peer.ID, []cid.Cid)
 
 // New creates a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
-	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, onDontHaveTimeout)
+	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, dontHaveTimeout, onDontHaveTimeout)
 }
 
 // This constructor is used by the tests
-func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, maxMsgSize int, sendErrorBackoff time.Duration, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
+func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
+	maxMsgSize int, sendErrorBackoff time.Duration, dontHaveTimeout time.Duration, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
+
 	mq := &MessageQueue{
 		ctx:                 ctx,
 		p:                   p,
@@ -135,7 +145,8 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork, max
 		rebroadcastInterval: defaultRebroadcastInterval,
 		sendErrorBackoff:    sendErrorBackoff,
 		priority:            maxPriority,
-		dontHaveTimers:      make(map[cid.Cid]*time.Timer),
+		dontHaveTimers:      make(map[cid.Cid]*dontHaveTimer),
+		dontHaveTimeout:     dontHaveTimeout,
 		onDontHaveTimeout:   onDontHaveTimeout,
 	}
 
@@ -213,8 +224,11 @@ func (mq *MessageQueue) AddCancels(cancelKs []cid.Cid) {
 		mq.cancels.Add(c)
 
 		// The want has been cancelled, so stop any pending dontHaveTimers for the want
-		if timer, ok := mq.dontHaveTimers[c]; ok {
-			timer.Stop()
+		if t, ok := mq.dontHaveTimers[c]; ok {
+			t.refs--
+			if t.refs <= 0 {
+				t.timer.Stop()
+			}
 			delete(mq.dontHaveTimers, c)
 		}
 	}
@@ -247,8 +261,8 @@ func (mq *MessageQueue) Shutdown() {
 	defer mq.wllock.Unlock()
 
 	// Clean up want dontHaveTimers
-	for c, timer := range mq.dontHaveTimers {
-		timer.Stop()
+	for c, t := range mq.dontHaveTimers {
+		t.timer.Stop()
 		delete(mq.dontHaveTimers, c)
 	}
 
@@ -391,7 +405,7 @@ func (mq *MessageQueue) simulateDontHaveWithTimeout(msg bsmsg.BitSwapMessage) {
 	}
 
 	// Create a timer that will fire if we don't receive a block
-	timer := time.AfterFunc(dontHaveTimeout, func() {
+	timer := time.AfterFunc(mq.dontHaveTimeout, func() {
 		// Figure out which of the blocks that were wanted were not received
 		// within the timeout
 		pending := make([]cid.Cid, 0, len(wants))
@@ -407,8 +421,9 @@ func (mq *MessageQueue) simulateDontHaveWithTimeout(msg bsmsg.BitSwapMessage) {
 			mq.onDontHaveTimeout(mq.p, pending)
 		}
 	})
+	dt := &dontHaveTimer{timer, len(wants)}
 	for _, c := range wants {
-		mq.dontHaveTimers[c] = timer
+		mq.dontHaveTimers[c] = dt
 	}
 }
 
