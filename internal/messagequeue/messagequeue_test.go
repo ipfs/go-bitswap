@@ -3,6 +3,7 @@ package messagequeue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 )
 
 type fakeMessageNetwork struct {
@@ -33,7 +35,11 @@ func (fmn *fakeMessageNetwork) NewMessageSender(context.Context, peer.ID) (bsnet
 	return nil, fmn.messageSenderError
 }
 
-func (fms *fakeMessageNetwork) Self() peer.ID { return "" }
+func (fms *fakeMessageNetwork) Self() peer.ID                 { return "" }
+func (fms *fakeMessageNetwork) Latency(peer.ID) time.Duration { return 0 }
+func (fms *fakeMessageNetwork) Ping(context.Context, peer.ID) ping.Result {
+	return ping.Result{Error: fmt.Errorf("err")}
+}
 
 type fakeMessageSender struct {
 	sendError    error
@@ -449,7 +455,7 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 	dontHaveTimeoutCb := func(p peer.ID, ks []cid.Cid) {
 		timedOutKs = append(timedOutKs, ks...)
 	}
-	dontHaveTimeout := time.Millisecond * 15
+	dontHaveTimeout := time.Millisecond * 1
 	messageQueue := newMessageQueue(ctx, peerID, fakenet, maxMessageSize, sendErrBackoff, dontHaveTimeout, dontHaveTimeoutCb)
 	messageQueue.Startup()
 
@@ -496,11 +502,11 @@ func TestSendToPeerThatDoesntSupportHave(t *testing.T) {
 	}
 
 	messageQueue.AddCancels(wbs[:5])
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 
 	// dontHaveTimeoutCb should be called after the timeout expires
 	if len(timedOutKs) != len(wbs)-5 {
-		t.Fatal("expected timeout callback to be called for want-blocks")
+		t.Fatal("expected timeout callback to be called for want-blocks", timedOutKs)
 	}
 }
 

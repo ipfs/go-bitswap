@@ -21,6 +21,7 @@ import (
 	protocol "github.com/libp2p/go-libp2p-protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 )
 
 // VirtualNetwork generates a new testnet instance - a fake network that
@@ -191,6 +192,16 @@ type networkClient struct {
 
 func (nc *networkClient) Self() peer.ID {
 	return nc.local
+}
+
+func (nc *networkClient) Ping(ctx context.Context, p peer.ID) ping.Result {
+	return ping.Result{RTT: nc.Latency(p)}
+}
+
+func (nc *networkClient) Latency(p peer.ID) time.Duration {
+	nc.network.mu.Lock()
+	defer nc.network.mu.Unlock()
+	return nc.network.latencies[nc.local][p]
 }
 
 func (nc *networkClient) SendMessage(

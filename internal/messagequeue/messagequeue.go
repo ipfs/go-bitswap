@@ -15,6 +15,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 )
 
 var log = logging.Logger("bitswap")
@@ -33,11 +34,6 @@ const (
 	maxPriority = math.MaxInt32
 	// sendMessageDebounce is the debounce duration when calling sendMessage()
 	sendMessageDebounce = time.Millisecond
-	// dontHaveTimeout is used to simulate a DONT_HAVE when communicating with
-	// a peer whose Bitswap client doesn't support the DONT_HAVE response.
-	// If the peer doesn't respond to a want-block within the timeout, the
-	// local node assumes that the peer doesn't have the block.
-	dontHaveTimeout = 5 * time.Second
 )
 
 // MessageNetwork is any network that can connect peers and generate a message
@@ -45,7 +41,8 @@ const (
 type MessageNetwork interface {
 	ConnectTo(context.Context, peer.ID) error
 	NewMessageSender(context.Context, peer.ID) (bsnet.MessageSender, error)
-	Self() peer.ID
+	Latency(peer.ID) time.Duration
+	Ping(context.Context, peer.ID) ping.Result
 }
 
 // MessageQueue implements queue of want messages to send to peers.
@@ -53,9 +50,9 @@ type MessageQueue struct {
 	ctx              context.Context
 	p                peer.ID
 	network          MessageNetwork
+	pinger           *mqPinger
 	maxMessageSize   int
 	sendErrorBackoff time.Duration
-	dontHaveTimeout  time.Duration
 
 	signalWorkReady func()
 	outgoingWork    chan struct{}
@@ -112,10 +109,27 @@ func (r *recallWantlist) RemoveType(c cid.Cid, wtype pb.Message_Wantlist_WantTyp
 	r.pending.RemoveType(c, wtype)
 }
 
+type peerConn struct {
+	p       peer.ID
+	network MessageNetwork
+}
+
+func newPeerConnection(p peer.ID, network MessageNetwork) *peerConn {
+	return &peerConn{p, network}
+}
+
+func (pc *peerConn) Ping(ctx context.Context) ping.Result {
+	return pc.network.Ping(ctx, pc.p)
+}
+
+func (pc *peerConn) Latency() time.Duration {
+	return pc.network.Latency(pc.p)
+}
+
 // dontHaveTimer is used to keep track of references to a timer
 // (see OnDontHaveTimeout)
 type dontHaveTimer struct {
-	timer *time.Timer
+	timer Stoppable
 	refs  int
 }
 
@@ -125,7 +139,7 @@ type OnDontHaveTimeout func(peer.ID, []cid.Cid)
 
 // New creates a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
-	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, dontHaveTimeout, onDontHaveTimeout)
+	return newMessageQueue(ctx, p, network, maxMessageSize, dontHaveTimeout, sendErrorBackoff, onDontHaveTimeout)
 }
 
 // This constructor is used by the tests
@@ -136,6 +150,7 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
 		ctx:                 ctx,
 		p:                   p,
 		network:             network,
+		pinger:              newMQPinger(ctx, newPeerConnection(p, network), dontHaveTimeout),
 		maxMessageSize:      maxMsgSize,
 		bcstWants:           newRecallWantList(),
 		peerWants:           newRecallWantList(),
@@ -146,7 +161,6 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
 		sendErrorBackoff:    sendErrorBackoff,
 		priority:            maxPriority,
 		dontHaveTimers:      make(map[cid.Cid]*dontHaveTimer),
-		dontHaveTimeout:     dontHaveTimeout,
 		onDontHaveTimeout:   onDontHaveTimeout,
 	}
 
@@ -257,16 +271,21 @@ func (mq *MessageQueue) Startup() {
 
 // Shutdown stops the processing of messages for a message queue.
 func (mq *MessageQueue) Shutdown() {
+	close(mq.done)
+}
+
+func (mq *MessageQueue) onShutdown() {
 	mq.wllock.Lock()
 	defer mq.wllock.Unlock()
 
-	// Clean up want dontHaveTimers
+	// Clean up dontHaveTimers
 	for c, t := range mq.dontHaveTimers {
 		t.timer.Stop()
 		delete(mq.dontHaveTimers, c)
 	}
 
-	close(mq.done)
+	// Stop the pinger
+	mq.pinger.Stop()
 }
 
 func (mq *MessageQueue) runQueue() {
@@ -280,11 +299,13 @@ func (mq *MessageQueue) runQueue() {
 			if mq.sender != nil {
 				mq.sender.Close()
 			}
+			mq.onShutdown()
 			return
 		case <-mq.ctx.Done():
 			if mq.sender != nil {
 				_ = mq.sender.Reset()
 			}
+			mq.onShutdown()
 			return
 		}
 	}
@@ -341,6 +362,12 @@ func (mq *MessageQueue) sendMessage() {
 		// TODO: should we stop using this connection and clear the want list
 		// to avoid using up memory?
 		return
+	}
+
+	// Make sure the pinger has started
+	if !mq.sender.SupportsHave() {
+		// Note: Start is idempotent
+		mq.pinger.Start()
 	}
 
 	// Convert want lists to a Bitswap Message
@@ -405,7 +432,7 @@ func (mq *MessageQueue) simulateDontHaveWithTimeout(msg bsmsg.BitSwapMessage) {
 	}
 
 	// Create a timer that will fire if we don't receive a block
-	timer := time.AfterFunc(mq.dontHaveTimeout, func() {
+	timer := mq.pinger.AfterTimeout(func() {
 		// Figure out which of the blocks that were wanted were not received
 		// within the timeout
 		pending := make([]cid.Cid, 0, len(wants))
@@ -520,6 +547,7 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) (bsmsg.BitSwap
 
 	return msg, onSent
 }
+
 func (mq *MessageQueue) initializeSender() error {
 	if mq.sender != nil {
 		return nil
