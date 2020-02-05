@@ -50,7 +50,7 @@ type MessageQueue struct {
 	ctx              context.Context
 	p                peer.ID
 	network          MessageNetwork
-	pinger           *mqPinger
+	pinger           MQPinger
 	maxMessageSize   int
 	sendErrorBackoff time.Duration
 
@@ -137,20 +137,34 @@ type dontHaveTimer struct {
 // older version of Bitswap that doesn't support DONT_HAVE messages.
 type OnDontHaveTimeout func(peer.ID, []cid.Cid)
 
+// MQPinger pings a peer to estimate latency so it can set a reasonable
+// upper bound on when to consider a request timed out
+type MQPinger interface {
+	// Start the pinger (idempotent)
+	Start()
+	// Shutdown the pinger (Shutdown is final, pinger cannot be restarted)
+	Shutdown()
+	// AfterTimeout runs the given function after the peer has not responded
+	// for a time defined by the peer's latency.
+	// The timeout can be stopped by calling Stoppable.Stop()
+	AfterTimeout(func()) Stoppable
+}
+
 // New creates a new MessageQueue.
 func New(ctx context.Context, p peer.ID, network MessageNetwork, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
-	return newMessageQueue(ctx, p, network, maxMessageSize, dontHaveTimeout, sendErrorBackoff, onDontHaveTimeout)
+	pinger := newMQPinger(ctx, newPeerConnection(p, network))
+	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, pinger, onDontHaveTimeout)
 }
 
 // This constructor is used by the tests
 func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
-	maxMsgSize int, sendErrorBackoff time.Duration, dontHaveTimeout time.Duration, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
+	maxMsgSize int, sendErrorBackoff time.Duration, pinger MQPinger, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
 
 	mq := &MessageQueue{
 		ctx:                 ctx,
 		p:                   p,
 		network:             network,
-		pinger:              newMQPinger(ctx, newPeerConnection(p, network), dontHaveTimeout),
+		pinger:              pinger,
 		maxMessageSize:      maxMsgSize,
 		bcstWants:           newRecallWantList(),
 		peerWants:           newRecallWantList(),
@@ -284,11 +298,13 @@ func (mq *MessageQueue) onShutdown() {
 		delete(mq.dontHaveTimers, c)
 	}
 
-	// Stop the pinger
-	mq.pinger.Stop()
+	// Shutdown the pinger
+	mq.pinger.Shutdown()
 }
 
 func (mq *MessageQueue) runQueue() {
+	defer mq.onShutdown()
+
 	for {
 		select {
 		case <-mq.rebroadcastTimer.C:
@@ -299,13 +315,11 @@ func (mq *MessageQueue) runQueue() {
 			if mq.sender != nil {
 				mq.sender.Close()
 			}
-			mq.onShutdown()
 			return
 		case <-mq.ctx.Done():
 			if mq.sender != nil {
 				_ = mq.sender.Reset()
 			}
-			mq.onShutdown()
 			return
 		}
 	}
