@@ -73,8 +73,10 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	// Add second set of keys
 	dhtm.AddPending(secondks)
 
-	// At this stage first set of keys should have timed out
+	// Wait until after the expected timeout
 	time.Sleep(10 * time.Millisecond)
+
+	// At this stage first set of keys should have timed out
 	if len(timedOutKs) != len(firstks) {
 		t.Fatal("expected timeout")
 	}
