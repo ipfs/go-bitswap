@@ -183,7 +183,7 @@ func (dhtm *dontHaveTimeoutMgr) checkForTimeouts() {
 	// Figure out which of the blocks that were wanted were not received
 	// within the timeout
 	expired := make([]cid.Cid, 0, len(dhtm.activeWants))
-	for i := 0; i < len(dhtm.wantQueue); i++ {
+	for len(dhtm.wantQueue) > 0 {
 		pw := dhtm.wantQueue[0]
 
 		// If the want is still active
