@@ -6,8 +6,7 @@ import (
 	"sync"
 	"time"
 
-	debounce "github.com/bep/debounce"
-
+	"github.com/ipfs/go-bitswap/internal/debounce"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -34,6 +33,8 @@ const (
 	maxPriority = math.MaxInt32
 	// sendMessageDebounce is the debounce duration when calling sendMessage()
 	sendMessageDebounce = time.Millisecond
+	// sendMessageDebounceMaxWait is the maximum time to wait for a debounce
+	sendMessageDebounceMaxWait = 20 * time.Millisecond
 )
 
 // MessageNetwork is any network that can connect peers and generate a message
@@ -173,8 +174,7 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
 	}
 
 	// Apply debounce to the work ready signal (which triggers sending a message)
-	debounced := debounce.New(sendMessageDebounce)
-	mq.signalWorkReady = func() { debounced(mq.onWorkReady) }
+	mq.signalWorkReady = debounce.New(mq.onWorkReady, sendMessageDebounce, debounce.MaxWait(sendMessageDebounceMaxWait))
 
 	return mq
 }
