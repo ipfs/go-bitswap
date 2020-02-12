@@ -35,6 +35,14 @@ type PeerConnection interface {
 	Latency() time.Duration
 }
 
+// pendingWant keeps track of a want that has been sent and we're waiting
+// for a response or for a timeout to expire
+type pendingWant struct {
+	c      cid.Cid
+	active bool
+	sent   time.Time
+}
+
 // dontHaveTimeoutMgr pings the peer to measure latency. It uses the latency to
 // set a reasonable timeout for simulating a DONT_HAVE message for peers that
 // don't support DONT_HAVE
@@ -47,12 +55,17 @@ type dontHaveTimeoutMgr struct {
 	latencyMultiplier          int
 	maxExpectedWantProcessTime time.Duration
 
-	// All variables below here must be proctected by the lock
-	lk                    sync.RWMutex
-	started               bool
-	pending               map[cid.Cid]time.Time
-	wantQueue             []cid.Cid
-	timeout               time.Duration
+	// All variables below here must be protected by the lock
+	lk sync.RWMutex
+	// has the timeout manager started
+	started bool
+	// wants that are active (waiting for a response or timeout)
+	activeWants map[cid.Cid]*pendingWant
+	// queue of wants, from oldest to newest
+	wantQueue []*pendingWant
+	// time to wait for a response (depends on latency)
+	timeout time.Duration
+	// timer used to wait until want at front of queue expires
 	checkForTimeoutsTimer *time.Timer
 }
 
@@ -73,7 +86,7 @@ func newDontHaveTimeoutMgrWithParams(ctx context.Context, pc PeerConnection, onD
 		ctx:                        ctx,
 		shutdown:                   shutdown,
 		peerConn:                   pc,
-		pending:                    make(map[cid.Cid]time.Time),
+		activeWants:                make(map[cid.Cid]*pendingWant),
 		timeout:                    defaultTimeout,
 		defaultTimeout:             defaultTimeout,
 		latencyMultiplier:          latencyMultiplier,
@@ -100,9 +113,9 @@ func (dhtm *dontHaveTimeoutMgr) onShutdown() {
 	}
 }
 
-// onStarted is called when the dontHaveTimeoutMgr starts.
+// closeAfterContext is called when the dontHaveTimeoutMgr starts.
 // It monitors for the context being cancelled.
-func (dhtm *dontHaveTimeoutMgr) onStarted() {
+func (dhtm *dontHaveTimeoutMgr) closeAfterContext() {
 	<-dhtm.ctx.Done()
 	dhtm.onShutdown()
 }
@@ -118,7 +131,7 @@ func (dhtm *dontHaveTimeoutMgr) Start() {
 	}
 	dhtm.started = true
 
-	go dhtm.onStarted()
+	go dhtm.closeAfterContext()
 
 	// If we already have a measure of latency to the peer, use it to
 	// calculate a reasonable timeout
@@ -149,57 +162,47 @@ func (dhtm *dontHaveTimeoutMgr) measureLatency() {
 	// Get the average latency to the peer
 	latency := dhtm.peerConn.Latency()
 
-	// Calculate a reasonable timeout based on latency
 	dhtm.lk.Lock()
+	defer dhtm.lk.Unlock()
+
+	// Calculate a reasonable timeout based on latency
 	dhtm.timeout = dhtm.calculateTimeoutFromLatency(latency)
-	dhtm.lk.Unlock()
 
 	// Check if after changing the timeout there are any pending wants that are
 	// now over the timeout
 	dhtm.checkForTimeouts()
 }
 
-// checkForTimeouts checks pending wants to see if any are over the timeout
+// checkForTimeouts checks pending wants to see if any are over the timeout.
+// Note: this function should only be called within the lock.
 func (dhtm *dontHaveTimeoutMgr) checkForTimeouts() {
-	dhtm.lk.Lock()
-	defer dhtm.lk.Unlock()
-
 	if len(dhtm.wantQueue) == 0 {
 		return
 	}
 
 	// Figure out which of the blocks that were wanted were not received
 	// within the timeout
-	more := true
-	expired := make([]cid.Cid, 0, len(dhtm.pending))
-	removeCount := 0
-	for i := 0; i < len(dhtm.wantQueue) && more; i++ {
-		c := dhtm.wantQueue[i]
+	expired := make([]cid.Cid, 0, len(dhtm.activeWants))
+	for i := 0; i < len(dhtm.wantQueue); i++ {
+		pw := dhtm.wantQueue[0]
 
-		// If the want has been cancelled, its cid will have been removed from
-		// the pending map
-		if started, ok := dhtm.pending[c]; ok {
-			// If the want has expired
-			if time.Since(started) > dhtm.timeout {
-				// Add the want to the expired list
-				expired = append(expired, c)
-				// Remove the want from the pending wants
-				delete(dhtm.pending, c)
-				// Remove expired wants from the want queue
-				removeCount++
-			} else {
-				// The queue is in order from earliest to latest, so if we
-				// didn't find an expired entry we can stop iterating
-				more = false
+		// If the want is still active
+		if pw.active {
+			// The queue is in order from earliest to latest, so if we
+			// didn't find an expired entry we can stop iterating
+			if time.Since(pw.sent) < dhtm.timeout {
+				break
 			}
-		} else {
-			// Remove cancelled wants from the want queue
-			removeCount++
-		}
-	}
 
-	// Remove cancelled or expired wants from want queue
-	dhtm.wantQueue = dhtm.wantQueue[removeCount:]
+			// Add the want to the expired list
+			expired = append(expired, pw.c)
+			// Remove the want from the activeWants map
+			delete(dhtm.activeWants, pw.c)
+		}
+
+		// Remove expired or cancelled wants from the want queue
+		dhtm.wantQueue = dhtm.wantQueue[1:]
+	}
 
 	// Fire the timeout event for the expired wants
 	if len(expired) > 0 {
@@ -215,17 +218,17 @@ func (dhtm *dontHaveTimeoutMgr) checkForTimeouts() {
 		return
 	}
 
-	// Note: we cleared cancelled wants from the front of the queue above
-	oldest, ok := dhtm.pending[dhtm.wantQueue[0]]
-	if !ok {
-		panic("cancelled want found in DONT_HAVE timeout manager want queue after purge")
-	}
-
 	// Schedule the next check for the moment when the oldest pending want will
 	// timeout
-	until := time.Until(oldest.Add(dhtm.timeout))
+	oldestStart := dhtm.wantQueue[0].sent
+	until := time.Until(oldestStart.Add(dhtm.timeout))
 	if dhtm.checkForTimeoutsTimer == nil {
-		dhtm.checkForTimeoutsTimer = time.AfterFunc(until, dhtm.checkForTimeouts)
+		dhtm.checkForTimeoutsTimer = time.AfterFunc(until, func() {
+			dhtm.lk.Lock()
+			defer dhtm.lk.Unlock()
+
+			dhtm.checkForTimeouts()
+		})
 	} else {
 		dhtm.checkForTimeoutsTimer.Stop()
 		dhtm.checkForTimeoutsTimer.Reset(until)
@@ -242,18 +245,22 @@ func (dhtm *dontHaveTimeoutMgr) AddPending(ks []cid.Cid) {
 	start := time.Now()
 
 	dhtm.lk.Lock()
+	defer dhtm.lk.Unlock()
 
-	queueWasEmpty := len(dhtm.pending) == 0
+	queueWasEmpty := len(dhtm.activeWants) == 0
 
 	// Record the start time for each key
 	for _, c := range ks {
-		if _, ok := dhtm.pending[c]; !ok {
-			dhtm.pending[c] = start
-			dhtm.wantQueue = append(dhtm.wantQueue, c)
+		if _, ok := dhtm.activeWants[c]; !ok {
+			pw := pendingWant{
+				c:      c,
+				sent:   start,
+				active: true,
+			}
+			dhtm.activeWants[c] = &pw
+			dhtm.wantQueue = append(dhtm.wantQueue, &pw)
 		}
 	}
-
-	dhtm.lk.Unlock()
 
 	// If there was already an earlier pending item in the queue, then there
 	// must already be a timeout check scheduled. If there is nothing in the
@@ -268,12 +275,12 @@ func (dhtm *dontHaveTimeoutMgr) CancelPending(ks []cid.Cid) {
 	dhtm.lk.Lock()
 	defer dhtm.lk.Unlock()
 
-	// The want has been cancelled, so remove pending timers
+	// Mark the wants as cancelled
 	for _, c := range ks {
-		delete(dhtm.pending, c)
-		// Note: when we check the want queue for timeouts, we will check to
-		// see if there is a value in the pending map, and if not we ignore
-		// the queued item
+		if pw, ok := dhtm.activeWants[c]; ok {
+			pw.active = false
+			delete(dhtm.activeWants, c)
+		}
 	}
 }
 

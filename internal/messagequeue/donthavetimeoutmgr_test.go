@@ -3,6 +3,7 @@ package messagequeue
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +42,17 @@ func (pc *mockPeerConn) Latency() time.Duration {
 	return sum / time.Duration(len(pc.latencies))
 }
 
+type timeoutRecorder struct {
+	timedOutKs []cid.Cid
+	lk         sync.Mutex
+}
+
+func (tr *timeoutRecorder) onTimeout(tks []cid.Cid) {
+	tr.lk.Lock()
+	defer tr.lk.Unlock()
+	tr.timedOutKs = append(tr.timedOutKs, tks...)
+}
+
 func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	firstks := testutil.GenerateCids(2)
 	secondks := append(firstks, testutil.GenerateCids(3)...)
@@ -50,12 +62,9 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	expectedTimeout := expProcessTime + latency*time.Duration(latMultiplier)
 	ctx := context.Background()
 	pc := &mockPeerConn{latency: latency}
+	tr := timeoutRecorder{}
 
-	var timedOutKs []cid.Cid
-	onTimeout := func(tks []cid.Cid) {
-		timedOutKs = append(timedOutKs, tks...)
-	}
-	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
 		dontHaveTimeout, latMultiplier, expProcessTime)
 	dhtm.Start()
 
@@ -66,7 +75,7 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	time.Sleep(expectedTimeout - 5*time.Millisecond)
 
 	// At this stage no keys should have timed out
-	if len(timedOutKs) > 0 {
+	if len(tr.timedOutKs) > 0 {
 		t.Fatal("expected timeout not to have happened yet")
 	}
 
@@ -77,12 +86,12 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// At this stage first set of keys should have timed out
-	if len(timedOutKs) != len(firstks) {
+	if len(tr.timedOutKs) != len(firstks) {
 		t.Fatal("expected timeout")
 	}
 
 	// Clear the recorded timed out keys
-	timedOutKs = nil
+	tr.timedOutKs = nil
 
 	// Sleep until the second set of keys should have timed out
 	time.Sleep(expectedTimeout)
@@ -90,7 +99,7 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 	// At this stage all keys should have timed out. The second set included
 	// the first set of keys, but they were added before the first set timed
 	// out, so only the remaining keys should have beed added.
-	if len(timedOutKs) != len(secondks)-len(firstks) {
+	if len(tr.timedOutKs) != len(secondks)-len(firstks) {
 		t.Fatal("expected second set of keys to timeout")
 	}
 }
@@ -98,17 +107,14 @@ func TestDontHaveTimeoutMgrTimeout(t *testing.T) {
 func TestDontHaveTimeoutMgrCancel(t *testing.T) {
 	ks := testutil.GenerateCids(3)
 	latency := time.Millisecond * 10
-	latMultiplier := 2
-	expProcessTime := 5 * time.Millisecond
-	expectedTimeout := expProcessTime + latency*time.Duration(latMultiplier)
+	latMultiplier := 1
+	expProcessTime := time.Duration(0)
+	expectedTimeout := latency
 	ctx := context.Background()
 	pc := &mockPeerConn{latency: latency}
+	tr := timeoutRecorder{}
 
-	var timedOutKs []cid.Cid
-	onTimeout := func(tks []cid.Cid) {
-		timedOutKs = append(timedOutKs, tks...)
-	}
-	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
 		dontHaveTimeout, latMultiplier, expProcessTime)
 	dhtm.Start()
 
@@ -124,7 +130,7 @@ func TestDontHaveTimeoutMgrCancel(t *testing.T) {
 	time.Sleep(expectedTimeout)
 
 	// At this stage all non-cancelled keys should have timed out
-	if len(timedOutKs) != len(ks)-cancelCount {
+	if len(tr.timedOutKs) != len(ks)-cancelCount {
 		t.Fatal("expected timeout")
 	}
 }
@@ -136,12 +142,9 @@ func TestDontHaveTimeoutRepeatedAddPending(t *testing.T) {
 	expProcessTime := time.Duration(0)
 	ctx := context.Background()
 	pc := &mockPeerConn{latency: latency}
+	tr := timeoutRecorder{}
 
-	var timedOutKs []cid.Cid
-	onTimeout := func(tks []cid.Cid) {
-		timedOutKs = append(timedOutKs, tks...)
-	}
-	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
 		dontHaveTimeout, latMultiplier, expProcessTime)
 	dhtm.Start()
 
@@ -154,7 +157,7 @@ func TestDontHaveTimeoutRepeatedAddPending(t *testing.T) {
 	time.Sleep(latency + 5*time.Millisecond)
 
 	// At this stage all keys should have timed out
-	if len(timedOutKs) != len(ks) {
+	if len(tr.timedOutKs) != len(ks) {
 		t.Fatal("expected timeout")
 	}
 }
@@ -166,14 +169,11 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfPingError(t *testing.T) {
 	expProcessTime := 2 * time.Millisecond
 	defaultTimeout := 10 * time.Millisecond
 	expectedTimeout := expProcessTime + defaultTimeout
-
+	tr := timeoutRecorder{}
 	ctx := context.Background()
-	var timedOutKs []cid.Cid
-	onTimeout := func(tks []cid.Cid) {
-		timedOutKs = append(timedOutKs, tks...)
-	}
 	pc := &mockPeerConn{latency: latency, err: fmt.Errorf("ping error")}
-	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
+
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
 		defaultTimeout, latMultiplier, expProcessTime)
 	dhtm.Start()
 
@@ -184,7 +184,7 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfPingError(t *testing.T) {
 	time.Sleep(expectedTimeout - 5*time.Millisecond)
 
 	// At this stage no timeout should have happened yet
-	if len(timedOutKs) > 0 {
+	if len(tr.timedOutKs) > 0 {
 		t.Fatal("expected timeout not to have happened yet")
 	}
 
@@ -192,7 +192,7 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfPingError(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Now the keys should have timed out
-	if len(timedOutKs) != len(ks) {
+	if len(tr.timedOutKs) != len(ks) {
 		t.Fatal("expected timeout")
 	}
 }
@@ -203,14 +203,11 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfLatencyLonger(t *testing.T) {
 	latMultiplier := 1
 	expProcessTime := time.Duration(0)
 	defaultTimeout := 10 * time.Millisecond
-
+	tr := timeoutRecorder{}
 	ctx := context.Background()
-	var timedOutKs []cid.Cid
-	onTimeout := func(tks []cid.Cid) {
-		timedOutKs = append(timedOutKs, tks...)
-	}
 	pc := &mockPeerConn{latency: latency}
-	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
+
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
 		defaultTimeout, latMultiplier, expProcessTime)
 	dhtm.Start()
 
@@ -221,7 +218,7 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfLatencyLonger(t *testing.T) {
 	time.Sleep(defaultTimeout - 5*time.Millisecond)
 
 	// At this stage no timeout should have happened yet
-	if len(timedOutKs) > 0 {
+	if len(tr.timedOutKs) > 0 {
 		t.Fatal("expected timeout not to have happened yet")
 	}
 
@@ -229,7 +226,7 @@ func TestDontHaveTimeoutMgrUsesDefaultTimeoutIfLatencyLonger(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Now the keys should have timed out
-	if len(timedOutKs) != len(ks) {
+	if len(tr.timedOutKs) != len(ks) {
 		t.Fatal("expected timeout")
 	}
 }
@@ -242,8 +239,11 @@ func TestDontHaveTimeoutNoTimeoutAfterShutdown(t *testing.T) {
 	ctx := context.Background()
 	pc := &mockPeerConn{latency: latency}
 
+	var lk sync.Mutex
 	var timedOutKs []cid.Cid
 	onTimeout := func(tks []cid.Cid) {
+		lk.Lock()
+		defer lk.Unlock()
 		timedOutKs = append(timedOutKs, tks...)
 	}
 	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, onTimeout,
