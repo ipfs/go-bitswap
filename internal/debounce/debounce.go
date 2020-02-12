@@ -91,9 +91,7 @@ func (dt *debounceTimer) run(s *debouncerSettings, done func()) {
 		case <-dt.reset:
 			waitTimer.Reset(s.wait)
 		case <-waitTimer.C:
-			if maxWaitTimer != nil {
-				maxWaitTimer.Stop()
-			}
+			maxWaitTimer.Stop()
 			return
 		case <-maxWaitTimer.C:
 			waitTimer.Stop()
