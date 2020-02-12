@@ -135,6 +135,51 @@ func TestDontHaveTimeoutMgrCancel(t *testing.T) {
 	}
 }
 
+func TestDontHaveTimeoutWantCancelWant(t *testing.T) {
+	ks := testutil.GenerateCids(3)
+	latency := time.Millisecond * 20
+	latMultiplier := 1
+	expProcessTime := time.Duration(0)
+	expectedTimeout := latency
+	ctx := context.Background()
+	pc := &mockPeerConn{latency: latency}
+	tr := timeoutRecorder{}
+
+	dhtm := newDontHaveTimeoutMgrWithParams(ctx, pc, tr.onTimeout,
+		dontHaveTimeout, latMultiplier, expProcessTime)
+	dhtm.Start()
+
+	// Add keys
+	dhtm.AddPending(ks)
+
+	// Wait for a short time
+	time.Sleep(expectedTimeout - 10*time.Millisecond)
+
+	// Cancel two keys
+	dhtm.CancelPending(ks[:2])
+
+	time.Sleep(5 * time.Millisecond)
+
+	// Add back one cancelled key
+	dhtm.AddPending(ks[:1])
+
+	// Wait till after initial timeout
+	time.Sleep(10 * time.Millisecond)
+
+	// At this stage only the key that was never cancelled should have timed out
+	if len(tr.timedOutKs) != 1 {
+		t.Fatal("expected one key to timeout")
+	}
+
+	// Wait till after added back key should time out
+	time.Sleep(latency)
+
+	// At this stage the key that was added back should also have timed out
+	if len(tr.timedOutKs) != 2 {
+		t.Fatal("expected added back key to timeout")
+	}
+}
+
 func TestDontHaveTimeoutRepeatedAddPending(t *testing.T) {
 	ks := testutil.GenerateCids(10)
 	latency := time.Millisecond * 5
