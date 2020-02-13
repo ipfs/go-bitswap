@@ -32,11 +32,11 @@ const (
 	maxPriority = math.MaxInt32
 	// sendMessageDebounce is the debounce duration when calling sendMessage()
 	sendMessageDebounce = time.Millisecond
-	// when we reach sendMessaageCuttoff wants/cancels, we'll send the message immediately.
-	sendMessageCuttoff = 100
+	// when we reach sendMessageCutoff wants/cancels, we'll send the message immediately.
+	sendMessageCutoff = 256
 	// when we debounce for more than sendMessageMaxDelay, we'll send the
 	// message immediately.
-	sendMessageMaxDelay = 100 * time.Millisecond
+	sendMessageMaxDelay = 20 * time.Millisecond
 )
 
 // MessageNetwork is any network that can connect peers and generate a message
@@ -284,41 +284,22 @@ func (mq *MessageQueue) runQueue() {
 	defer mq.onShutdown()
 
 	// Create a timer for debouncing scheduled work.
-	scheduleWork := time.NewTimer(0)
-	if !scheduleWork.Stop() {
-		<-scheduleWork.C
-	}
+	debouncer := newMQDebouncer()
 
-	var workScheduled time.Time
 	for {
 		select {
 		case <-mq.rebroadcastTimer.C:
 			mq.rebroadcastWantlist()
 		case when := <-mq.outgoingWork:
-			// If we have work scheduled, cancel the timer. If we
-			// don't, record when the work was scheduled.
-			// We send the time on the channel so we accurately
-			// track delay.
-			if workScheduled.IsZero() {
-				workScheduled = when
-			} else if !scheduleWork.Stop() {
-				<-scheduleWork.C
-			}
-
 			// If we have too many updates and/or we've waited too
 			// long, send immediately.
-			if mq.pendingWorkCount() > sendMessageCuttoff ||
-				time.Since(workScheduled) >= sendMessageMaxDelay {
+			maxExpired := debouncer.scheduled(when)
+			if maxExpired || mq.pendingWorkCount() > sendMessageCutoff {
 				mq.sendIfReady()
-				workScheduled = time.Time{}
-			} else {
-				// Otherwise, extend the timer.
-				scheduleWork.Reset(sendMessageDebounce)
 			}
-		case <-scheduleWork.C:
+		case <-debouncer.ready():
 			// We have work scheduled and haven't seen any updates
 			// in sendMessageDebounce. Send immediately.
-			workScheduled = time.Time{}
 			mq.sendIfReady()
 		case <-mq.done:
 			if mq.sender != nil {
