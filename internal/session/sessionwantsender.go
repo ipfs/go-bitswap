@@ -413,7 +413,7 @@ func (spm *sessionWantSender) checkForExhaustedWants(dontHaves []cid.Cid, newlyU
 func (spm *sessionWantSender) processExhaustedWants(exhausted []cid.Cid) {
 	newlyExhausted := spm.newlyExhausted(exhausted)
 	if len(newlyExhausted) > 0 {
-		go spm.onPeersExhausted(newlyExhausted)
+		spm.onPeersExhausted(newlyExhausted)
 	}
 }
 
