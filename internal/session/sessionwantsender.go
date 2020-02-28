@@ -306,8 +306,9 @@ func (spm *sessionWantSender) trackWant(c cid.Cid) {
 	}
 }
 
-// processUpdates processes incoming blocks and HAVE / DONT_HAVEs
-func (spm *sessionWantSender) processUpdates(updates []update) *cid.Set {
+// processUpdates processes incoming blocks and HAVE / DONT_HAVEs.
+// It returns all DONT_HAVEs.
+func (spm *sessionWantSender) processUpdates(updates []update) []cid.Cid {
 	prunePeers := make(map[peer.ID]struct{})
 	dontHaves := cid.NewSet()
 	for _, upd := range updates {
@@ -367,20 +368,20 @@ func (spm *sessionWantSender) processUpdates(updates []update) *cid.Set {
 		spm.SignalAvailability(p, false)
 	}
 
-	return dontHaves
+	return dontHaves.Keys()
 }
 
 // checkForExhaustedWants checks if there are any wants for which all peers
 // have sent a DONT_HAVE. We call these "exhausted" wants.
-func (spm *sessionWantSender) checkForExhaustedWants(dontHaves *cid.Set, newlyUnavailable []peer.ID) {
+func (spm *sessionWantSender) checkForExhaustedWants(dontHaves []cid.Cid, newlyUnavailable []peer.ID) {
 	// If there are no new DONT_HAVEs, and no peers became unavailable, then
 	// we don't need to check for exhausted wants
-	if dontHaves.Len() == 0 && len(newlyUnavailable) == 0 {
+	if len(dontHaves) == 0 && len(newlyUnavailable) == 0 {
 		return
 	}
 
 	// We need to check each want for which we just received a DONT_HAVE
-	wants := dontHaves.Keys()
+	wants := dontHaves
 
 	// If a peer just became unavailable, then we need to check all wants
 	// (because it may be the last peer who hadn't sent a DONT_HAVE for a CID)
