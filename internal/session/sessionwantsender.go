@@ -255,7 +255,10 @@ func (spm *sessionWantSender) onChange(changes []change) {
 
 // processAvailability updates the want queue with any changes in
 // peer availability
-func (spm *sessionWantSender) processAvailability(availability map[peer.ID]bool) ([]peer.ID, []peer.ID) {
+// It returns the peers that have become
+// - newly available
+// - newly unavailable
+func (spm *sessionWantSender) processAvailability(availability map[peer.ID]bool) (avail []peer.ID, unavail []peer.ID) {
 	var newlyAvailable []peer.ID
 	var newlyUnavailable []peer.ID
 	for p, isNowAvailable := range availability {
