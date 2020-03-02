@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	bstimer "github.com/ipfs/go-bitswap/internal/timer"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -57,6 +58,7 @@ type MessageQueue struct {
 	dhTimeoutMgr     DontHaveTimeoutManager
 	maxMessageSize   int
 	sendErrorBackoff time.Duration
+	onRequestSent    OnRequestSent
 
 	outgoingWork chan time.Time
 	done         chan struct{}
@@ -131,6 +133,8 @@ func (pc *peerConn) Latency() time.Duration {
 // older version of Bitswap that doesn't support DONT_HAVE messages.
 type OnDontHaveTimeout func(peer.ID, []cid.Cid)
 
+type OnRequestSent func(peer.ID)
+
 // DontHaveTimeoutManager pings a peer to estimate latency so it can set a reasonable
 // upper bound on when to consider a DONT_HAVE request as timed out (when connected to
 // a peer that doesn't support DONT_HAVE messages)
@@ -147,17 +151,18 @@ type DontHaveTimeoutManager interface {
 }
 
 // New creates a new MessageQueue.
-func New(ctx context.Context, p peer.ID, network MessageNetwork, onDontHaveTimeout OnDontHaveTimeout) *MessageQueue {
+func New(ctx context.Context, p peer.ID, network MessageNetwork, onDontHaveTimeout OnDontHaveTimeout, onRequestSent OnRequestSent) *MessageQueue {
 	onTimeout := func(ks []cid.Cid) {
 		onDontHaveTimeout(p, ks)
 	}
 	dhTimeoutMgr := newDontHaveTimeoutMgr(ctx, newPeerConnection(p, network), onTimeout)
-	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, dhTimeoutMgr)
+	return newMessageQueue(ctx, p, network, maxMessageSize, sendErrorBackoff, dhTimeoutMgr, onRequestSent)
 }
 
 // This constructor is used by the tests
 func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
-	maxMsgSize int, sendErrorBackoff time.Duration, dhTimeoutMgr DontHaveTimeoutManager) *MessageQueue {
+	maxMsgSize int, sendErrorBackoff time.Duration, dhTimeoutMgr DontHaveTimeoutManager,
+	onRequestSent OnRequestSent) *MessageQueue {
 
 	mq := &MessageQueue{
 		ctx:                 ctx,
@@ -172,6 +177,7 @@ func newMessageQueue(ctx context.Context, p peer.ID, network MessageNetwork,
 		done:                make(chan struct{}),
 		rebroadcastInterval: defaultRebroadcastInterval,
 		sendErrorBackoff:    sendErrorBackoff,
+		onRequestSent:       onRequestSent,
 		priority:            maxPriority,
 	}
 
@@ -286,11 +292,8 @@ func (mq *MessageQueue) runQueue() {
 
 	// Create a timer for debouncing scheduled work.
 	scheduleWork := time.NewTimer(0)
-	if !scheduleWork.Stop() {
-		// Need to drain the timer if Stop() returns false
-		// See: https://golang.org/pkg/time/#Timer.Stop
-		<-scheduleWork.C
-	}
+	defer scheduleWork.Stop()
+	bstimer.StopTimer(scheduleWork)
 
 	var workScheduled time.Time
 	for {
@@ -304,9 +307,8 @@ func (mq *MessageQueue) runQueue() {
 			// track delay.
 			if workScheduled.IsZero() {
 				workScheduled = when
-			} else if !scheduleWork.Stop() {
-				// Need to drain the timer if Stop() returns false
-				<-scheduleWork.C
+			} else {
+				bstimer.StopTimer(scheduleWork)
 			}
 
 			// If we have too many updates and/or we've waited too
@@ -412,6 +414,9 @@ func (mq *MessageQueue) sendMessage() {
 			onSent()
 
 			mq.simulateDontHaveWithTimeout(message)
+
+			// Signal that a request was sent
+			mq.onRequestSent(mq.p)
 
 			// If the message was too big and only a subset of wants could be
 			// sent, schedule sending the rest of the wants in the next

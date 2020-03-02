@@ -129,6 +129,17 @@ func (pm *PeerManager) Disconnected(p peer.ID) {
 	pm.pwm.RemovePeer(p)
 }
 
+// OnTimeout is called when one or more peers times out.
+func (pm *PeerManager) OnTimeout(peers []peer.ID) {
+	pm.pqLk.Lock()
+	defer pm.pqLk.Unlock()
+
+	for _, p := range peers {
+		// Inform the sessions that the peer is not available
+		pm.signalAvailability(p, false)
+	}
+}
+
 // BroadcastWantHaves broadcasts want-haves to all peers (used by the session
 // to discover seeds).
 // For each peer it filters out want-haves that have previously been sent to

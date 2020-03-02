@@ -17,6 +17,7 @@ import (
 	bsmq "github.com/ipfs/go-bitswap/internal/messagequeue"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
+	bsptm "github.com/ipfs/go-bitswap/internal/peertimeoutmanager"
 	bspqm "github.com/ipfs/go-bitswap/internal/providerquerymanager"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
@@ -130,13 +131,22 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		// Simulate a DONT_HAVE message arriving to the WantManager
 		wm.ReceiveFrom(ctx, p, nil, nil, dontHaves)
 	}
+
+	var pm *bspm.PeerManager
+	// onPeerResponseTimeout is triggered when a peer fails to respond to any
+	// request for a long time
+	onPeerResponseTimeout := func(peers []peer.ID) {
+		// Tell the peer manager that the peer timed out
+		pm.OnTimeout(peers)
+	}
+	ptm := bsptm.New(ctx, onPeerResponseTimeout)
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
-		return bsmq.New(ctx, p, network, onDontHaveTimeout)
+		return bsmq.New(ctx, p, network, onDontHaveTimeout, ptm.RequestSent)
 	}
 
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	pm := bspm.New(ctx, peerQueueFactory, network.Self())
+	pm = bspm.New(ctx, peerQueueFactory, network.Self())
 	wm = bswm.New(ctx, pm, sim, bpm)
 	pqm := bspqm.New(ctx, network)
 
@@ -167,6 +177,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
 		wm:               wm,
 		pm:               pm,
+		ptm:              ptm,
 		pqm:              pqm,
 		sm:               sm,
 		sim:              sim,
@@ -209,7 +220,8 @@ type Bitswap struct {
 	// the wantlist tracks global wants for bitswap
 	wm *bswm.WantManager
 
-	pm *bspm.PeerManager
+	pm  *bspm.PeerManager
+	ptm *bsptm.PeerTimeoutManager
 
 	// the provider query manager manages requests to find providers
 	pqm *bspqm.ProviderQueryManager
@@ -396,13 +408,20 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	bs.counters.messagesRecvd++
 	bs.counterLk.Unlock()
 
+	iblocks := incoming.Blocks()
+	haves := incoming.Haves()
+	dontHaves := incoming.DontHaves()
+	receivedResponse := len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0
+	if receivedResponse {
+		// Tell the peer timeout manager that a response was received
+		bs.ptm.ResponseReceived(p)
+	}
+
 	// This call records changes to wantlists, blocks received,
 	// and number of bytes transfered.
 	bs.engine.MessageReceived(ctx, p, incoming)
 	// TODO: this is bad, and could be easily abused.
 	// Should only track *useful* messages in ledger
-
-	iblocks := incoming.Blocks()
 
 	if len(iblocks) > 0 {
 		bs.updateReceiveCounters(iblocks)
@@ -411,9 +430,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		}
 	}
 
-	haves := incoming.Haves()
-	dontHaves := incoming.DontHaves()
-	if len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0 {
+	if receivedResponse {
 		// Process blocks
 		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves)
 		if err != nil {
