@@ -9,6 +9,9 @@ workflows:
       - ci-go/build
       - ci-go/lint
       - ci-go/test
+      - ci-go/test:
+          race: true
+          name: "ci-go/test/race"
       - ci-go/benchmark:
           tolerance: 50
           requires:
