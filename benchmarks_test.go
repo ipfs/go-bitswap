@@ -2,10 +2,6 @@ package bitswap_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -31,16 +27,31 @@ type fetchFunc func(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid)
 
 type distFunc func(b *testing.B, provs []testinstance.Instance, blocks []blocks.Block)
 
-type runStats struct {
-	DupsRcvd uint64
-	BlksRcvd uint64
-	MsgSent  uint64
-	MsgRecd  uint64
-	Time     time.Duration
-	Name     string
+type stats struct {
+	messagesRecvd, messagesSent, dupBlocksReceived, blocksReceived uint64
 }
 
-var benchmarkLog []runStats
+func (s *stats) record(fetchers ...testinstance.Instance) error {
+	for _, fetcher := range fetchers {
+		netstats := fetcher.Adapter.Stats()
+		exstats, err := fetcher.Exchange.Stat()
+		if err != nil {
+			return err
+		}
+		s.messagesRecvd += netstats.MessagesRecvd
+		s.messagesSent += netstats.MessagesSent
+		s.dupBlocksReceived += exstats.DupBlksReceived
+		s.blocksReceived += exstats.BlocksReceived
+	}
+	return nil
+}
+
+func (s *stats) report(b *testing.B) {
+	b.ReportMetric(float64(s.messagesRecvd)/float64(b.N), "msg-recvd/op")
+	b.ReportMetric(float64(s.messagesSent)/float64(b.N), "msg-sent/op")
+	b.ReportMetric(float64(s.blocksReceived)/float64(b.N), "blocks-recvd/op")
+	b.ReportMetric(float64(s.dupBlocksReceived)/float64(b.N), "dups-recvd/op")
+}
 
 type bench struct {
 	name       string
@@ -105,19 +116,19 @@ var benches = []bench{
 }
 
 func BenchmarkFixedDelay(b *testing.B) {
-	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
 	bstoreLatency := time.Duration(0)
 
 	for _, bch := range benches {
 		b.Run(bch.name, func(b *testing.B) {
-			subtestDistributeAndFetch(b, bch.nodeCount, bch.blockCount, fixedDelay, bstoreLatency, bch.distFn, bch.fetchFn)
+			subtestDistributeAndFetch(b,
+				bch.nodeCount, bch.blockCount,
+				bstoreLatency, stdBlockSize,
+				fixedDelay, nil,
+				bch.distFn, bch.fetchFn,
+			)
 		})
 	}
-
-	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
-	_ = ioutil.WriteFile("tmp/benchmark.json", out, 0666)
-	printResults(benchmarkLog)
 }
 
 type mixedBench struct {
@@ -134,58 +145,72 @@ var mixedBenches = []mixedBench{
 }
 
 func BenchmarkFetchFromOldBitswap(b *testing.B) {
-	benchmarkLog = nil
 	fixedDelay := delay.Fixed(10 * time.Millisecond)
 	bstoreLatency := time.Duration(0)
 
 	for _, bch := range mixedBenches {
 		b.Run(bch.name, func(b *testing.B) {
+			b.StopTimer()
+			b.ResetTimer()
+
 			fetcherCount := bch.fetcherCount
 			oldSeedCount := bch.oldSeedCount
 			newSeedCount := bch.nodeCount - (fetcherCount + oldSeedCount)
 
-			net := tn.VirtualNetwork(mockrouting.NewServer(), fixedDelay)
+			var stats stats
 
-			// Simulate an older Bitswap node (old protocol ID) that doesn't
-			// send DONT_HAVE responses
-			oldProtocol := []protocol.ID{bsnet.ProtocolBitswapOneOne}
-			oldNetOpts := []bsnet.NetOpt{bsnet.SupportedProtocols(oldProtocol)}
-			oldBsOpts := []bitswap.Option{bitswap.SetSendDontHaves(false)}
-			oldNodeGenerator := testinstance.NewTestInstanceGenerator(net, oldNetOpts, oldBsOpts)
+			for i := 0; i < b.N; i++ {
+				net := tn.VirtualNetwork(mockrouting.NewServer(), fixedDelay)
 
-			// Regular new Bitswap node
-			newNodeGenerator := testinstance.NewTestInstanceGenerator(net, nil, nil)
-			var instances []testinstance.Instance
+				// Simulate an older Bitswap node (old protocol ID) that doesn't
+				// send DONT_HAVE responses
+				oldProtocol := []protocol.ID{bsnet.ProtocolBitswapOneOne}
+				oldNetOpts := []bsnet.NetOpt{bsnet.SupportedProtocols(oldProtocol)}
+				oldBsOpts := []bitswap.Option{bitswap.SetSendDontHaves(false)}
+				oldNodeGenerator := testinstance.NewTestInstanceGenerator(net, oldNetOpts, oldBsOpts)
 
-			// Create new nodes (fetchers + seeds)
-			for i := 0; i < fetcherCount+newSeedCount; i++ {
-				inst := newNodeGenerator.Next()
-				instances = append(instances, inst)
+				// Regular new Bitswap node
+				newNodeGenerator := testinstance.NewTestInstanceGenerator(net, nil, nil)
+				var instances []testinstance.Instance
+
+				// Create new nodes (fetchers + seeds)
+				for i := 0; i < fetcherCount+newSeedCount; i++ {
+					inst := newNodeGenerator.Next()
+					instances = append(instances, inst)
+				}
+				// Create old nodes (just seeds)
+				for i := 0; i < oldSeedCount; i++ {
+					inst := oldNodeGenerator.Next()
+					instances = append(instances, inst)
+				}
+				// Connect all the nodes together
+				testinstance.ConnectInstances(instances)
+
+				// Generate blocks, with a smaller root block
+				rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
+				blocks := testutil.GenerateBlocksOfSize(bch.blockCount, stdBlockSize)
+				blocks[0] = rootBlock[0]
+
+				fetchers := instances[:fetcherCount]
+				seeds := instances[fetcherCount:]
+
+				// Run the distribution
+				runDistributionMulti(b,
+					fetchers, seeds,
+					blocks, bstoreLatency,
+					bch.distFn, bch.fetchFn,
+				)
+
+				if err := stats.record(fetchers...); err != nil {
+					b.Fatal(err)
+				}
+
+				newNodeGenerator.Close()
+				oldNodeGenerator.Close()
 			}
-			// Create old nodes (just seeds)
-			for i := 0; i < oldSeedCount; i++ {
-				inst := oldNodeGenerator.Next()
-				instances = append(instances, inst)
-			}
-			// Connect all the nodes together
-			testinstance.ConnectInstances(instances)
-
-			// Generate blocks, with a smaller root block
-			rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
-			blocks := testutil.GenerateBlocksOfSize(bch.blockCount, stdBlockSize)
-			blocks[0] = rootBlock[0]
-
-			// Run the distribution
-			runDistributionMulti(b, instances[:fetcherCount], instances[fetcherCount:], blocks, bstoreLatency, bch.distFn, bch.fetchFn)
-
-			newNodeGenerator.Close()
-			oldNodeGenerator.Close()
+			stats.report(b)
 		})
 	}
-
-	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
-	_ = ioutil.WriteFile("tmp/benchmark.json", out, 0666)
-	printResults(benchmarkLog)
 }
 
 const datacenterSpeed = 5 * time.Millisecond
@@ -208,7 +233,6 @@ const stdBlockSize = 8000
 const largeBlockSize = int64(256 * 1024)
 
 func BenchmarkRealWorld(b *testing.B) {
-	benchmarkLog = nil
 	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
 	var randomGen *rand.Rand = nil
 	if err == nil {
@@ -233,21 +257,32 @@ func BenchmarkRealWorld(b *testing.B) {
 	bstoreLatency := time.Duration(0)
 
 	b.Run("200Nodes-AllToAll-BigBatch-FastNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, fastNetworkDelay, fastBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
+		subtestDistributeAndFetch(b,
+			300, 200,
+			bstoreLatency, stdBlockSize,
+			fastNetworkDelay, fastBandwidthGenerator,
+			allToAll, batchFetchAll,
+		)
 	})
 	b.Run("200Nodes-AllToAll-BigBatch-AverageVariableSpeedNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, averageNetworkDelay, averageBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
+		subtestDistributeAndFetch(b,
+			300, 200,
+			bstoreLatency, stdBlockSize,
+			averageNetworkDelay, averageBandwidthGenerator,
+			allToAll, batchFetchAll,
+		)
 	})
 	b.Run("200Nodes-AllToAll-BigBatch-SlowVariableSpeedNetwork", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 300, 200, slowNetworkDelay, slowBandwidthGenerator, stdBlockSize, bstoreLatency, allToAll, batchFetchAll)
+		subtestDistributeAndFetch(b,
+			300, 200,
+			bstoreLatency, stdBlockSize,
+			slowNetworkDelay, slowBandwidthGenerator,
+			allToAll, batchFetchAll,
+		)
 	})
-	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
-	_ = ioutil.WriteFile("tmp/rw-benchmark.json", out, 0666)
-	printResults(benchmarkLog)
 }
 
 func BenchmarkDatacenter(b *testing.B) {
-	benchmarkLog = nil
 	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
 	var randomGen *rand.Rand = nil
 	if err == nil {
@@ -262,15 +297,16 @@ func BenchmarkDatacenter(b *testing.B) {
 	bstoreLatency := time.Millisecond * 25
 
 	b.Run("3Nodes-Overlap3-UnixfsFetch", func(b *testing.B) {
-		subtestDistributeAndFetchRateLimited(b, 3, 100, datacenterNetworkDelay, datacenterBandwidthGenerator, largeBlockSize, bstoreLatency, allToAll, unixfsFileFetch)
+		subtestDistributeAndFetch(b,
+			3, 100,
+			bstoreLatency, largeBlockSize,
+			datacenterNetworkDelay, datacenterBandwidthGenerator,
+			allToAll, unixfsFileFetch,
+		)
 	})
-	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
-	_ = ioutil.WriteFile("tmp/rb-benchmark.json", out, 0666)
-	printResults(benchmarkLog)
 }
 
 func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
-	benchmarkLog = nil
 	benchmarkSeed, err := strconv.ParseInt(os.Getenv("BENCHMARK_SEED"), 10, 64)
 	var randomGen *rand.Rand = nil
 	if err == nil {
@@ -285,6 +321,9 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 	bstoreLatency := time.Millisecond * 25
 
 	b.Run("3Leech3Seed-AllToAll-UnixfsFetch", func(b *testing.B) {
+		b.StopTimer()
+		b.ResetTimer()
+
 		d := datacenterNetworkDelay
 		rateLimitGenerator := datacenterBandwidthGenerator
 		blockSize := largeBlockSize
@@ -293,6 +332,7 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 		numnodes := 6
 		numblks := 1000
 
+		var stats stats
 		for i := 0; i < b.N; i++ {
 			net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
 
@@ -301,33 +341,38 @@ func BenchmarkDatacenterMultiLeechMultiSeed(b *testing.B) {
 
 			instances := ig.Instances(numnodes)
 			blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
-			runDistributionMulti(b, instances[:3], instances[3:], blocks, bstoreLatency, df, ff)
+			fetchers := instances[:3]
+			seeds := instances[3:]
+			runDistributionMulti(b,
+				fetchers, seeds,
+				blocks, bstoreLatency,
+				df, ff,
+			)
+			if err := stats.record(fetchers...); err != nil {
+				b.Fatal(err)
+			}
 		}
+		stats.report(b)
 	})
 
-	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
-	_ = ioutil.WriteFile("tmp/rb-benchmark.json", out, 0666)
-	printResults(benchmarkLog)
 }
 
-func subtestDistributeAndFetch(b *testing.B, numnodes, numblks int, d delay.D, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
+func subtestDistributeAndFetch(b *testing.B,
+	numnodes, numblks int,
+	bstoreLatency time.Duration, blockSize int64,
+	d delay.D, rateLimitGenerator tn.RateLimitGenerator,
+	df distFunc, ff fetchFunc,
+) {
+	b.StopTimer()
+	b.ResetTimer()
+	var stats stats
 	for i := 0; i < b.N; i++ {
-		net := tn.VirtualNetwork(mockrouting.NewServer(), d)
-
-		ig := testinstance.NewTestInstanceGenerator(net, nil, nil)
-
-		instances := ig.Instances(numnodes)
-		rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
-		blocks := testutil.GenerateBlocksOfSize(numblks, stdBlockSize)
-		blocks[0] = rootBlock[0]
-		runDistribution(b, instances, blocks, bstoreLatency, df, ff)
-		ig.Close()
-	}
-}
-
-func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d delay.D, rateLimitGenerator tn.RateLimitGenerator, blockSize int64, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
-	for i := 0; i < b.N; i++ {
-		net := tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
+		var net tn.Network
+		if rateLimitGenerator == nil {
+			net = tn.VirtualNetwork(mockrouting.NewServer(), d)
+		} else {
+			net = tn.RateLimitedVirtualNetwork(mockrouting.NewServer(), d, rateLimitGenerator)
+		}
 
 		ig := testinstance.NewTestInstanceGenerator(net, nil, nil)
 		defer ig.Close()
@@ -337,7 +382,13 @@ func subtestDistributeAndFetchRateLimited(b *testing.B, numnodes, numblks int, d
 		blocks := testutil.GenerateBlocksOfSize(numblks, blockSize)
 		blocks[0] = rootBlock[0]
 		runDistribution(b, instances, blocks, bstoreLatency, df, ff)
+
+		err := stats.record(instances[numnodes-1])
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
+	stats.report(b)
 }
 
 func runDistributionMulti(b *testing.B, fetchers []testinstance.Instance, seeds []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
@@ -357,7 +408,7 @@ func runDistributionMulti(b *testing.B, fetchers []testinstance.Instance, seeds 
 		ks = append(ks, blk.Cid())
 	}
 
-	start := time.Now()
+	b.StartTimer()
 	var wg sync.WaitGroup
 	for _, fetcher := range fetchers {
 		wg.Add(1)
@@ -369,27 +420,7 @@ func runDistributionMulti(b *testing.B, fetchers []testinstance.Instance, seeds 
 		}(fetcher)
 	}
 	wg.Wait()
-
-	// Collect statistics
-	fetcher := fetchers[0]
-	st, err := fetcher.Exchange.Stat()
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	for _, fetcher := range fetchers {
-		nst := fetcher.Adapter.Stats()
-		stats := runStats{
-			Time:     time.Since(start),
-			MsgRecd:  nst.MessagesRecvd,
-			MsgSent:  nst.MessagesSent,
-			DupsRcvd: st.DupBlksReceived,
-			BlksRcvd: st.BlocksReceived,
-			Name:     b.Name(),
-		}
-		benchmarkLog = append(benchmarkLog, stats)
-	}
-	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
+	b.StopTimer()
 }
 
 func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []blocks.Block, bstoreLatency time.Duration, df distFunc, ff fetchFunc) {
@@ -413,26 +444,9 @@ func runDistribution(b *testing.B, instances []testinstance.Instance, blocks []b
 		ks = append(ks, blk.Cid())
 	}
 
-	start := time.Now()
+	b.StartTimer()
 	ff(b, fetcher.Exchange, ks)
-
-	// Collect statistics
-	st, err := fetcher.Exchange.Stat()
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	nst := fetcher.Adapter.Stats()
-	stats := runStats{
-		Time:     time.Since(start),
-		MsgRecd:  nst.MessagesRecvd,
-		MsgSent:  nst.MessagesSent,
-		DupsRcvd: st.DupBlksReceived,
-		BlksRcvd: st.BlocksReceived,
-		Name:     b.Name(),
-	}
-	benchmarkLog = append(benchmarkLog, stats)
-	// b.Logf("send/recv: %d / %d (dups: %d)", nst.MessagesSent, nst.MessagesRecvd, st.DupBlksReceived)
+	b.StopTimer()
 }
 
 func allToAll(b *testing.B, provs []testinstance.Instance, blocks []blocks.Block) {
@@ -628,54 +642,4 @@ func unixfsFileFetchLarge(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 			b.Fatal(anyErr)
 		}
 	}
-}
-
-func printResults(rs []runStats) {
-	nameOrder := make([]string, 0)
-	names := make(map[string]struct{})
-	for i := 0; i < len(rs); i++ {
-		if _, ok := names[rs[i].Name]; !ok {
-			nameOrder = append(nameOrder, rs[i].Name)
-			names[rs[i].Name] = struct{}{}
-		}
-	}
-
-	for i := 0; i < len(names); i++ {
-		name := nameOrder[i]
-		count := 0
-		sent := 0.0
-		rcvd := 0.0
-		dups := 0.0
-		blks := 0.0
-		elpd := 0.0
-		for i := 0; i < len(rs); i++ {
-			if rs[i].Name == name {
-				count++
-				sent += float64(rs[i].MsgSent)
-				rcvd += float64(rs[i].MsgRecd)
-				dups += float64(rs[i].DupsRcvd)
-				blks += float64(rs[i].BlksRcvd)
-				elpd += float64(rs[i].Time)
-			}
-		}
-		sent /= float64(count)
-		rcvd /= float64(count)
-		dups /= float64(count)
-		blks /= float64(count)
-
-		label := fmt.Sprintf("%s (%d runs / %.2fs):", name, count, elpd/1000000000.0)
-		fmt.Printf("%-75s %s: sent %d, recv %d, dups %d / %d\n",
-			label,
-			fmtDuration(time.Duration(int64(math.Round(elpd/float64(count))))),
-			int64(math.Round(sent)), int64(math.Round(rcvd)),
-			int64(math.Round(dups)), int64(math.Round(blks)))
-	}
-}
-
-func fmtDuration(d time.Duration) string {
-	d = d.Round(time.Millisecond)
-	s := d / time.Second
-	d -= s * time.Second
-	ms := d / time.Millisecond
-	return fmt.Sprintf("%d.%03ds", s, ms)
 }
