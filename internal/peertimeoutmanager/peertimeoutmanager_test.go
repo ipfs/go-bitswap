@@ -243,11 +243,13 @@ func TestPeerTimeoutManagerWithManyRequests(t *testing.T) {
 			// Send responses for half of the requests (the rest should time
 			// out)
 			for i, p := range batch {
+				allrqs.Add(1)
+
 				if i%2 == 0 {
 					p := p
-					allrqs.Add(1)
 					go func() {
 						defer allrqs.Done()
+
 						time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
 						ptm.ResponseReceived(p)
 					}()
@@ -255,6 +257,8 @@ func TestPeerTimeoutManagerWithManyRequests(t *testing.T) {
 					lk.Lock()
 					expTimeout++
 					lk.Unlock()
+
+					allrqs.Done()
 				}
 			}
 		}()
