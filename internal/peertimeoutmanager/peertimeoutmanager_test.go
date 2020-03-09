@@ -63,7 +63,7 @@ func TestPeerTimeoutManagerWithTimeout(t *testing.T) {
 	tr := timeoutRecorder{}
 	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
 
 	// No response received within timeout
 	ptm.RequestSent(p)
@@ -271,7 +271,10 @@ func TestPeerTimeoutManagerWithManyRequests(t *testing.T) {
 		case <-timedOutCh:
 			timedOutCount++
 
-			if timedOutCount == expTimeout {
+			lk.Lock()
+			exp := expTimeout
+			lk.Unlock()
+			if timedOutCount == exp {
 				return
 			}
 		case <-tctx.Done():
