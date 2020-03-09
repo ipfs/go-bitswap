@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,8 +13,9 @@ import (
 )
 
 type timeoutRecorder struct {
-	lk       sync.Mutex
-	timedOut []peer.ID
+	lk         sync.Mutex
+	timedOut   []peer.ID
+	timedOutCh chan peer.ID
 }
 
 func (tr *timeoutRecorder) onTimeout(peers []peer.ID) {
@@ -23,6 +23,11 @@ func (tr *timeoutRecorder) onTimeout(peers []peer.ID) {
 	defer tr.lk.Unlock()
 
 	tr.timedOut = append(tr.timedOut, peers...)
+	if tr.timedOutCh != nil {
+		for _, p := range peers {
+			tr.timedOutCh <- p
+		}
+	}
 }
 
 func (tr *timeoutRecorder) timedOutCount() int {
@@ -36,13 +41,13 @@ func TestPeerTimeoutManagerNoTimeout(t *testing.T) {
 	ctx := context.Background()
 	p := testutil.GeneratePeers(1)[0]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// Response received within timeout
 	ptm.RequestSent(p)
-	time.Sleep(time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 	ptm.ResponseReceived(p)
 
 	<-tctx.Done()
@@ -56,9 +61,9 @@ func TestPeerTimeoutManagerWithTimeout(t *testing.T) {
 	ctx := context.Background()
 	p := testutil.GeneratePeers(1)[0]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// No response received within timeout
 	ptm.RequestSent(p)
@@ -97,16 +102,16 @@ func TestPeerTimeoutManagerMultiRequestResponseWithTimeout(t *testing.T) {
 	ctx := context.Background()
 	p := testutil.GeneratePeers(1)[0]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// Response received within timeout
 	ptm.RequestSent(p)
-	time.Sleep(time.Millisecond)
+	time.Sleep(3 * time.Millisecond)
 	ptm.ResponseReceived(p)
 
-	time.Sleep(time.Millisecond)
+	time.Sleep(3 * time.Millisecond)
 
 	// Another request sent but no response before timeout
 	ptm.RequestSent(p)
@@ -122,27 +127,19 @@ func TestPeerTimeoutManagerMultiRequestResponseNoTimeout(t *testing.T) {
 	ctx := context.Background()
 	p := testutil.GeneratePeers(1)[0]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// Several requests and responses sent, all within timeout individually
 	// but combined time more than timeout
-	ptm.RequestSent(p)
-	time.Sleep(time.Millisecond) //     +1 = 1
-	ptm.ResponseReceived(p)
+	for i := 0; i < 7; i++ {
+		ptm.RequestSent(p)
+		time.Sleep(time.Millisecond) // +1ms
+		ptm.ResponseReceived(p)
 
-	time.Sleep(2 * time.Millisecond) // +2 = 3
-
-	ptm.RequestSent(p)
-	time.Sleep(time.Millisecond) //     +1 = 4
-	ptm.ResponseReceived(p)
-
-	time.Sleep(2 * time.Millisecond) // +2 = 6
-
-	ptm.RequestSent(p)
-	time.Sleep(time.Millisecond) //     +1 = 7
-	ptm.ResponseReceived(p)
+		time.Sleep(time.Millisecond) // +1ms
+	}
 
 	<-tctx.Done()
 
@@ -157,14 +154,14 @@ func TestPeerTimeoutManagerWithSomePeersTimeout(t *testing.T) {
 	p1 := peers[0]
 	p2 := peers[1]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// Send request to p1 and p2 but only receive response from p1
 	ptm.RequestSent(p1)
 	ptm.RequestSent(p2)
-	time.Sleep(2 * time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
 	ptm.ResponseReceived(p1)
 
 	<-tctx.Done()
@@ -180,9 +177,9 @@ func TestPeerTimeoutManagerWithAllPeersTimeout(t *testing.T) {
 	p1 := peers[0]
 	p2 := peers[1]
 	tr := timeoutRecorder{}
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 5*time.Millisecond)
+	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 10*time.Millisecond)
 
 	// Send request to p1 and p2 and get no response
 	ptm.RequestSent(p1)
@@ -199,18 +196,23 @@ func TestPeerTimeoutManagerWithAllPeersTimeout(t *testing.T) {
 // all time out correctly
 func TestPeerTimeoutManagerWithManyRequests(t *testing.T) {
 	ctx := context.Background()
-	tr := timeoutRecorder{}
-
-	// Make sure we launch enough that the PeerTimeoutManager's internal
-	// GC mechanism kicks in
-	peers := testutil.GeneratePeers(requestGCCount * 3)
-
-	tctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	ptm := newPeerTimeoutManager(tctx, tr.onTimeout, 50*time.Millisecond)
+
+	// Make sure we launch enough requests that the PeerTimeoutManager's
+	// internal GC mechanism kicks in
+	peerCount := requestGCCount * 3
+	timedOutCh := make(chan peer.ID, peerCount*2)
+	tr := timeoutRecorder{timedOutCh: timedOutCh}
+
+	peers := testutil.GeneratePeers(peerCount)
+
+	ptm := newPeerTimeoutManager(ctx, tr.onTimeout, 100*time.Millisecond)
 
 	// Make batches of 5 peers
-	expTimeout := int32(0)
+	var lk sync.Mutex
+	expTimeout := 0
+	var allrqs sync.WaitGroup
 	for i := 0; i < len(peers); i += 5 {
 		end := i + 5
 		if end > len(peers) {
@@ -224,44 +226,54 @@ func TestPeerTimeoutManagerWithManyRequests(t *testing.T) {
 			time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
 
 			// Send all the requests
-			var wgrq sync.WaitGroup
+			var grq sync.WaitGroup
 			for _, p := range batch {
 				p := p
-				wgrq.Add(1)
+				grq.Add(1)
 				go func() {
-					defer wgrq.Done()
+					defer grq.Done()
 					ptm.RequestSent(p)
 				}()
 			}
-			wgrq.Wait()
+			grq.Wait()
 
 			// Sleep a little
 			time.Sleep(5 * time.Millisecond)
 
 			// Send responses for half of the requests (the rest should time
 			// out)
-			var wgrs sync.WaitGroup
 			for i, p := range batch {
 				if i%2 == 0 {
 					p := p
-					wgrs.Add(1)
+					allrqs.Add(1)
 					go func() {
-						defer wgrs.Done()
+						defer allrqs.Done()
 						time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
 						ptm.ResponseReceived(p)
 					}()
 				} else {
-					atomic.AddInt32(&expTimeout, 1)
+					lk.Lock()
+					expTimeout++
+					lk.Unlock()
 				}
 			}
-			wgrs.Wait()
 		}()
 	}
 
-	<-tctx.Done()
+	// Wait for the expected number of responses to time out
+	timedOutCount := 0
+	for {
+		select {
+		case <-timedOutCh:
+			timedOutCount++
 
-	if tr.timedOutCount() != int(expTimeout) {
-		t.Fatal("Expected only some peer requests to time out", tr.timedOutCount(), expTimeout)
+			if timedOutCount == expTimeout {
+				return
+			}
+		case <-tctx.Done():
+			// The test timed out before we got the expected number of timeouts
+			t.Fatal(fmt.Sprintf("Expected %d peer requests to time out, but %d timed out", expTimeout, tr.timedOutCount()))
+		}
 	}
 }
 
