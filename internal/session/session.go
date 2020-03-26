@@ -120,7 +120,7 @@ type Session struct {
 	initialSearchDelay  time.Duration
 	periodicSearchDelay delay.D
 	// identifiers
-	notif notifications.PubSub
+	notif *notifications.PubSub
 	uuid  logging.Loggable
 	id    uint64
 
@@ -137,7 +137,7 @@ func New(ctx context.Context,
 	sim *bssim.SessionInterestManager,
 	pm PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
-	notif notifications.PubSub,
+	notif *notifications.PubSub,
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D,
 	self peer.ID) *Session {
@@ -221,17 +221,43 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 // returns a channel that found blocks will be returned on. No order is
 // guaranteed on the returned blocks.
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
+	// If there are no keys supplied, just return a closed channel
+	if len(keys) == 0 {
+		out := make(chan blocks.Block)
+		close(out)
+		return out, nil
+	}
+
+	keysCh := make(chan cid.Cid, len(keys))
+	for _, k := range keys {
+		keysCh <- k
+	}
+	close(keysCh)
+	return s.StreamBlocks(ctx, keysCh)
+}
+
+// StreamBlocks fetches a set of blocks within the context of this session and
+// returns a channel that found blocks will be returned on. No order is
+// guaranteed on the returned blocks.
+func (s *Session) StreamBlocks(ctx context.Context, keys <-chan cid.Cid) (<-chan blocks.Block, error) {
 	ctx = logging.ContextWithLoggable(ctx, s.uuid)
 
+	// Listen for blocks for each want in the the channel of wanted keys
 	return bsgetter.AsyncGetBlocks(ctx, s.ctx, keys, s.notif,
-		func(ctx context.Context, keys []cid.Cid) {
+		// Called when the listener has been set up for the keys
+		func(keys []cid.Cid) {
+			// Tell the session to request the keys
 			select {
 			case s.incoming <- op{op: opWant, keys: keys}:
 			case <-ctx.Done():
 			case <-s.ctx.Done():
 			}
 		},
+
+		// Called when the request context or session context is cancelled,
+		// where keys are the remaining pending wants
 		func(keys []cid.Cid) {
+			// Tell the session to cancel the keys
 			select {
 			case s.incoming <- op{op: opCancel, keys: keys}:
 			case <-s.ctx.Done():

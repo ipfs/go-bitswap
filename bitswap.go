@@ -38,7 +38,7 @@ import (
 
 var log = logging.Logger("bitswap")
 
-var _ exchange.SessionExchange = (*Bitswap)(nil)
+// var _ exchange.SessionExchange = (*Bitswap)(nil)
 
 const (
 	// these requests take at _least_ two minutes at the moment.
@@ -144,7 +144,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		sim *bssim.SessionInterestManager,
 		pm bssession.PeerManager,
 		bpm *bsbpm.BlockPresenceManager,
-		notif notifications.PubSub,
+		notif *notifications.PubSub,
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D,
 		self peer.ID) bssm.Session {
@@ -197,7 +197,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	go func() {
 		<-px.Closing() // process closes first
 		cancelFunc()
-		notif.Shutdown()
+		// notif.Shutdown()
 	}()
 	procctx.CloseAfterContext(px, ctx) // parent cancelled first
 
@@ -225,7 +225,7 @@ type Bitswap struct {
 	blockstore blockstore.Blockstore
 
 	// manages channels of outgoing blocks for sessions
-	notif notifications.PubSub
+	notif *notifications.PubSub
 
 	// newBlocks is a channel for newly added blocks to be provided to the
 	// network.  blocks pushed down this channel get buffered and fed to the
@@ -294,9 +294,13 @@ func (bs *Bitswap) LedgerForPeer(p peer.ID) *decision.Receipt {
 	return bs.engine.LedgerForPeer(p)
 }
 
-// GetBlocks returns a channel where the caller may receive blocks that
-// correspond to the provided |keys|. Returns an error if BitSwap is unable to
-// begin this request within the deadline enforced by the context.
+// GetBlocks returns a stream of blocks, given a list of CIDs. It will
+// return blocks in any order.
+//
+// To wait for all remaining blocks, close the CID channel and wait for
+// the blocks channel to be closed. A closed channel does not mean that
+// _all_ blocks were retrieved, it just means that the fetcher is done
+// retrieving blocks.
 //
 // NB: Your request remains open until the context expires. To conserve
 // resources, provide a context with a reasonably short deadline (ie. not one
@@ -304,6 +308,22 @@ func (bs *Bitswap) LedgerForPeer(p peer.ID) *decision.Receipt {
 func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 	return session.GetBlocks(ctx, keys)
+}
+
+// StreamBlocks returns a stream of blocks, given a stream of CIDs. It will
+// return blocks in any order.
+//
+// To wait for all remaining blocks, close the CID channel and wait for
+// the blocks channel to be closed. A closed channel does not mean that
+// _all_ blocks were retrieved, it just means that the fetcher is done
+// retrieving blocks.
+//
+// NB: Your request remains open until the context expires. To conserve
+// resources, provide a context with a reasonably short deadline (ie. not one
+// that lasts throughout the lifetime of the server)
+func (bs *Bitswap) StreamBlocks(ctx context.Context, keys <-chan cid.Cid) (<-chan blocks.Block, error) {
+	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
+	return session.StreamBlocks(ctx, keys)
 }
 
 // HasBlock announces the existence of a block to this bitswap service. The
@@ -530,6 +550,6 @@ func (bs *Bitswap) IsOnline() bool {
 // method, but the session will use the fact that the requests are related to
 // be more efficient in its requests to peers. If you are using a session
 // from go-blockservice, it will create a bitswap session automatically.
-func (bs *Bitswap) NewSession(ctx context.Context) exchange.Fetcher {
+func (bs *Bitswap) NewSession(ctx context.Context) bssm.Fetcher {
 	return bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 }

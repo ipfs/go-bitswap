@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 
@@ -12,19 +13,25 @@ import (
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+type Fetcher interface {
+	// GetBlock returns the block associated with a given key.
+	GetBlock(context.Context, cid.Cid) (blocks.Block, error)
+	GetBlocks(context.Context, []cid.Cid) (<-chan blocks.Block, error)
+	StreamBlocks(context.Context, <-chan cid.Cid) (<-chan blocks.Block, error)
+}
+
 // Session is a session that is managed by the session manager
 type Session interface {
-	exchange.Fetcher
+	Fetcher
 	ID() uint64
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
+type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif *notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
 
 // PeerManagerFactory generates a new peer manager for a session.
 type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPeerManager
@@ -38,7 +45,7 @@ type SessionManager struct {
 	peerManagerFactory     PeerManagerFactory
 	blockPresenceManager   *bsbpm.BlockPresenceManager
 	peerManager            bssession.PeerManager
-	notif                  notifications.PubSub
+	notif                  *notifications.PubSub
 
 	// Sessions
 	sessLk   sync.RWMutex
@@ -53,7 +60,7 @@ type SessionManager struct {
 
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestManager *bssim.SessionInterestManager, peerManagerFactory PeerManagerFactory,
-	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, notif notifications.PubSub, self peer.ID) *SessionManager {
+	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, notif *notifications.PubSub, self peer.ID) *SessionManager {
 	return &SessionManager{
 		ctx:                    ctx,
 		sessionFactory:         sessionFactory,
@@ -71,7 +78,7 @@ func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestMana
 // session manager.
 func (sm *SessionManager) NewSession(ctx context.Context,
 	provSearchDelay time.Duration,
-	rebroadcastDelay delay.D) exchange.Fetcher {
+	rebroadcastDelay delay.D) Fetcher {
 	id := sm.GetNextSessionID()
 	sessionctx, cancel := context.WithCancel(ctx)
 

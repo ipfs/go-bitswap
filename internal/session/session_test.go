@@ -115,7 +115,14 @@ func TestSessionGetBlocks(t *testing.T) {
 	}
 
 	// Wait for initial want request
-	receivedWantReq := <-fwm.wantReqs
+	time.Sleep(100 * time.Millisecond)
+	var receivedWantReq wantReq
+	for i := 0; i < 200; i++ {
+		select {
+		case receivedWantReq = <-fwm.wantReqs:
+		default:
+		}
+	}
 
 	// Should have registered session's interest in blocks
 	intSes := sim.FilterSessionInterested(id, cids)

@@ -24,13 +24,16 @@ type fakeSession struct {
 	wantHaves  []cid.Cid
 	id         uint64
 	pm         *fakeSesPeerManager
-	notif      notifications.PubSub
+	notif      *notifications.PubSub
 }
 
 func (*fakeSession) GetBlock(context.Context, cid.Cid) (blocks.Block, error) {
 	return nil, nil
 }
 func (*fakeSession) GetBlocks(context.Context, []cid.Cid) (<-chan blocks.Block, error) {
+	return nil, nil
+}
+func (*fakeSession) StreamBlocks(context.Context, <-chan cid.Cid) (<-chan blocks.Block, error) {
 	return nil, nil
 }
 func (fs *fakeSession) ID() uint64 {
@@ -65,7 +68,7 @@ func sessionFactory(ctx context.Context,
 	sim *bssim.SessionInterestManager,
 	pm bssession.PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
-	notif notifications.PubSub,
+	notif *notifications.PubSub,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D,
 	self peer.ID) Session {

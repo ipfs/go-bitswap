@@ -58,75 +58,89 @@ func SyncGetBlock(p context.Context, k cid.Cid, gb GetBlocksFunc) (blocks.Block,
 }
 
 // WantFunc is any function that can express a want for set of blocks.
-type WantFunc func(context.Context, []cid.Cid)
+type WantFunc func([]cid.Cid)
 
-// AsyncGetBlocks take a set of block cids, a pubsub channel for incoming
-// blocks, a want function, and a close function, and returns a channel of
-// incoming blocks.
-func AsyncGetBlocks(ctx context.Context, sessctx context.Context, keys []cid.Cid, notif notifications.PubSub,
-	want WantFunc, cwants func([]cid.Cid)) (<-chan blocks.Block, error) {
+// AsyncGetBlocks listens for the blocks corresponding to the requested wants,
+// and outputs them on the returned channel.
+// If the wants channel is closed and all wanted blocks are received, closes
+// the returned channel.
+// If the session context or request context are cancelled, calls cancelWants
+// with all pending wants and closes the returned channel.
+func AsyncGetBlocks(ctx context.Context, sessctx context.Context, wants <-chan cid.Cid, notif *notifications.PubSub,
+	want WantFunc, cancelWants func([]cid.Cid)) (<-chan blocks.Block, error) {
 
-	// If there are no keys supplied, just return a closed channel
-	if len(keys) == 0 {
-		out := make(chan blocks.Block)
-		close(out)
-		return out, nil
-	}
+	// Channel of blocks to return to the client
+	out := make(chan blocks.Block)
+
+	// Keep track of which wants we haven't yet received a block
+	pending := cid.NewSet()
 
 	// Use a PubSub notifier to listen for incoming blocks for each key
-	remaining := cid.NewSet()
-	promise := notif.Subscribe(ctx, keys...)
-	for _, k := range keys {
-		log.Debugw("Bitswap.GetBlockRequest.Start", "cid", k)
-		remaining.Add(k)
-	}
+	sub := notif.NewSubscription()
 
-	// Send the want request for the keys to the network
-	want(ctx, keys)
+	go func() {
+		// Before exiting
+		defer func() {
+			// Close the client's channel of blocks
+			close(out)
+			// Close the subscription
+			sub.Close()
 
-	out := make(chan blocks.Block)
-	go handleIncoming(ctx, sessctx, remaining, promise, out, cwants)
-	return out, nil
-}
-
-// Listens for incoming blocks, passing them to the out channel.
-// If the context is cancelled or the incoming channel closes, calls cfun with
-// any keys corresponding to blocks that were never received.
-func handleIncoming(ctx context.Context, sessctx context.Context, remaining *cid.Set,
-	in <-chan blocks.Block, out chan blocks.Block, cfun func([]cid.Cid)) {
-
-	ctx, cancel := context.WithCancel(ctx)
-
-	// Clean up before exiting this function, and call the cancel function on
-	// any remaining keys
-	defer func() {
-		cancel()
-		close(out)
-		// can't just defer this call on its own, arguments are resolved *when* the defer is created
-		cfun(remaining.Keys())
-	}()
-
-	for {
-		select {
-		case blk, ok := <-in:
-			// If the channel is closed, we're done (note that PubSub closes
-			// the channel once all the keys have been received)
-			if !ok {
-				return
+			// Cancel any pending wants
+			if pending.Len() > 0 {
+				cancelWants(pending.Keys())
 			}
+		}()
 
-			remaining.Remove(blk.Cid())
+		blksCh := sub.Blocks()
+		for {
 			select {
-			case out <- blk:
+
+			// For each wanted key
+			case k, ok := <-wants:
+				// Stop receiving from the channel if it's closed
+				if !ok {
+					wants = nil
+				} else {
+					// Record that the want is pending
+					log.Debugw("Bitswap.GetBlockRequest.Start", "cid", k)
+					pending.Add(k)
+
+					// Add the key to the subscriber so that we'll be notified
+					// if the corresponding block arrives
+					sub.Add(k)
+
+					// Send the want request for the key to the network
+					want([]cid.Cid{k})
+				}
+
+			// For each received block
+			case blk := <-blksCh:
+				// Remove the want from the pending set
+				pending.Remove(blk.Cid())
+
+				// Send the block to the client
+				select {
+				case out <- blk:
+				case <-ctx.Done():
+					return
+				case <-sessctx.Done():
+					return
+				}
+
+				// If the wants channel has been closed, and we're not
+				// expecting any more blocks, exit
+				if wants == nil && pending.Len() == 0 {
+					return
+				}
+
 			case <-ctx.Done():
 				return
 			case <-sessctx.Done():
 				return
 			}
-		case <-ctx.Done():
-			return
-		case <-sessctx.Done():
-			return
 		}
-	}
+	}()
+
+	return out, nil
 }
