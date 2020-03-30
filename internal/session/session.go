@@ -21,6 +21,8 @@ import (
 var log = logging.Logger("bs:sess")
 var sflog = log.Desugar()
 
+var speclog = logging.Logger("bs:special")
+
 const (
 	broadcastLiveWantsLimit = 64
 )
@@ -161,6 +163,8 @@ func New(ctx context.Context,
 	}
 	s.sws = newSessionWantSender(id, pm, sprm, bpm, s.onWantsSent, s.onPeersExhausted)
 
+	speclog.Warnf("session %d: <create>", id)
+
 	go s.run(ctx)
 
 	return s
@@ -250,6 +254,13 @@ func (s *Session) SetBaseTickDelay(baseTickDelay time.Duration) {
 
 // onWantsSent is called when wants are sent to a peer by the session wants sender
 func (s *Session) onWantsSent(p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
+	for _, wb := range wantBlocks {
+		speclog.Warnf("session %d: sent want-block %s", s.id, wb)
+	}
+	for _, wh := range wantHaves {
+		speclog.Warnf("session %d: sent want-have %s", s.id, wh)
+	}
+
 	allBlks := append(wantBlocks[:len(wantBlocks):len(wantBlocks)], wantHaves...)
 	s.nonBlockingEnqueue(op{op: opWantsSent, keys: allBlks})
 }
@@ -328,12 +339,17 @@ func (s *Session) run(ctx context.Context) {
 func (s *Session) broadcastWantHaves(ctx context.Context, wants []cid.Cid) {
 	// If this broadcast is because of an idle timeout (we haven't received
 	// any blocks for a while) then broadcast all pending wants
+	dbg := ""
 	if wants == nil {
+		dbg = " (idle tick)"
 		wants = s.sw.PrepareBroadcast()
 	}
 
 	// Broadcast a want-have for the live wants to everyone we're connected to
 	s.wm.BroadcastWantHaves(ctx, s.id, wants)
+	for _, w := range wants {
+		speclog.Warnf("session %d: broadcast%s %s", s.id, dbg, w)
+	}
 
 	// do not find providers on consecutive ticks
 	// -- just rely on periodic search widening
@@ -365,6 +381,7 @@ func (s *Session) handlePeriodicSearch(ctx context.Context) {
 	s.findMorePeers(ctx, randomWant)
 
 	s.wm.BroadcastWantHaves(ctx, s.id, []cid.Cid{randomWant})
+	speclog.Warnf("session %d: broadcast random want %s (periodic search)", s.id, randomWant)
 
 	s.periodicSearchTimer.Reset(s.periodicSearchDelay.NextWaitTime())
 }
@@ -392,6 +409,7 @@ func (s *Session) handleShutdown() {
 	s.sws.Shutdown()
 	// Remove the session from the want manager
 	s.wm.RemoveSession(s.ctx, s.id)
+	speclog.Warnf("session %d: <remove>", s.id)
 }
 
 // handleReceive is called when the session receives blocks from a peer
@@ -441,6 +459,9 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	if len(ks) > 0 {
 		log.Infof("Ses%d: No peers - broadcasting %d want HAVE requests\n", s.id, len(ks))
 		s.wm.BroadcastWantHaves(ctx, s.id, ks)
+		for _, w := range ks {
+			speclog.Warnf("session %d: initial broadcast %s", s.id, w)
+		}
 	}
 }
 

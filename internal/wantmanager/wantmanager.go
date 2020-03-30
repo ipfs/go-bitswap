@@ -73,6 +73,10 @@ func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Ci
 	wm.bcwl.RemoveKeys(blks)
 	// Send CANCEL to all peers with want-have / want-block
 	wm.peerHandler.SendCancels(ctx, blks)
+
+	for _, k := range blks {
+		speclog.Warnf("block recvd: send cancel %s", k)
+	}
 }
 
 // BroadcastWantHaves is called when want-haves should be broadcast to all
@@ -86,6 +90,8 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 	// Send want-haves to all peers
 	wm.peerHandler.BroadcastWantHaves(ctx, wantHaves)
 }
+
+var speclog = logging.Logger("bs:special")
 
 // RemoveSession is called when the session is shut down
 func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
@@ -101,6 +107,10 @@ func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
 
 	// Send CANCEL to all peers for blocks that no session is interested in anymore
 	wm.peerHandler.SendCancels(ctx, cancelKs)
+
+	for _, k := range cancelKs {
+		speclog.Warnf("session %d: (shutdown) send cancel %s", ses, k)
+	}
 }
 
 // Connected is called when a new peer connects
