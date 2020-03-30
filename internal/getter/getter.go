@@ -66,7 +66,7 @@ type WantFunc func([]cid.Cid)
 // the returned channel.
 // If the session context or request context are cancelled, calls cancelWants
 // with all pending wants and closes the returned channel.
-func AsyncGetBlocks(ctx context.Context, sessctx context.Context, wants <-chan cid.Cid, notif *notifications.PubSub,
+func AsyncGetBlocks(ctx context.Context, sessctx context.Context, wants <-chan []cid.Cid, notif *notifications.PubSub,
 	want WantFunc, cancelWants func([]cid.Cid)) (<-chan blocks.Block, error) {
 
 	// Channel of blocks to return to the client
@@ -97,21 +97,26 @@ func AsyncGetBlocks(ctx context.Context, sessctx context.Context, wants <-chan c
 			select {
 
 			// For each wanted key
-			case k, ok := <-wants:
+			case ks, ok := <-wants:
 				// Stop receiving from the channel if it's closed
 				if !ok {
 					wants = nil
+					if pending.Len() == 0 {
+						return
+					}
 				} else {
-					// Record that the want is pending
-					log.Debugw("Bitswap.GetBlockRequest.Start", "cid", k)
-					pending.Add(k)
+					for _, k := range ks {
+						// Record that the want is pending
+						log.Debugw("Bitswap.GetBlockRequest.Start", "cid", k)
+						pending.Add(k)
+					}
 
-					// Add the key to the subscriber so that we'll be notified
+					// Add the keys to the subscriber so that we'll be notified
 					// if the corresponding block arrives
-					sub.Add(k)
+					sub.Add(ks...)
 
-					// Send the want request for the key to the network
-					want([]cid.Cid{k})
+					// Send the want request for the keys to the network
+					want(ks)
 				}
 
 			// For each received block

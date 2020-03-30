@@ -20,7 +20,7 @@ type Fetcher interface {
 	// GetBlock returns the block associated with a given key.
 	GetBlock(context.Context, cid.Cid) (blocks.Block, error)
 	GetBlocks(context.Context, []cid.Cid) (<-chan blocks.Block, error)
-	StreamBlocks(context.Context, <-chan cid.Cid) (<-chan blocks.Block, error)
+	StreamBlocks(context.Context, <-chan []cid.Cid) (<-chan blocks.Block, error)
 }
 
 // Session is a session that is managed by the session manager

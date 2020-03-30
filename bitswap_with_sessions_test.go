@@ -123,6 +123,64 @@ func TestSessionBetweenPeers(t *testing.T) {
 	}
 }
 
+func TestSessionBetweenPeersStream(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vnet := getVirtualNetwork()
+	ig := testinstance.NewTestInstanceGenerator(vnet, nil, nil)
+	defer ig.Close()
+	bgen := blocksutil.NewBlockGenerator()
+
+	inst := ig.Instances(10)
+
+	// Add 101 blocks to Peer A
+	blks := bgen.Blocks(101)
+	if err := inst[0].Blockstore().PutMany(blks); err != nil {
+		t.Fatal(err)
+	}
+
+	var cids []cid.Cid
+	for _, blk := range blks {
+		cids = append(cids, blk.Cid())
+	}
+
+	// Create a session on Peer B
+	ses := inst[1].Exchange.NewSession(ctx)
+	if _, err := ses.GetBlock(ctx, cids[0]); err != nil {
+		t.Fatal(err)
+	}
+	blks = blks[1:]
+	cids = cids[1:]
+
+	// Fetch blocks with the session, 10 at a time
+	ksch := make(chan []cid.Cid)
+	ch, err := ses.StreamBlocks(ctx, ksch)
+	for i := 0; i < 10; i++ {
+		ksch <- cids[i*10 : (i+1)*10]
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var got []blocks.Block
+		for i := 0; i < 10; i++ {
+			got = append(got, <-ch)
+		}
+		if err := assertBlockLists(got, blks[i*10:(i+1)*10]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, is := range inst[2:] {
+		stat, err := is.Exchange.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.MessagesReceived > 2 {
+			t.Fatal("uninvolved nodes should only receive two messages", stat.MessagesReceived)
+		}
+	}
+}
+
 func TestSessionSplitFetch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

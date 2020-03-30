@@ -197,7 +197,6 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	go func() {
 		<-px.Closing() // process closes first
 		cancelFunc()
-		// notif.Shutdown()
 	}()
 	procctx.CloseAfterContext(px, ctx) // parent cancelled first
 
@@ -321,7 +320,7 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 // NB: Your request remains open until the context expires. To conserve
 // resources, provide a context with a reasonably short deadline (ie. not one
 // that lasts throughout the lifetime of the server)
-func (bs *Bitswap) StreamBlocks(ctx context.Context, keys <-chan cid.Cid) (<-chan blocks.Block, error) {
+func (bs *Bitswap) StreamBlocks(ctx context.Context, keys <-chan []cid.Cid) (<-chan blocks.Block, error) {
 	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 	return session.StreamBlocks(ctx, keys)
 }

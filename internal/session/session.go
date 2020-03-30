@@ -110,6 +110,7 @@ type Session struct {
 
 	// channels
 	incoming      chan op
+	wants         chan op
 	tickDelayReqs chan time.Duration
 
 	// do not touch outside run loop
@@ -150,6 +151,7 @@ func New(ctx context.Context,
 		providerFinder:      providerFinder,
 		sim:                 sim,
 		incoming:            make(chan op, 128),
+		wants:               make(chan op, 128),
 		latencyTrkr:         latencyTracker{},
 		notif:               notif,
 		uuid:                loggables.Uuid("GetBlockRequest"),
@@ -228,10 +230,8 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 		return out, nil
 	}
 
-	keysCh := make(chan cid.Cid, len(keys))
-	for _, k := range keys {
-		keysCh <- k
-	}
+	keysCh := make(chan []cid.Cid, 1)
+	keysCh <- keys
 	close(keysCh)
 	return s.StreamBlocks(ctx, keysCh)
 }
@@ -239,7 +239,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 // StreamBlocks fetches a set of blocks within the context of this session and
 // returns a channel that found blocks will be returned on. No order is
 // guaranteed on the returned blocks.
-func (s *Session) StreamBlocks(ctx context.Context, keys <-chan cid.Cid) (<-chan blocks.Block, error) {
+func (s *Session) StreamBlocks(ctx context.Context, keys <-chan []cid.Cid) (<-chan blocks.Block, error) {
 	ctx = logging.ContextWithLoggable(ctx, s.uuid)
 
 	// Listen for blocks for each want in the the channel of wanted keys
@@ -248,7 +248,7 @@ func (s *Session) StreamBlocks(ctx context.Context, keys <-chan cid.Cid) (<-chan
 		func(keys []cid.Cid) {
 			// Tell the session to request the keys
 			select {
-			case s.incoming <- op{op: opWant, keys: keys}:
+			case s.wants <- op{op: opWant, keys: keys}:
 			case <-ctx.Done():
 			case <-s.ctx.Done():
 			}
@@ -302,6 +302,26 @@ func (s *Session) nonBlockingEnqueue(o op) {
 	}
 }
 
+// Pop all queued wants and return their keys.
+// This is just to make it more efficient to process consecutive wants.
+func (s *Session) getQueuedWants(first []cid.Cid) []cid.Cid {
+	if len(s.wants) == 0 {
+		return first
+	}
+
+	ks := make([]cid.Cid, 0, len(first)+len(s.wants))
+	ks = append(ks, first...)
+
+	for {
+		select {
+		case op := <-s.wants:
+			ks = append(ks, op.keys...)
+		default:
+			return ks
+		}
+	}
+}
+
 // Session run loop -- everything in this function should not be called
 // outside of this loop
 func (s *Session) run(ctx context.Context) {
@@ -311,35 +331,45 @@ func (s *Session) run(ctx context.Context) {
 	s.periodicSearchTimer = time.NewTimer(s.periodicSearchDelay.NextWaitTime())
 	for {
 		select {
+		case want := <-s.wants:
+			// Client wants blocks
+			ks := s.getQueuedWants(want.keys)
+			s.wantBlocks(ctx, ks)
+
 		case oper := <-s.incoming:
 			switch oper.op {
 			case opReceive:
 				// Received blocks
 				s.handleReceive(oper.keys)
-			case opWant:
-				// Client wants blocks
-				s.wantBlocks(ctx, oper.keys)
+
 			case opCancel:
 				// Wants were cancelled
 				s.sw.CancelPending(oper.keys)
+
 			case opWantsSent:
 				// Wants were sent to a peer
 				s.sw.WantsSent(oper.keys)
+
 			case opBroadcast:
 				// Broadcast want-haves to all peers
 				s.broadcastWantHaves(ctx, oper.keys)
+
 			default:
 				panic("unhandled operation")
 			}
+
 		case <-s.idleTick.C:
 			// The session hasn't received blocks for a while, broadcast
 			s.broadcastWantHaves(ctx, nil)
+
 		case <-s.periodicSearchTimer.C:
 			// Periodically search for a random live want
 			s.handlePeriodicSearch(ctx)
+
 		case baseTickDelay := <-s.tickDelayReqs:
 			// Set the base tick delay
 			s.baseTickDelay = baseTickDelay
+
 		case <-ctx.Done():
 			// Shutdown
 			s.handleShutdown()
