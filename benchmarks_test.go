@@ -19,9 +19,9 @@ import (
 
 	bitswap "github.com/ipfs/go-bitswap"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
+	bsnet "github.com/ipfs/go-bitswap/network"
 	testinstance "github.com/ipfs/go-bitswap/testinstance"
 	tn "github.com/ipfs/go-bitswap/testnet"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
@@ -38,6 +38,62 @@ type runStats struct {
 	MsgRecd  uint64
 	Time     time.Duration
 	Name     string
+}
+
+func BenchmarkWantlist(b *testing.B) {
+	benchmarkLog = nil
+	fixedDelay := delay.Fixed(10 * time.Millisecond)
+	bstoreLatency := time.Duration(5 * time.Millisecond)
+
+	b.Run("wantlist", func(b *testing.B) {
+		// subtestDistributeAndFetch(b, 3, 1000, fixedDelay, bstoreLatency, allToAll, unixfsFileFetchLarge)
+		numnodes := 8
+		numblks := 1000
+		d := fixedDelay
+		df := allToAll
+		ff := unixfsFileFetchLarge
+		for i := 0; i < b.N; i++ {
+			net := tn.VirtualNetwork(mockrouting.NewServer(), d)
+
+			ig := testinstance.NewTestInstanceGenerator(net, nil, nil)
+
+			instances := ig.Instances(numnodes)
+			// rootBlock := testutil.GenerateBlocksOfSize(1, rootBlockSize)
+			rootBlock := testutil.GenerateBlocksOfSize(2, rootBlockSize)
+
+			blks := testutil.GenerateBlocksOfSize(numblks*3, stdBlockSize)
+			blks[0] = rootBlock[0]
+			blks[1] = rootBlock[1]
+
+			var wg sync.WaitGroup
+			for i := 0; i < 5; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var distblks []blocks.Block
+					for i := 0; len(distblks) < numblks; i = (i + 1) % numblks {
+						if rand.Intn(3) == 0 {
+							distblks = append(distblks, blks[i])
+						}
+					}
+					runDistribution(b, instances, distblks, bstoreLatency, df, ff)
+				}()
+			}
+			wg.Wait()
+
+			ig.Close()
+
+			time.Sleep(100 * time.Millisecond)
+			fetcher := instances[numnodes-1]
+			wbs := len(fetcher.Exchange.GetWantBlocks())
+			whs := len(fetcher.Exchange.GetWantHaves())
+			fmt.Printf("wbs: %d / whs: %d\n", wbs, whs)
+		}
+	})
+
+	out, _ := json.MarshalIndent(benchmarkLog, "", "  ")
+	_ = ioutil.WriteFile("tmp/benchmark.json", out, 0666)
+	printResults(benchmarkLog)
 }
 
 var benchmarkLog []runStats
@@ -99,6 +155,8 @@ var benches = []bench{
 	bench{"10Nodes-OnePeerPerBlock-BigBatch", 10, 100, onePeerPerBlock, batchFetchAll},
 	// - request 1, then 10, then 89 blocks (similar to how IPFS would fetch a file)
 	bench{"10Nodes-OnePeerPerBlock-UnixfsFetch", 10, 100, onePeerPerBlock, unixfsFileFetch},
+	// - request 1, then 10, then 89 blocks using StreamBlocks
+	bench{"10Nodes-OnePeerPerBlock-UnixfsStream", 10, 100, onePeerPerBlock, unixfsStreamFetch},
 
 	// Fetch from 199 seed nodes, all nodes have all blocks, fetch all 20 blocks with a single GetBlocks() call
 	bench{"200Nodes-AllToAll-BigBatch", 200, 20, allToAll, batchFetchAll},
@@ -569,6 +627,28 @@ func unixfsFileFetch(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
 		b.Fatal(err)
 	}
 	for range out {
+	}
+}
+
+// simulates the fetch pattern of trying to sync a unixfs file graph as fast as possible
+// using StreamBlocks()
+func unixfsStreamFetch(b *testing.B, bs *bitswap.Bitswap, ks []cid.Cid) {
+	ses := bs.NewSession(context.Background())
+	ksch := make(chan []cid.Cid)
+	out, err := ses.StreamBlocks(context.Background(), ksch)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	ksch <- ks[:1]
+	<-out
+	ksch <- ks[1:11]
+	for i := 0; i < 10; i++ {
+		<-out
+	}
+	ksch <- ks[11:]
+	for i := 0; i < 81; i++ {
+		<-out
 	}
 }
 
