@@ -23,6 +23,10 @@ var sflog = log.Desugar()
 
 var speclog = logging.Logger("bs:special")
 
+func init() {
+	logging.SetLogLevel("bs:special", "warn")
+}
+
 const (
 	broadcastLiveWantsLimit = 64
 )
