@@ -6,6 +6,7 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
+	lu "github.com/ipfs/go-bitswap/internal/lu"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
@@ -21,11 +22,7 @@ import (
 var log = logging.Logger("bs:sess")
 var sflog = log.Desugar()
 
-var speclog = logging.Logger("bs:special")
-
-func init() {
-	logging.SetLogLevel("bs:special", "warn")
-}
+var speclog = lu.GetSpecialLogger()
 
 const (
 	broadcastLiveWantsLimit = 64

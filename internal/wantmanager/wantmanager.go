@@ -4,6 +4,7 @@ import (
 	"context"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
+	lu "github.com/ipfs/go-bitswap/internal/lu"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	"github.com/ipfs/go-bitswap/internal/sessionmanager"
 	bsswl "github.com/ipfs/go-bitswap/internal/sessionwantlist"
@@ -91,7 +92,7 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 	wm.peerHandler.BroadcastWantHaves(ctx, wantHaves)
 }
 
-var speclog = logging.Logger("bs:special")
+var speclog = lu.GetSpecialLogger()
 
 // RemoveSession is called when the session is shut down
 func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
