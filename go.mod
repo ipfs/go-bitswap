@@ -9,12 +9,13 @@ require (
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.5.0
 	github.com/ipfs/go-detect-race v0.0.1
-	github.com/ipfs/go-ipfs-blockstore v0.2.1
+	github.com/ipfs/go-ipfs-blockstore v1.1.3-0.20220302142350-af197de1c3da
 	github.com/ipfs/go-ipfs-blocksutil v0.0.1
 	github.com/ipfs/go-ipfs-delay v0.0.1
 	github.com/ipfs/go-ipfs-exchange-interface v0.1.0
 	github.com/ipfs/go-ipfs-routing v0.2.1
 	github.com/ipfs/go-ipfs-util v0.0.2
+	github.com/ipfs/go-ipld-format v0.2.1-0.20220302134852-d02e0e18fc65
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-peertaskqueue v0.7.0
