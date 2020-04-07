@@ -106,7 +106,7 @@ type Session struct {
 	sw  sessionWants
 	sws sessionWantSender
 
-	latencyTrkr latencyTracker
+	latencyTrkr *latencyTracker
 
 	// channels
 	incoming      chan op
@@ -150,7 +150,7 @@ func New(ctx context.Context,
 		providerFinder:      providerFinder,
 		sim:                 sim,
 		incoming:            make(chan op, 128),
-		latencyTrkr:         latencyTracker{},
+		latencyTrkr:         newLatencyTracker(latencyTrackerAlpha),
 		notif:               notif,
 		uuid:                loggables.Uuid("GetBlockRequest"),
 		baseTickDelay:       time.Millisecond * 500,
@@ -456,29 +456,9 @@ func (s *Session) resetIdleTick() {
 	if !s.latencyTrkr.hasLatency() {
 		tickDelay = s.initialSearchDelay
 	} else {
-		avLat := s.latencyTrkr.averageLatency()
+		avLat := s.latencyTrkr.smoothedLatency()
 		tickDelay = s.baseTickDelay + (3 * avLat)
 	}
 	tickDelay = tickDelay * time.Duration(1+s.consecutiveTicks)
 	s.idleTick.Reset(tickDelay)
-}
-
-// latencyTracker keeps track of the average latency between sending a want
-// and receiving the corresponding block
-type latencyTracker struct {
-	totalLatency time.Duration
-	count        int
-}
-
-func (lt *latencyTracker) hasLatency() bool {
-	return lt.totalLatency > 0 && lt.count > 0
-}
-
-func (lt *latencyTracker) averageLatency() time.Duration {
-	return lt.totalLatency / time.Duration(lt.count)
-}
-
-func (lt *latencyTracker) receiveUpdate(count int, totalLatency time.Duration) {
-	lt.totalLatency += totalLatency
-	lt.count += count
 }
