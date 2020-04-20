@@ -2,13 +2,10 @@ package notifications
 
 import (
 	"bytes"
-	"context"
 	"testing"
 	"time"
 
 	blocks "github.com/ipfs/go-block-format"
-	cid "github.com/ipfs/go-cid"
-	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 )
 
 func TestDuplicates(t *testing.T) {
@@ -16,10 +13,11 @@ func TestDuplicates(t *testing.T) {
 	b2 := blocks.NewBlock([]byte("2"))
 
 	n := New()
-	defer n.Shutdown()
-	ch := n.Subscribe(context.Background(), b1.Cid(), b2.Cid())
+	s := n.NewSubscription()
+	ch := s.Blocks()
+	s.Add(b1.Cid(), b2.Cid())
 
-	n.Publish(b1)
+	go n.Publish(b1)
 	blockRecvd, ok := <-ch
 	if !ok {
 		t.Fail()
@@ -28,7 +26,7 @@ func TestDuplicates(t *testing.T) {
 
 	n.Publish(b1) // ignored duplicate
 
-	n.Publish(b2)
+	go n.Publish(b2)
 	blockRecvd, ok = <-ch
 	if !ok {
 		t.Fail()
@@ -40,17 +38,15 @@ func TestPublishSubscribe(t *testing.T) {
 	blockSent := blocks.NewBlock([]byte("Greetings from The Interval"))
 
 	n := New()
-	defer n.Shutdown()
-	ch := n.Subscribe(context.Background(), blockSent.Cid())
+	s := n.NewSubscription()
+	s.Add(blockSent.Cid())
 
-	n.Publish(blockSent)
-	blockRecvd, ok := <-ch
+	go n.Publish(blockSent)
+	blockRecvd, ok := <-s.Blocks()
 	if !ok {
 		t.Fail()
 	}
-
 	assertBlocksEqual(t, blockRecvd, blockSent)
-
 }
 
 func TestSubscribeMany(t *testing.T) {
@@ -58,17 +54,18 @@ func TestSubscribeMany(t *testing.T) {
 	e2 := blocks.NewBlock([]byte("2"))
 
 	n := New()
-	defer n.Shutdown()
-	ch := n.Subscribe(context.Background(), e1.Cid(), e2.Cid())
+	s := n.NewSubscription()
+	ch := s.Blocks()
+	s.Add(e1.Cid(), e2.Cid())
 
-	n.Publish(e1)
+	go n.Publish(e1)
 	r1, ok := <-ch
 	if !ok {
 		t.Fatal("didn't receive first expected block")
 	}
 	assertBlocksEqual(t, e1, r1)
 
-	n.Publish(e2)
+	go n.Publish(e2)
 	r2, ok := <-ch
 	if !ok {
 		t.Fatal("didn't receive second expected block")
@@ -82,11 +79,15 @@ func TestDuplicateSubscribe(t *testing.T) {
 	e1 := blocks.NewBlock([]byte("1"))
 
 	n := New()
-	defer n.Shutdown()
-	ch1 := n.Subscribe(context.Background(), e1.Cid())
-	ch2 := n.Subscribe(context.Background(), e1.Cid())
+	s1 := n.NewSubscription()
+	ch1 := s1.Blocks()
+	s2 := n.NewSubscription()
+	ch2 := s2.Blocks()
 
-	n.Publish(e1)
+	s1.Add(e1.Cid())
+	s2.Add(e1.Cid())
+
+	go n.Publish(e1)
 	r1, ok := <-ch1
 	if !ok {
 		t.Fatal("didn't receive first expected block")
@@ -100,14 +101,15 @@ func TestDuplicateSubscribe(t *testing.T) {
 	assertBlocksEqual(t, e1, r2)
 }
 
-func TestShutdownBeforeUnsubscribe(t *testing.T) {
+func TestCloseBeforeUnsubscribe(t *testing.T) {
 	e1 := blocks.NewBlock([]byte("1"))
 
 	n := New()
-	ctx, cancel := context.WithCancel(context.Background())
-	ch := n.Subscribe(ctx, e1.Cid()) // no keys provided
-	n.Shutdown()
-	cancel()
+	s := n.NewSubscription()
+	ch := s.Blocks()
+	s.Add(e1.Cid())
+
+	s.Close()
 
 	select {
 	case _, ok := <-ch:
@@ -119,61 +121,36 @@ func TestShutdownBeforeUnsubscribe(t *testing.T) {
 	}
 }
 
-func TestSubscribeIsANoopWhenCalledWithNoKeys(t *testing.T) {
+func TestPublishAfterClose(t *testing.T) {
+	e1 := blocks.NewBlock([]byte("1"))
+	e2 := blocks.NewBlock([]byte("2"))
+
 	n := New()
-	defer n.Shutdown()
-	ch := n.Subscribe(context.Background()) // no keys provided
-	if _, ok := <-ch; ok {
-		t.Fatal("should be closed if no keys provided")
+	s := n.NewSubscription()
+	ch := s.Blocks()
+	s.Add(e1.Cid(), e2.Cid())
+
+	go n.Publish(e1)
+
+	r1, ok := <-ch
+	if !ok {
+		t.Fatal("didn't receive first expected block")
 	}
-}
+	assertBlocksEqual(t, e1, r1)
 
-func TestCarryOnWhenDeadlineExpires(t *testing.T) {
+	s.Close()
 
-	impossibleDeadline := time.Nanosecond
-	fastExpiringCtx, cancel := context.WithTimeout(context.Background(), impossibleDeadline)
-	defer cancel()
+	go n.Publish(e1)
 
-	n := New()
-	defer n.Shutdown()
-	block := blocks.NewBlock([]byte("A Missed Connection"))
-	blockChannel := n.Subscribe(fastExpiringCtx, block.Cid())
+	time.Sleep(10 * time.Millisecond)
 
-	assertBlockChannelNil(t, blockChannel)
-}
-
-func TestDoesNotDeadLockIfContextCancelledBeforePublish(t *testing.T) {
-
-	g := blocksutil.NewBlockGenerator()
-	ctx, cancel := context.WithCancel(context.Background())
-	n := New()
-	defer n.Shutdown()
-
-	t.Log("generate a large number of blocks. exceed default buffer")
-	bs := g.Blocks(1000)
-	ks := func() []cid.Cid {
-		var keys []cid.Cid
-		for _, b := range bs {
-			keys = append(keys, b.Cid())
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("channel should have been closed")
 		}
-		return keys
-	}()
-
-	_ = n.Subscribe(ctx, ks...) // ignore received channel
-
-	t.Log("cancel context before any blocks published")
-	cancel()
-	for _, b := range bs {
-		n.Publish(b)
-	}
-
-	t.Log("publishing the large number of blocks to the ignored channel must not deadlock")
-}
-
-func assertBlockChannelNil(t *testing.T, blockChannel <-chan blocks.Block) {
-	_, ok := <-blockChannel
-	if ok {
-		t.Fail()
+	case <-time.After(5 * time.Second):
+		t.Fatal("channel should have been closed")
 	}
 }
 
