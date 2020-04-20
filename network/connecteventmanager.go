@@ -109,7 +109,7 @@ type peerEventsHandler struct {
 	refsLk sync.RWMutex
 	refs   int
 
-	eventCountLk sync.Mutex
+	eventCountLk sync.RWMutex
 	eventCount   int
 }
 
@@ -162,9 +162,11 @@ func (pe *peerEventsHandler) shutdown() {
 
 func (pe *peerEventsHandler) canGC() bool {
 	pe.refsLk.RLock()
+	pe.eventCountLk.RLock()
+	defer pe.eventCountLk.RUnlock()
 	defer pe.refsLk.RUnlock()
 
-	return pe.refs <= 0
+	return pe.eventCount == 0 && pe.refs <= 0
 }
 
 func (pe *peerEventsHandler) onConnected() {
