@@ -76,6 +76,7 @@ func (c *connectEventManager) Run() {
 					break
 				}
 				handler = newPeerEventsHandler(evt.p, c.connListener)
+				go handler.run()
 				peerEventsHandlers[evt.p] = handler
 			}
 			handler.add(evt.evtType)
@@ -83,6 +84,7 @@ func (c *connectEventManager) Run() {
 		case <-gcTicker.C:
 			for p, handler := range peerEventsHandlers {
 				if handler.canGC() {
+					handler.shutdown()
 					delete(peerEventsHandlers, p)
 				}
 			}
