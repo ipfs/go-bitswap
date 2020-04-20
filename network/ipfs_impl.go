@@ -332,6 +332,7 @@ func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stre
 func (bsnet *impl) SetDelegate(r Receiver) {
 	bsnet.receiver = r
 	bsnet.connectEvtMgr = newConnectEventManager(r)
+	go bsnet.connectEvtMgr.Run()
 	for _, proto := range bsnet.supportedProtocols {
 		bsnet.host.SetStreamHandler(proto, bsnet.handleNewStream)
 	}
