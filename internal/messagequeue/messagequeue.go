@@ -590,8 +590,12 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) bsmsg.BitSwapM
 		}
 	}
 
-	// Add each regular want-have / want-block to the message, sorting first
-	// if we're not likely to fit all of them.
+	// Next, add the wants. If we have too many entries to fit into a single
+	// message, sort by priority and include the high priority ones first.
+	// However, avoid sorting till we really need to as this code is a
+	// called frequently.
+
+	// Add each regular want-have / want-block to the message.
 	if msgSize+(len(peerEntries)*bsmsg.MaxEntrySize) > mq.maxMessageSize {
 		bswl.SortEntries(peerEntries)
 	}
@@ -605,8 +609,7 @@ func (mq *MessageQueue) extractOutgoingMessage(supportsHave bool) bsmsg.BitSwapM
 		}
 	}
 
-	// Add each broadcast want-have to the message, sorting first if we're
-	// not likely to fit all of them.
+	// Add each broadcast want-have to the message.
 	if msgSize+(len(bcstEntries)*bsmsg.MaxEntrySize) > mq.maxMessageSize {
 		bswl.SortEntries(bcstEntries)
 	}
@@ -649,7 +652,11 @@ FINISH:
 	}
 
 	for _, c := range cancels[:sentCancels] {
-		mq.cancels.Remove(c)
+		if !mq.cancels.Has(c) {
+			mq.msg.Remove(c)
+		} else {
+			mq.cancels.Remove(c)
+		}
 	}
 	mq.wllock.Unlock()
 
