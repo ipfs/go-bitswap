@@ -59,18 +59,19 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 		return
 	}
 
-	// Decrement the gauge by the number of pending want-blocks to the peer
-	for range pws.wantBlocks.Keys() {
+	pws.wantBlocks.ForEach(func(c cid.Cid) error {
+		// Decrement the gauge by the number of pending want-blocks to the peer
 		pwm.wantBlockGauge.Dec()
-	}
+		// Clean up want-blocks from the reverse index
+		pwm.reverseIndexRemove(c, p)
+		return nil
+	})
 
-	// Clean up the reverse index
-	for _, c := range pws.wantHaves.Keys() {
+	// Clean up want-haves from the reverse index
+	pws.wantHaves.ForEach(func(c cid.Cid) error {
 		pwm.reverseIndexRemove(c, p)
-	}
-	for _, c := range pws.wantBlocks.Keys() {
-		pwm.reverseIndexRemove(c, p)
-	}
+		return nil
+	})
 
 	delete(pwm.peerWants, p)
 }
@@ -174,6 +175,7 @@ func (pwm *peerWantManager) prepareSendCancels(cancelKs []cid.Cid) map[peer.ID][
 			pws, ok := pwm.peerWants[p]
 			if !ok {
 				// Should never happen but check just in case
+				log.Errorf("peerWantManager reverse index missing peer %s for key %s", p, c)
 				continue
 			}
 
@@ -233,10 +235,11 @@ func (pwm *peerWantManager) getWantBlocks() []cid.Cid {
 	// Iterate over all known peers
 	for _, pws := range pwm.peerWants {
 		// Iterate over all want-blocks
-		for _, c := range pws.wantBlocks.Keys() {
+		pws.wantBlocks.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
-		}
+			return nil
+		})
 	}
 
 	return res.Keys()
@@ -249,10 +252,11 @@ func (pwm *peerWantManager) getWantHaves() []cid.Cid {
 	// Iterate over all known peers
 	for _, pws := range pwm.peerWants {
 		// Iterate over all want-haves
-		for _, c := range pws.wantHaves.Keys() {
+		pws.wantHaves.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
-		}
+			return nil
+		})
 	}
 
 	return res.Keys()
@@ -265,16 +269,18 @@ func (pwm *peerWantManager) getWants() []cid.Cid {
 	// Iterate over all known peers
 	for _, pws := range pwm.peerWants {
 		// Iterate over all want-blocks
-		for _, c := range pws.wantBlocks.Keys() {
+		pws.wantBlocks.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
-		}
+			return nil
+		})
 
 		// Iterate over all want-haves
-		for _, c := range pws.wantHaves.Keys() {
+		pws.wantHaves.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
-		}
+			return nil
+		})
 	}
 
 	return res.Keys()
