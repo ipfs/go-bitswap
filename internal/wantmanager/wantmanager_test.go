@@ -75,8 +75,8 @@ func TestRemoveSession(t *testing.T) {
 	// Record session interest in 2 keys for session 0 and 2 keys for session 1
 	// with 1 overlapping key
 	cids := testutil.GenerateCids(3)
-	ses0 := uint64(0)
-	ses1 := uint64(1)
+	ses0 := testutil.GenerateSessionID()
+	ses1 := testutil.GenerateSessionID()
 	ses0ks := cids[:2]
 	ses1ks := cids[1:]
 	sim.RecordSessionInterest(ses0, ses0ks)

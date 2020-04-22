@@ -5,6 +5,7 @@ import (
 
 	bsswl "github.com/ipfs/go-bitswap/internal/sessionwantlist"
 	blocks "github.com/ipfs/go-block-format"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 
 	cid "github.com/ipfs/go-cid"
 )
@@ -26,7 +27,7 @@ func New() *SessionInterestManager {
 
 // When the client asks the session for blocks, the session calls
 // RecordSessionInterest() with those cids.
-func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Cid) {
+func (sim *SessionInterestManager) RecordSessionInterest(ses exchange.SessionID, ks []cid.Cid) {
 	sim.lk.Lock()
 	defer sim.lk.Unlock()
 
@@ -35,7 +36,7 @@ func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Ci
 }
 
 // When the session shuts down it calls RemoveSessionInterest().
-func (sim *SessionInterestManager) RemoveSessionInterest(ses uint64) []cid.Cid {
+func (sim *SessionInterestManager) RemoveSessionInterest(ses exchange.SessionID) []cid.Cid {
 	sim.lk.Lock()
 	defer sim.lk.Unlock()
 
@@ -44,7 +45,7 @@ func (sim *SessionInterestManager) RemoveSessionInterest(ses uint64) []cid.Cid {
 }
 
 // When the session receives blocks, it calls RemoveSessionWants().
-func (sim *SessionInterestManager) RemoveSessionWants(ses uint64, wants []cid.Cid) {
+func (sim *SessionInterestManager) RemoveSessionWants(ses exchange.SessionID, wants []cid.Cid) {
 	sim.lk.Lock()
 	defer sim.lk.Unlock()
 
@@ -53,7 +54,7 @@ func (sim *SessionInterestManager) RemoveSessionWants(ses uint64, wants []cid.Ci
 
 // The session calls FilterSessionInterested() to filter the sets of keys for
 // those that the session is interested in
-func (sim *SessionInterestManager) FilterSessionInterested(ses uint64, ksets ...[]cid.Cid) [][]cid.Cid {
+func (sim *SessionInterestManager) FilterSessionInterested(ses exchange.SessionID, ksets ...[]cid.Cid) [][]cid.Cid {
 	sim.lk.RLock()
 	defer sim.lk.RUnlock()
 
@@ -92,7 +93,7 @@ func (sim *SessionInterestManager) SplitWantedUnwanted(blks []blocks.Block) ([]b
 
 // When the WantManager receives a message is calls InterestedSessions() to
 // find out which sessions are interested in the message.
-func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []uint64 {
+func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []exchange.SessionID {
 	sim.lk.RLock()
 	defer sim.lk.RUnlock()
 

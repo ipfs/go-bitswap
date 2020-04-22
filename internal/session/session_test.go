@@ -14,6 +14,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -31,16 +32,16 @@ func newFakeWantManager() *fakeWantManager {
 	}
 }
 
-func (fwm *fakeWantManager) BroadcastWantHaves(ctx context.Context, sesid uint64, cids []cid.Cid) {
+func (fwm *fakeWantManager) BroadcastWantHaves(ctx context.Context, sesid exchange.SessionID, cids []cid.Cid) {
 	select {
 	case fwm.wantReqs <- wantReq{cids}:
 	case <-ctx.Done():
 	}
 }
-func (fwm *fakeWantManager) RemoveSession(context.Context, uint64) {}
+func (fwm *fakeWantManager) RemoveSession(context.Context, exchange.SessionID) {}
 
 func newFakeSessionPeerManager() *bsspm.SessionPeerManager {
-	return bsspm.New(1, newFakePeerTagger())
+	return bsspm.New(testutil.GenerateSessionID(), newFakePeerTagger())
 }
 
 type fakePeerTagger struct {
@@ -86,7 +87,7 @@ func newFakePeerManager() *fakePeerManager {
 func (pm *fakePeerManager) RegisterSession(peer.ID, bspm.Session) bool {
 	return true
 }
-func (pm *fakePeerManager) UnregisterSession(uint64)                                 {}
+func (pm *fakePeerManager) UnregisterSession(exchange.SessionID)                   {}
 func (pm *fakePeerManager) SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid) {}
 
 func TestSessionGetBlocks(t *testing.T) {
@@ -459,6 +460,7 @@ func TestSessionReceiveMessageAfterShutdown(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
+
 	session := New(ctx, id, fwm, fpm, fpf, sim, newFakePeerManager(), bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(2)

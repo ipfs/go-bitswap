@@ -141,7 +141,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	wm = bswm.New(ctx, pm, sim, bpm)
 	pqm := bspqm.New(ctx, network)
 
-	sessionFactory := func(ctx context.Context, id uint64, spm bssession.SessionPeerManager,
+	sessionFactory := func(ctx context.Context, id exchange.SessionID, spm bssession.SessionPeerManager,
 		sim *bssim.SessionInterestManager,
 		pm bssession.PeerManager,
 		bpm *bsbpm.BlockPresenceManager,
@@ -151,7 +151,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		self peer.ID) bssm.Session {
 		return bssession.New(ctx, id, wm, spm, pqm, sim, pm, bpm, notif, provSearchDelay, rebroadcastDelay, self)
 	}
-	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
+	sessionPeerManagerFactory := func(ctx context.Context, id exchange.SessionID) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
 	}
 	notif := notifications.New()

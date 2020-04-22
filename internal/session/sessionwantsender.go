@@ -4,6 +4,7 @@ import (
 	"context"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -79,7 +80,7 @@ type sessionWantSender struct {
 	// finished shutting down
 	closed chan struct{}
 	// The session ID
-	sessionID uint64
+	sessionID exchange.SessionID
 	// A channel that collects incoming changes (events)
 	changes chan change
 	// Information about each want indexed by CID
@@ -102,7 +103,7 @@ type sessionWantSender struct {
 	onPeersExhausted onPeersExhaustedFn
 }
 
-func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager,
+func newSessionWantSender(sid exchange.SessionID, pm PeerManager, spm SessionPeerManager,
 	bpm *bsbpm.BlockPresenceManager, onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionWantSender {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -127,7 +128,7 @@ func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager,
 	return sws
 }
 
-func (sws *sessionWantSender) ID() uint64 {
+func (sws *sessionWantSender) ID() exchange.SessionID {
 	return sws.sessionID
 }
 

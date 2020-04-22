@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"math/rand"
 
 	bssd "github.com/ipfs/go-bitswap/internal/sessiondata"
@@ -9,6 +10,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -84,14 +86,6 @@ func GenerateOptimizedPeers(n int, optCount int, curveFunc func(float64) float64
 	return optimizedPeers
 }
 
-var nextSession uint64
-
-// GenerateSessionID make a unit session identifier.
-func GenerateSessionID() uint64 {
-	nextSession++
-	return uint64(nextSession)
-}
-
 // ContainsPeer returns true if a peer is found n a list of peers.
 func ContainsPeer(peers []peer.ID, p peer.ID) bool {
 	for _, n := range peers {
@@ -155,4 +149,9 @@ func MatchPeersIgnoreOrder(ps1 []peer.ID, ps2 []peer.ID) bool {
 		}
 	}
 	return true
+}
+
+func GenerateSessionID() exchange.SessionID {
+	id, _ := exchange.GetOrCreateSession(context.Background())
+	return id
 }

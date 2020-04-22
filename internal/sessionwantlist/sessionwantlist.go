@@ -4,28 +4,29 @@ import (
 	"sync"
 
 	cid "github.com/ipfs/go-cid"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 )
 
 // The SessionWantList keeps track of which sessions want a CID
 type SessionWantlist struct {
 	sync.RWMutex
-	wants map[cid.Cid]map[uint64]struct{}
+	wants map[cid.Cid]map[exchange.SessionID]struct{}
 }
 
 func NewSessionWantlist() *SessionWantlist {
 	return &SessionWantlist{
-		wants: make(map[cid.Cid]map[uint64]struct{}),
+		wants: make(map[cid.Cid]map[exchange.SessionID]struct{}),
 	}
 }
 
 // The given session wants the keys
-func (swl *SessionWantlist) Add(ks []cid.Cid, ses uint64) {
+func (swl *SessionWantlist) Add(ks []cid.Cid, ses exchange.SessionID) {
 	swl.Lock()
 	defer swl.Unlock()
 
 	for _, c := range ks {
 		if _, ok := swl.wants[c]; !ok {
-			swl.wants[c] = make(map[uint64]struct{})
+			swl.wants[c] = make(map[exchange.SessionID]struct{})
 		}
 		swl.wants[c][ses] = struct{}{}
 	}
@@ -44,7 +45,7 @@ func (swl *SessionWantlist) RemoveKeys(ks []cid.Cid) {
 
 // Remove the session's wants, and return wants that are no longer wanted by
 // any session.
-func (swl *SessionWantlist) RemoveSession(ses uint64) []cid.Cid {
+func (swl *SessionWantlist) RemoveSession(ses exchange.SessionID) []cid.Cid {
 	swl.Lock()
 	defer swl.Unlock()
 
@@ -61,7 +62,7 @@ func (swl *SessionWantlist) RemoveSession(ses uint64) []cid.Cid {
 }
 
 // Remove the session's wants
-func (swl *SessionWantlist) RemoveSessionKeys(ses uint64, ks []cid.Cid) {
+func (swl *SessionWantlist) RemoveSessionKeys(ses exchange.SessionID, ks []cid.Cid) {
 	swl.Lock()
 	defer swl.Unlock()
 
@@ -88,18 +89,18 @@ func (swl *SessionWantlist) Keys() []cid.Cid {
 }
 
 // All sessions that want the given keys
-func (swl *SessionWantlist) SessionsFor(ks []cid.Cid) []uint64 {
+func (swl *SessionWantlist) SessionsFor(ks []cid.Cid) []exchange.SessionID {
 	swl.RLock()
 	defer swl.RUnlock()
 
-	sesMap := make(map[uint64]struct{})
+	sesMap := make(map[exchange.SessionID]struct{})
 	for _, c := range ks {
 		for s := range swl.wants[c] {
 			sesMap[s] = struct{}{}
 		}
 	}
 
-	ses := make([]uint64, 0, len(sesMap))
+	ses := make([]exchange.SessionID, 0, len(sesMap))
 	for s := range sesMap {
 		ses = append(ses, s)
 	}
@@ -121,7 +122,7 @@ func (swl *SessionWantlist) Has(ks []cid.Cid) *cid.Set {
 }
 
 // Filter for keys that the given session wants
-func (swl *SessionWantlist) SessionHas(ses uint64, ks []cid.Cid) *cid.Set {
+func (swl *SessionWantlist) SessionHas(ses exchange.SessionID, ks []cid.Cid) *cid.Set {
 	swl.RLock()
 	defer swl.RUnlock()
 

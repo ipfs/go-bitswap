@@ -13,8 +13,8 @@ var c0 cid.Cid
 var c1 cid.Cid
 var c2 cid.Cid
 
-const s0 = uint64(0)
-const s1 = uint64(1)
+var s0 = testutil.GenerateSessionID()
+var s1 = testutil.GenerateSessionID()
 
 func setup() {
 	cids := testutil.GenerateCids(3)

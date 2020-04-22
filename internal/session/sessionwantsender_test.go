@@ -10,6 +10,7 @@ import (
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -66,7 +67,7 @@ func (pm *mockPeerManager) RegisterSession(p peer.ID, sess bspm.Session) bool {
 	return true
 }
 
-func (pm *mockPeerManager) UnregisterSession(sesid uint64) {
+func (pm *mockPeerManager) UnregisterSession(sesid exchange.SessionID) {
 }
 
 func (pm *mockPeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
@@ -132,7 +133,7 @@ func TestSendWants(t *testing.T) {
 	cids := testutil.GenerateCids(4)
 	peers := testutil.GeneratePeers(1)
 	peerA := peers[0]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -170,7 +171,7 @@ func TestSendsWantBlockToOnePeerOnly(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -228,7 +229,7 @@ func TestReceiveBlock(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -288,7 +289,7 @@ func TestPeerUnavailable(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -353,7 +354,7 @@ func TestPeersExhausted(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -429,7 +430,7 @@ func TestPeersExhaustedLastWaitingPeerUnavailable(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -477,7 +478,7 @@ func TestPeersExhaustedAllPeersUnavailable(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	peerA := peers[0]
 	peerB := peers[1]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -516,7 +517,7 @@ func TestPeersExhaustedAllPeersUnavailable(t *testing.T) {
 func TestConsecutiveDontHaveLimit(t *testing.T) {
 	cids := testutil.GenerateCids(peerDontHaveLimit + 10)
 	p := testutil.GeneratePeers(1)[0]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -572,7 +573,7 @@ func TestConsecutiveDontHaveLimit(t *testing.T) {
 func TestConsecutiveDontHaveLimitInterrupted(t *testing.T) {
 	cids := testutil.GenerateCids(peerDontHaveLimit + 10)
 	p := testutil.GeneratePeers(1)[0]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -627,7 +628,7 @@ func TestConsecutiveDontHaveLimitInterrupted(t *testing.T) {
 func TestConsecutiveDontHaveReinstateAfterRemoval(t *testing.T) {
 	cids := testutil.GenerateCids(peerDontHaveLimit + 10)
 	p := testutil.GeneratePeers(1)[0]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()
@@ -711,7 +712,7 @@ func TestConsecutiveDontHaveReinstateAfterRemoval(t *testing.T) {
 func TestConsecutiveDontHaveDontRemoveIfHasWantedBlock(t *testing.T) {
 	cids := testutil.GenerateCids(peerDontHaveLimit + 10)
 	p := testutil.GeneratePeers(1)[0]
-	sid := uint64(1)
+	sid := testutil.GenerateSessionID()
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
 	bpm := bsbpm.New()

@@ -6,6 +6,7 @@ import (
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	"github.com/ipfs/go-bitswap/internal/sessionmanager"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 
 	cid "github.com/ipfs/go-cid"
@@ -68,7 +69,7 @@ func (wm *WantManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Ci
 
 // BroadcastWantHaves is called when want-haves should be broadcast to all
 // connected peers (as part of session discovery)
-func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantHaves []cid.Cid) {
+func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses exchange.SessionID, wantHaves []cid.Cid) {
 	// TODO: Avoid calling broadcast through here. It doesn't fit with
 	// everything else this module does.
 
@@ -78,7 +79,7 @@ func (wm *WantManager) BroadcastWantHaves(ctx context.Context, ses uint64, wantH
 }
 
 // RemoveSession is called when the session is shut down
-func (wm *WantManager) RemoveSession(ctx context.Context, ses uint64) {
+func (wm *WantManager) RemoveSession(ctx context.Context, ses exchange.SessionID) {
 	// Remove session's interest in the given blocks.
 	cancelKs := wm.sim.RemoveSessionInterest(ses)
 

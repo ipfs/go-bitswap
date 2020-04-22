@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-metrics-interface"
 
@@ -23,7 +24,7 @@ type PeerQueue interface {
 }
 
 type Session interface {
-	ID() uint64
+	ID() exchange.SessionID
 	SignalAvailability(peer.ID, bool)
 }
 
@@ -42,8 +43,8 @@ type PeerManager struct {
 	ctx             context.Context
 
 	psLk         sync.RWMutex
-	sessions     map[uint64]Session
-	peerSessions map[peer.ID]map[uint64]struct{}
+	sessions     map[exchange.SessionID]Session
+	peerSessions map[peer.ID]map[exchange.SessionID]struct{}
 
 	self peer.ID
 }
@@ -58,8 +59,8 @@ func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *P
 		ctx:             ctx,
 		self:            self,
 
-		sessions:     make(map[uint64]Session),
-		peerSessions: make(map[peer.ID]map[uint64]struct{}),
+		sessions:     make(map[exchange.SessionID]Session),
+		peerSessions: make(map[peer.ID]map[exchange.SessionID]struct{}),
 	}
 }
 
@@ -202,7 +203,7 @@ func (pm *PeerManager) RegisterSession(p peer.ID, s Session) bool {
 	}
 
 	if _, ok := pm.peerSessions[p]; !ok {
-		pm.peerSessions[p] = make(map[uint64]struct{})
+		pm.peerSessions[p] = make(map[exchange.SessionID]struct{})
 	}
 	pm.peerSessions[p][s.ID()] = struct{}{}
 
@@ -212,7 +213,7 @@ func (pm *PeerManager) RegisterSession(p peer.ID, s Session) bool {
 
 // UnregisterSession tells the PeerManager that the given session is no longer
 // interested in PeerManager events.
-func (pm *PeerManager) UnregisterSession(ses uint64) {
+func (pm *PeerManager) UnregisterSession(ses exchange.SessionID) {
 	pm.psLk.Lock()
 	defer pm.psLk.Unlock()
 

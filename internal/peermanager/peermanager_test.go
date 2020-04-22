@@ -7,6 +7,7 @@ import (
 
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -255,7 +256,7 @@ func TestSendCancels(t *testing.T) {
 	}
 }
 
-func (s *sess) ID() uint64 {
+func (s *sess) ID() exchange.SessionID {
 	return s.id
 }
 func (s *sess) SignalAvailability(p peer.ID, isAvailable bool) {
@@ -263,11 +264,11 @@ func (s *sess) SignalAvailability(p peer.ID, isAvailable bool) {
 }
 
 type sess struct {
-	id        uint64
+	id        exchange.SessionID
 	available map[peer.ID]bool
 }
 
-func newSess(id uint64) *sess {
+func newSess(id exchange.SessionID) *sess {
 	return &sess{id, make(map[peer.ID]bool)}
 }
 
@@ -281,7 +282,7 @@ func TestSessionRegistration(t *testing.T) {
 	self, p1, p2 := tp[0], tp[1], tp[2]
 	peerManager := New(ctx, peerQueueFactory, self)
 
-	id := uint64(1)
+	id := testutil.GenerateSessionID()
 	s := newSess(id)
 	peerManager.RegisterSession(p1, s)
 	if s.available[p1] {

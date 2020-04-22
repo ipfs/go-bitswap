@@ -38,7 +38,7 @@ func (fpt *fakePeerTagger) UntagPeer(p peer.ID, tag string) {
 
 func TestAddPeers(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	isNew := spm.AddPeer(peers[0])
 	if !isNew {
@@ -58,7 +58,7 @@ func TestAddPeers(t *testing.T) {
 
 func TestRemovePeers(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	existed := spm.RemovePeer(peers[0])
 	if existed {
@@ -84,7 +84,7 @@ func TestRemovePeers(t *testing.T) {
 
 func TestHasPeers(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	if spm.HasPeers() {
 		t.Fatal("Expected not to have peers yet")
@@ -113,7 +113,7 @@ func TestHasPeers(t *testing.T) {
 
 func TestHasPeer(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	if spm.HasPeer(peers[0]) {
 		t.Fatal("Expected not to have peer yet")
@@ -141,7 +141,7 @@ func TestHasPeer(t *testing.T) {
 
 func TestPeers(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	if len(spm.Peers()) > 0 {
 		t.Fatal("Expected not to have peers yet")
@@ -165,7 +165,7 @@ func TestPeers(t *testing.T) {
 
 func TestPeersDiscovered(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
-	spm := New(1, &fakePeerTagger{})
+	spm := New(testutil.GenerateSessionID(), &fakePeerTagger{})
 
 	if spm.PeersDiscovered() {
 		t.Fatal("Expected not to have discovered peers yet")
@@ -185,7 +185,7 @@ func TestPeersDiscovered(t *testing.T) {
 func TestPeerTagging(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	fpt := &fakePeerTagger{}
-	spm := New(1, fpt)
+	spm := New(testutil.GenerateSessionID(), fpt)
 
 	spm.AddPeer(peers[0])
 	if len(fpt.taggedPeers) != 1 {
@@ -211,7 +211,7 @@ func TestPeerTagging(t *testing.T) {
 func TestShutdown(t *testing.T) {
 	peers := testutil.GeneratePeers(2)
 	fpt := &fakePeerTagger{}
-	spm := New(1, fpt)
+	spm := New(testutil.GenerateSessionID(), fpt)
 
 	spm.AddPeer(peers[0])
 	spm.AddPeer(peers[1])

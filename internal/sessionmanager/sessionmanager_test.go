@@ -6,6 +6,7 @@ import (
 	"time"
 
 	delay "github.com/ipfs/go-ipfs-delay"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
@@ -22,7 +23,7 @@ type fakeSession struct {
 	ks         []cid.Cid
 	wantBlocks []cid.Cid
 	wantHaves  []cid.Cid
-	id         uint64
+	id         exchange.SessionID
 	pm         *fakeSesPeerManager
 	notif      notifications.PubSub
 }
@@ -33,7 +34,7 @@ func (*fakeSession) GetBlock(context.Context, cid.Cid) (blocks.Block, error) {
 func (*fakeSession) GetBlocks(context.Context, []cid.Cid) (<-chan blocks.Block, error) {
 	return nil, nil
 }
-func (fs *fakeSession) ID() uint64 {
+func (fs *fakeSession) ID() exchange.SessionID {
 	return fs.id
 }
 func (fs *fakeSession) ReceiveFrom(p peer.ID, ks []cid.Cid, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
@@ -56,11 +57,11 @@ type fakePeerManager struct {
 }
 
 func (*fakePeerManager) RegisterSession(peer.ID, bspm.Session) bool               { return true }
-func (*fakePeerManager) UnregisterSession(uint64)                                 {}
+func (*fakePeerManager) UnregisterSession(exchange.SessionID)                   {}
 func (*fakePeerManager) SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid) {}
 
 func sessionFactory(ctx context.Context,
-	id uint64,
+	id exchange.SessionID,
 	sprm bssession.SessionPeerManager,
 	sim *bssim.SessionInterestManager,
 	pm bssession.PeerManager,
@@ -76,7 +77,7 @@ func sessionFactory(ctx context.Context,
 	}
 }
 
-func peerManagerFactory(ctx context.Context, id uint64) bssession.SessionPeerManager {
+func peerManagerFactory(ctx context.Context, id exchange.SessionID) bssession.SessionPeerManager {
 	return &fakeSesPeerManager{}
 }
 

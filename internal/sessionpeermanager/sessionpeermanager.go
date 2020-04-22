@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -29,17 +30,17 @@ type SessionPeerManager struct {
 	tagger PeerTagger
 	tag    string
 
-	id              uint64
+	id              exchange.SessionID
 	plk             sync.RWMutex
 	peers           map[peer.ID]struct{}
 	peersDiscovered bool
 }
 
 // New creates a new SessionPeerManager
-func New(id uint64, tagger PeerTagger) *SessionPeerManager {
+func New(id exchange.SessionID, tagger PeerTagger) *SessionPeerManager {
 	return &SessionPeerManager{
 		id:     id,
-		tag:    fmt.Sprint("bs-ses-", id),
+		tag:    fmt.Sprint("bs-", id),
 		tagger: tagger,
 		peers:  make(map[peer.ID]struct{}),
 	}

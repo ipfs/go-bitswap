@@ -10,7 +10,7 @@ import (
 func TestEmpty(t *testing.T) {
 	sim := New()
 
-	ses := uint64(1)
+	ses := testutil.GenerateSessionID()
 	cids := testutil.GenerateCids(2)
 	res := sim.FilterSessionInterested(ses, cids)
 	if len(res) != 1 || len(res[0]) > 0 {
@@ -24,8 +24,8 @@ func TestEmpty(t *testing.T) {
 func TestBasic(t *testing.T) {
 	sim := New()
 
-	ses1 := uint64(1)
-	ses2 := uint64(2)
+	ses1 := testutil.GenerateSessionID()
+	ses2 := testutil.GenerateSessionID()
 	cids1 := testutil.GenerateCids(2)
 	cids2 := append(testutil.GenerateCids(1), cids1[1])
 	sim.RecordSessionInterest(ses1, cids1)
@@ -59,7 +59,7 @@ func TestBasic(t *testing.T) {
 func TestInterestedSessions(t *testing.T) {
 	sim := New()
 
-	ses := uint64(1)
+	ses := testutil.GenerateSessionID()
 	cids := testutil.GenerateCids(3)
 	sim.RecordSessionInterest(ses, cids[0:2])
 
@@ -86,8 +86,8 @@ func TestInterestedSessions(t *testing.T) {
 func TestRemoveSessionInterest(t *testing.T) {
 	sim := New()
 
-	ses1 := uint64(1)
-	ses2 := uint64(2)
+	ses1 := testutil.GenerateSessionID()
+	ses2 := testutil.GenerateSessionID()
 	cids1 := testutil.GenerateCids(2)
 	cids2 := append(testutil.GenerateCids(1), cids1[1])
 	sim.RecordSessionInterest(ses1, cids1)
@@ -114,8 +114,8 @@ func TestRemoveSessionInterest(t *testing.T) {
 func TestSplitWantedUnwanted(t *testing.T) {
 	blks := testutil.GenerateBlocksOfSize(3, 1024)
 	sim := New()
-	ses1 := uint64(1)
-	ses2 := uint64(2)
+	ses1 := testutil.GenerateSessionID()
+	ses2 := testutil.GenerateSessionID()
 
 	var cids []cid.Cid
 	for _, b := range blks {

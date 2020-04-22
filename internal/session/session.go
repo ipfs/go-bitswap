@@ -12,6 +12,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	loggables "github.com/libp2p/go-libp2p-loggables"
@@ -30,10 +31,10 @@ const (
 type WantManager interface {
 	// BroadcastWantHaves sends want-haves to all connected peers (used for
 	// session discovery)
-	BroadcastWantHaves(context.Context, uint64, []cid.Cid)
+	BroadcastWantHaves(context.Context, exchange.SessionID, []cid.Cid)
 	// RemoveSession removes the session from the WantManager (when the
 	// session shuts down)
-	RemoveSession(context.Context, uint64)
+	RemoveSession(context.Context, exchange.SessionID)
 }
 
 // PeerManager keeps track of which sessions are interested in which peers
@@ -44,7 +45,7 @@ type PeerManager interface {
 	RegisterSession(peer.ID, bspm.Session) bool
 	// UnregisterSession tells the PeerManager that the session is no longer
 	// interested in a peer's connection state
-	UnregisterSession(uint64)
+	UnregisterSession(exchange.SessionID)
 	// SendWants tells the PeerManager to send wants to the given peer
 	SendWants(ctx context.Context, peerId peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid)
 }
@@ -122,7 +123,7 @@ type Session struct {
 	// identifiers
 	notif notifications.PubSub
 	uuid  logging.Loggable
-	id    uint64
+	id    exchange.SessionID
 
 	self peer.ID
 }
@@ -130,7 +131,7 @@ type Session struct {
 // New creates a new bitswap session whose lifetime is bounded by the
 // given context.
 func New(ctx context.Context,
-	id uint64,
+	id exchange.SessionID,
 	wm WantManager,
 	sprm SessionPeerManager,
 	providerFinder ProviderFinder,
@@ -166,7 +167,7 @@ func New(ctx context.Context,
 	return s
 }
 
-func (s *Session) ID() uint64 {
+func (s *Session) ID() exchange.SessionID {
 	return s.id
 }
 
