@@ -79,14 +79,14 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 // PrepareBroadcastWantHaves filters the list of want-haves for each peer,
 // returning a map of peers to the want-haves they have not yet been sent.
 func (pwm *peerWantManager) prepareBroadcastWantHaves(wantHaves []cid.Cid) map[peer.ID][]cid.Cid {
-	res := make(map[peer.ID][]cid.Cid)
+	res := make(map[peer.ID][]cid.Cid, len(pwm.peerWants))
 
 	// Iterate over all known peers
 	for p, pws := range pwm.peerWants {
 		// Iterate over all want-haves
 		for _, c := range wantHaves {
 			// If the CID has not been sent as a want-block or want-have
-			if !pws.wantBlocks.Has(c) && !pws.wantHaves.Has(c) {
+			if !pws.wantHaves.Has(c) && !pws.wantBlocks.Has(c) {
 				// Record that the CID has been sent as a want-have
 				pws.wantHaves.Add(c)
 
@@ -94,10 +94,11 @@ func (pwm *peerWantManager) prepareBroadcastWantHaves(wantHaves []cid.Cid) map[p
 				pwm.reverseIndexAdd(c, p)
 
 				// Add the CID to the results
-				if _, ok := res[p]; !ok {
-					res[p] = make([]cid.Cid, 0, 1)
+				cids, ok := res[p]
+				if !ok {
+					cids = make([]cid.Cid, 0, len(wantHaves))
 				}
-				res[p] = append(res[p], c)
+				res[p] = append(cids, c)
 			}
 		}
 	}
@@ -166,7 +167,13 @@ func (pwm *peerWantManager) prepareSendWants(p peer.ID, wantBlocks []cid.Cid, wa
 // returning a map of peers which only contains cancels for wants that have
 // been sent to the peer.
 func (pwm *peerWantManager) prepareSendCancels(cancelKs []cid.Cid) map[peer.ID][]cid.Cid {
-	res := make(map[peer.ID][]cid.Cid)
+	if len(cancelKs) == 0 {
+		return nil
+	}
+
+	// Pre-allocate enough space for all peers that have the first CID.
+	// Chances are these peers are related.
+	res := make(map[peer.ID][]cid.Cid, len(pwm.wantPeers[cancelKs[0]]))
 
 	// Iterate over all requested cancels
 	for _, c := range cancelKs {
@@ -194,10 +201,13 @@ func (pwm *peerWantManager) prepareSendCancels(cancelKs []cid.Cid) map[peer.ID][
 				pws.wantHaves.Remove(c)
 
 				// Add the CID to the results
-				if _, ok := res[p]; !ok {
-					res[p] = make([]cid.Cid, 0, 1)
+				cids, ok := res[p]
+				if !ok {
+					// Pre-allocate enough for all keys.
+					// Cancels are usually related.
+					cids = make([]cid.Cid, 0, len(cancelKs))
 				}
-				res[p] = append(res[p], c)
+				res[p] = append(cids, c)
 
 				// Update the reverse index
 				pwm.reverseIndexRemove(c, p)
@@ -212,7 +222,7 @@ func (pwm *peerWantManager) prepareSendCancels(cancelKs []cid.Cid) map[peer.ID][
 func (pwm *peerWantManager) reverseIndexAdd(c cid.Cid, p peer.ID) {
 	peers, ok := pwm.wantPeers[c]
 	if !ok {
-		peers = make(map[peer.ID]struct{}, 1)
+		peers = make(map[peer.ID]struct{}, 100)
 		pwm.wantPeers[c] = peers
 	}
 	peers[p] = struct{}{}
