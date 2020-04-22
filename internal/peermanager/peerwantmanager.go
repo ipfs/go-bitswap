@@ -70,7 +70,7 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 		return
 	}
 
-	pws.wantBlocks.ForEach(func(c cid.Cid) error {
+	_ = pws.wantBlocks.ForEach(func(c cid.Cid) error {
 		// Decrement the gauge by the number of pending want-blocks to the peer
 		pwm.wantBlockGauge.Dec()
 		// Clean up want-blocks from the reverse index
@@ -79,7 +79,7 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 	})
 
 	// Clean up want-haves from the reverse index
-	pws.wantHaves.ForEach(func(c cid.Cid) error {
+	_ = pws.wantHaves.ForEach(func(c cid.Cid) error {
 		pwm.reverseIndexRemove(c, p)
 		return nil
 	})
@@ -298,7 +298,7 @@ func (pwm *peerWantManager) getWantBlocks() []cid.Cid {
 	// Iterate over all known peers
 	for _, pws := range pwm.peerWants {
 		// Iterate over all want-blocks
-		pws.wantBlocks.ForEach(func(c cid.Cid) error {
+		_ = pws.wantBlocks.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
 			return nil
@@ -315,13 +315,13 @@ func (pwm *peerWantManager) getWantHaves() []cid.Cid {
 	// Iterate over all peers with active wants.
 	for _, pws := range pwm.peerWants {
 		// Iterate over all want-haves
-		pws.wantHaves.ForEach(func(c cid.Cid) error {
+		_ = pws.wantHaves.ForEach(func(c cid.Cid) error {
 			// Add the CID to the results
 			res.Add(c)
 			return nil
 		})
 	}
-	pwm.broadcastWants.ForEach(func(c cid.Cid) error {
+	_ = pwm.broadcastWants.ForEach(func(c cid.Cid) error {
 		res.Add(c)
 		return nil
 	})
