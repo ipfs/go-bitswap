@@ -97,7 +97,8 @@ type op struct {
 // info to, and who to request blocks from.
 type Session struct {
 	// dependencies
-	ctx            context.Context
+	bsctx          context.Context // context for bitswap
+	ctx            context.Context // context for session
 	wm             WantManager
 	sprm           SessionPeerManager
 	providerFinder ProviderFinder
@@ -129,7 +130,9 @@ type Session struct {
 
 // New creates a new bitswap session whose lifetime is bounded by the
 // given context.
-func New(ctx context.Context,
+func New(
+	bsctx context.Context, // context for bitswap
+	ctx context.Context, // context for this session
 	id uint64,
 	wm WantManager,
 	sprm SessionPeerManager,
@@ -144,6 +147,7 @@ func New(ctx context.Context,
 	s := &Session{
 		sw:                  newSessionWants(broadcastLiveWantsLimit),
 		tickDelayReqs:       make(chan time.Duration),
+		bsctx:               bsctx,
 		ctx:                 ctx,
 		wm:                  wm,
 		sprm:                sprm,
@@ -390,8 +394,10 @@ func (s *Session) handleShutdown() {
 	// Shut down the sessionWantSender (blocks until sessionWantSender stops
 	// sending)
 	s.sws.Shutdown()
-	// Remove the session from the want manager
-	s.wm.RemoveSession(s.ctx, s.id)
+	// Remove the session from the want manager.
+	// Note: use bitswap context because session context has already been
+	// cancelled.
+	s.wm.RemoveSession(s.bsctx, s.id)
 }
 
 // handleReceive is called when the session receives blocks from a peer
