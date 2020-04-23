@@ -63,29 +63,46 @@ func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestMana
 	}
 }
 
-// NewSession initializes a session with the given context, and adds to the
-// session manager.
-func (sm *SessionManager) NewSession(ctx context.Context,
+// GetSession gets the session associated with the context, or creates a new
+// one.
+func (sm *SessionManager) GetSession(ctx context.Context,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D) exchange.Fetcher {
-	sessionctx, cancel := context.WithCancel(ctx)
 
-	// we just need the id
-	id, _ := exchange.GetOrCreateSession(context.Background())
+	id, sessionctx := exchange.GetOrCreateSession(ctx)
+
+	sm.sessLk.RLock()
+	s, ok := sm.sessions[id]
+	sm.sessLk.RUnlock()
+
+	if ok {
+		return s
+	}
+
+	sm.sessLk.Lock()
+	defer sm.sessLk.Unlock()
+
+	if s, ok := sm.sessions[id]; ok {
+		return s
+	}
+
+	sessionctx, cancel := context.WithCancel(sessionctx)
 
 	pm := sm.peerManagerFactory(sessionctx, id)
-	session := sm.sessionFactory(sessionctx, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
-	sm.sessLk.Lock()
+	session := sm.sessionFactory(
+		sessionctx, id, pm,
+		sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager,
+		sm.notif, provSearchDelay, rebroadcastDelay, sm.self,
+	)
 	sm.sessions[id] = session
-	sm.sessLk.Unlock()
+
 	go func() {
 		defer cancel()
 		select {
 		case <-sm.ctx.Done():
-			sm.removeSession(id)
-		case <-ctx.Done():
-			sm.removeSession(id)
+		case <-sessionctx.Done():
 		}
+		sm.removeSession(id)
 	}()
 
 	return session

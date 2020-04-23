@@ -95,9 +95,9 @@ func TestReceiveFrom(t *testing.T) {
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
 
-	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
-	secondSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
-	thirdSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	firstSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	secondSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	thirdSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
 
 	sim.RecordSessionInterest(firstSession.ID(), []cid.Cid{block.Cid()})
 	sim.RecordSessionInterest(thirdSession.ID(), []cid.Cid{block.Cid()})
@@ -138,9 +138,9 @@ func TestReceiveBlocksWhenManagerContextCancelled(t *testing.T) {
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
 
-	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
-	secondSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
-	thirdSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	firstSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	secondSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	thirdSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
 
 	sim.RecordSessionInterest(firstSession.ID(), []cid.Cid{block.Cid()})
 	sim.RecordSessionInterest(secondSession.ID(), []cid.Cid{block.Cid()})
@@ -173,10 +173,10 @@ func TestReceiveBlocksWhenSessionContextCancelled(t *testing.T) {
 	p := peer.ID(123)
 	block := blocks.NewBlock([]byte("block"))
 
-	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	firstSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
 	sessionCtx, sessionCancel := context.WithCancel(ctx)
-	secondSession := sm.NewSession(sessionCtx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
-	thirdSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	secondSession := sm.GetSession(sessionCtx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	thirdSession := sm.GetSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
 
 	sim.RecordSessionInterest(firstSession.ID(), []cid.Cid{block.Cid()})
 	sim.RecordSessionInterest(secondSession.ID(), []cid.Cid{block.Cid()})

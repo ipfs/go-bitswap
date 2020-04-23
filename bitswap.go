@@ -303,7 +303,7 @@ func (bs *Bitswap) LedgerForPeer(p peer.ID) *decision.Receipt {
 // resources, provide a context with a reasonably short deadline (ie. not one
 // that lasts throughout the lifetime of the server)
 func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
-	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
+	session := bs.sm.GetSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 	return session.GetBlocks(ctx, keys)
 }
 
@@ -525,12 +525,18 @@ func (bs *Bitswap) IsOnline() bool {
 	return true
 }
 
-// NewSession generates a new Bitswap session. You should use this, rather
-// that calling Bitswap.GetBlocks, any time you intend to do several related
-// block requests in a row. The session returned will have it's own GetBlocks
-// method, but the session will use the fact that the requests are related to
-// be more efficient in its requests to peers. If you are using a session
-// from go-blockservice, it will create a bitswap session automatically.
+// NewSession generates a new Bitswap session or returns the session associated
+// with the passed context (created with exchange.NewSession(ctx)).
+//
+// You should construct a session either with this function or
+// exchange.NewSession instead of repeatedly calling Bitswap.GetBlock(s) any
+// time you intend to do several related block requests in a row. The session
+// will use the fact that the requests are related to be more efficient in its
+// requests to peers.
+//
+// Note: If you've already wrapped your context with exchange.NewSession, you do
+// not need to call this function. When you call the GetBlock(s) functions with
+// that context, it will use the associated session.
 func (bs *Bitswap) NewSession(ctx context.Context) exchange.Fetcher {
-	return bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
+	return bs.sm.GetSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 }
