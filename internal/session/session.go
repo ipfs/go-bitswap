@@ -86,6 +86,8 @@ type op struct {
 	keys []cid.Cid
 }
 
+type OnShutdown func(uint64)
+
 // Session holds state for an individual bitswap transfer operation.
 // This allows bitswap to make smarter decisions about who to send wantlist
 // info to, and who to request blocks from.
@@ -93,6 +95,8 @@ type Session struct {
 	// dependencies
 	bsctx          context.Context // context for bitswap
 	ctx            context.Context // context for session
+	shutdown       func()
+	onShutdown     OnShutdown
 	pm             PeerManager
 	bpm            *bsbpm.BlockPresenceManager
 	sprm           SessionPeerManager
@@ -128,6 +132,7 @@ type Session struct {
 func New(
 	bsctx context.Context, // context for bitswap
 	ctx context.Context, // context for this session
+	onShutdown OnShutdown,
 	id uint64,
 	sprm SessionPeerManager,
 	providerFinder ProviderFinder,
@@ -138,11 +143,15 @@ func New(
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D,
 	self peer.ID) *Session {
+
+	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{
 		sw:                  newSessionWants(broadcastLiveWantsLimit),
 		tickDelayReqs:       make(chan time.Duration),
 		bsctx:               bsctx,
 		ctx:                 ctx,
+		shutdown:            cancel,
+		onShutdown:          onShutdown,
 		pm:                  pm,
 		bpm:                 bpm,
 		sprm:                sprm,
@@ -167,6 +176,10 @@ func New(
 
 func (s *Session) ID() uint64 {
 	return s.id
+}
+
+func (s *Session) Shutdown() {
+	s.shutdown()
 }
 
 // ReceiveFrom receives incoming blocks from the given peer.
@@ -402,6 +415,10 @@ func (s *Session) handleShutdown() {
 	// Note: use bitswap context because session context has already been
 	// cancelled.
 	s.pm.SendCancels(s.bsctx, cancelKs)
+
+	// Signal to the SessionManager that the session has been shutdown
+	// and can be cleaned up
+	s.onShutdown(s.id)
 }
 
 // handleReceive is called when the session receives blocks from a peer

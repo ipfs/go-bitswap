@@ -93,6 +93,25 @@ func (pm *fakePeerManager) allCancels() []cid.Cid {
 	return append([]cid.Cid{}, pm.cancels...)
 }
 
+type onShutdownMonitor struct {
+	lk       sync.Mutex
+	shutdown bool
+}
+
+func (sm *onShutdownMonitor) onShutdown(uint64) {
+	sm.lk.Lock()
+	defer sm.lk.Unlock()
+
+	sm.shutdown = true
+}
+
+func (sm *onShutdownMonitor) shutdownCalled() bool {
+	sm.lk.Lock()
+	defer sm.lk.Unlock()
+
+	return sm.shutdown
+}
+
 func TestSessionGetBlocks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	fpm := newFakePeerManager()
@@ -103,7 +122,8 @@ func TestSessionGetBlocks(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, ctx, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	onShutdown := func(uint64) {}
+	session := New(ctx, ctx, onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
 	var cids []cid.Cid
@@ -198,7 +218,8 @@ func TestSessionFindMorePeers(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, ctx, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	onShutdown := func(uint64) {}
+	session := New(ctx, ctx, onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 	session.SetBaseTickDelay(200 * time.Microsecond)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
@@ -272,7 +293,8 @@ func TestSessionOnPeersExhausted(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, ctx, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	onShutdown := func(uint64) {}
+	session := New(ctx, ctx, onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit + 5)
 	var cids []cid.Cid
@@ -316,7 +338,8 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, ctx, id, fspm, fpf, sim, fpm, bpm, notif, 10*time.Millisecond, delay.Fixed(100*time.Millisecond), "")
+	onShutdown := func(uint64) {}
+	session := New(ctx, ctx, onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, 10*time.Millisecond, delay.Fixed(100*time.Millisecond), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(4)
 	var cids []cid.Cid
@@ -429,9 +452,11 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 
+	osm := &onShutdownMonitor{}
+
 	// Create a new session with its own context
 	sessctx, sesscancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	session := New(context.Background(), sessctx, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	session := New(context.Background(), sessctx, osm.onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 
 	timerCtx, timerCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer timerCancel()
@@ -459,9 +484,44 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	case <-timerCtx.Done():
 		t.Fatal("expected channel to be closed before timeout")
 	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect onShutdown to be called
+	if !osm.shutdownCalled() {
+		t.Fatal("expected onShutdown to be called")
+	}
 }
 
-func TestSessionReceiveMessageAfterShutdown(t *testing.T) {
+func TestSessionOnShutdownCalled(t *testing.T) {
+	fpm := newFakePeerManager()
+	fspm := newFakeSessionPeerManager()
+	fpf := newFakeProviderFinder()
+	sim := bssim.New()
+	bpm := bsbpm.New()
+	notif := notifications.New()
+	defer notif.Shutdown()
+	id := testutil.GenerateSessionID()
+
+	osm := &onShutdownMonitor{}
+
+	// Create a new session with its own context
+	sessctx, sesscancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer sesscancel()
+	session := New(context.Background(), sessctx, osm.onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+
+	// Shutdown the session
+	session.Shutdown()
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect onShutdown to be called
+	if !osm.shutdownCalled() {
+		t.Fatal("expected onShutdown to be called")
+	}
+}
+
+func TestSessionReceiveMessageAfterCtxCancel(t *testing.T) {
 	ctx, cancelCtx := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	fpm := newFakePeerManager()
 	fspm := newFakeSessionPeerManager()
@@ -472,7 +532,8 @@ func TestSessionReceiveMessageAfterShutdown(t *testing.T) {
 	notif := notifications.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
-	session := New(ctx, ctx, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	onShutdown := func(uint64) {}
+	session := New(ctx, ctx, onShutdown, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(2)
 	cids := []cid.Cid{blks[0].Cid(), blks[1].Cid()}

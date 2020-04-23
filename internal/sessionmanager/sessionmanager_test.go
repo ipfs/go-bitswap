@@ -23,6 +23,7 @@ type fakeSession struct {
 	wantBlocks []cid.Cid
 	wantHaves  []cid.Cid
 	id         uint64
+	onShutdown bssession.OnShutdown
 	pm         *fakeSesPeerManager
 	notif      notifications.PubSub
 }
@@ -40,6 +41,9 @@ func (fs *fakeSession) ReceiveFrom(p peer.ID, ks []cid.Cid, wantBlocks []cid.Cid
 	fs.ks = append(fs.ks, ks...)
 	fs.wantBlocks = append(fs.wantBlocks, wantBlocks...)
 	fs.wantHaves = append(fs.wantHaves, wantHaves...)
+}
+func (fs *fakeSession) Shutdown() {
+	go fs.onShutdown(fs.id)
 }
 
 type fakeSesPeerManager struct {
@@ -65,6 +69,7 @@ func (fpm *fakePeerManager) SendCancels(ctx context.Context, cancels []cid.Cid) 
 }
 
 func sessionFactory(ctx context.Context,
+	onShutdown bssession.OnShutdown,
 	id uint64,
 	sprm bssession.SessionPeerManager,
 	sim *bssim.SessionInterestManager,
@@ -74,11 +79,17 @@ func sessionFactory(ctx context.Context,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D,
 	self peer.ID) Session {
-	return &fakeSession{
-		id:    id,
-		pm:    sprm.(*fakeSesPeerManager),
-		notif: notif,
+	fs := &fakeSession{
+		id:         id,
+		onShutdown: onShutdown,
+		pm:         sprm.(*fakeSesPeerManager),
+		notif:      notif,
 	}
+	go func() {
+		<-ctx.Done()
+		fs.onShutdown(fs.id)
+	}()
+	return fs
 }
 
 func peerManagerFactory(ctx context.Context, id uint64) bssession.SessionPeerManager {
@@ -132,7 +143,7 @@ func TestReceiveFrom(t *testing.T) {
 	}
 }
 
-func TestReceiveBlocksWhenManagerContextCancelled(t *testing.T) {
+func TestReceiveBlocksWhenManagerShutdown(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -154,7 +165,7 @@ func TestReceiveBlocksWhenManagerContextCancelled(t *testing.T) {
 	sim.RecordSessionInterest(secondSession.ID(), []cid.Cid{block.Cid()})
 	sim.RecordSessionInterest(thirdSession.ID(), []cid.Cid{block.Cid()})
 
-	cancel()
+	sm.Shutdown()
 
 	// wait for sessions to get removed
 	time.Sleep(10 * time.Millisecond)

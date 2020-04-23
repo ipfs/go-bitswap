@@ -21,10 +21,11 @@ type Session interface {
 	exchange.Fetcher
 	ID() uint64
 	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
+	Shutdown()
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
+type SessionFactory func(ctx context.Context, onShutdown bssession.OnShutdown, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
 
 // PeerManagerFactory generates a new peer manager for a session.
 type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPeerManager
@@ -54,6 +55,7 @@ type SessionManager struct {
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, sessionInterestManager *bssim.SessionInterestManager, peerManagerFactory PeerManagerFactory,
 	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, notif notifications.PubSub, self peer.ID) *SessionManager {
+
 	return &SessionManager{
 		ctx:                    ctx,
 		sessionFactory:         sessionFactory,
@@ -73,24 +75,24 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D) exchange.Fetcher {
 	id := sm.GetNextSessionID()
-	sessionctx, cancel := context.WithCancel(ctx)
 
-	pm := sm.peerManagerFactory(sessionctx, id)
-	session := sm.sessionFactory(sessionctx, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
+	pm := sm.peerManagerFactory(ctx, id)
+	session := sm.sessionFactory(ctx, sm.removeSession, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
+
 	sm.sessLk.Lock()
 	sm.sessions[id] = session
 	sm.sessLk.Unlock()
-	go func() {
-		defer cancel()
-		select {
-		case <-sm.ctx.Done():
-			sm.removeSession(id)
-		case <-ctx.Done():
-			sm.removeSession(id)
-		}
-	}()
 
 	return session
+}
+
+func (sm *SessionManager) Shutdown() {
+	sm.sessLk.Lock()
+	defer sm.sessLk.Unlock()
+
+	for _, ses := range sm.sessions {
+		ses.Shutdown()
+	}
 }
 
 func (sm *SessionManager) removeSession(sesid uint64) {
