@@ -175,7 +175,9 @@ func (sws *sessionWantSender) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid
 // connected / disconnected
 func (sws *sessionWantSender) SignalAvailability(p peer.ID, isAvailable bool) {
 	availability := peerAvailability{p, isAvailable}
-	sws.addChange(change{availability: availability})
+	// Add the change in a non-blocking manner to avoid the possibility of a
+	// deadlock
+	sws.addChangeNonBlocking(change{availability: availability})
 }
 
 // Run is the main loop for processing incoming changes
@@ -209,6 +211,22 @@ func (sws *sessionWantSender) addChange(c change) {
 	select {
 	case sws.changes <- c:
 	case <-sws.ctx.Done():
+	}
+}
+
+// addChangeNonBlocking adds a new change to the queue, using a go-routine
+// if the change blocks, so as to avoid potential deadlocks
+func (sws *sessionWantSender) addChangeNonBlocking(c change) {
+	select {
+	case sws.changes <- c:
+	default:
+		// changes channel is full, so add change in a go routine instead
+		go func() {
+			select {
+			case sws.changes <- c:
+			case <-sws.ctx.Done():
+			}
+		}()
 	}
 }
 
