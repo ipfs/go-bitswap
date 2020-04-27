@@ -37,12 +37,12 @@ func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Ci
 
 	// For each key
 	for _, c := range ks {
-		// If there is no list of sessions for the key, create one
-		if _, ok := sim.wants[c]; !ok {
-			sim.wants[c] = make(map[uint64]bool)
+		// Record that the session wants the blocks
+		if want, ok := sim.wants[c]; ok {
+			want[ses] = true
+		} else {
+			sim.wants[c] = map[uint64]bool{ses: true}
 		}
-		// Record that the session wants the block
-		sim.wants[c][ses] = true
 	}
 }
 
