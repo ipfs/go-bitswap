@@ -234,7 +234,7 @@ func (sws *sessionWantSender) onChange(changes []change) {
 
 	// Apply each change
 	availability := make(map[peer.ID]bool, len(changes))
-	cancels := cid.NewSet()
+	cancels := make([]cid.Cid, 0)
 	var updates []update
 	for _, chng := range changes {
 		// Initialize info for new wants
@@ -245,7 +245,7 @@ func (sws *sessionWantSender) onChange(changes []change) {
 		// Remove cancelled wants
 		for _, c := range chng.cancel {
 			sws.untrackWant(c)
-			cancels.Add(c)
+			cancels = append(cancels, c)
 		}
 
 		// Consolidate updates and changes to availability
@@ -274,8 +274,8 @@ func (sws *sessionWantSender) onChange(changes []change) {
 	sws.checkForExhaustedWants(dontHaves, newlyUnavailable)
 
 	// If there are any cancels, send them
-	if cancels.Len() > 0 {
-		sws.canceller.CancelSessionWants(sws.sessionID, cancels.Keys())
+	if len(cancels) > 0 {
+		sws.canceller.CancelSessionWants(sws.sessionID, cancels)
 	}
 
 	// If there are some connected peers, send any pending wants
