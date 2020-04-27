@@ -28,7 +28,7 @@ require (
 	github.com/libp2p/go-msgio v0.0.4
 	github.com/multiformats/go-multiaddr v0.2.1
 	github.com/multiformats/go-multistream v0.1.1
-	go.uber.org/zap v1.14.1
+	go.uber.org/zap v1.15.0
 )
 
 go 1.12
