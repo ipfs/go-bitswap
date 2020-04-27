@@ -91,7 +91,9 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 	session := sm.sessionFactory(ctx, sm, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
 
 	sm.sessLk.Lock()
-	sm.sessions[id] = session
+	if sm.sessions != nil { // check if SessionManager was shutdown
+		sm.sessions[id] = session
+	}
 	sm.sessLk.Unlock()
 
 	return session
@@ -104,6 +106,10 @@ func (sm *SessionManager) Shutdown() {
 	for _, ses := range sm.sessions {
 		sessions = append(sessions, ses)
 	}
+
+	// Ensure that if Shutdown() is called twice we only shut down
+	// the sessions once
+	sm.sessions = nil
 
 	sm.sessLk.Unlock()
 
@@ -124,7 +130,9 @@ func (sm *SessionManager) RemoveSession(sesid uint64) {
 	defer sm.sessLk.Unlock()
 
 	// Clean up session
-	delete(sm.sessions, sesid)
+	if sm.sessions != nil { // check if SessionManager was shutdown
+		delete(sm.sessions, sesid)
+	}
 }
 
 // GetNextSessionID returns the next sequential identifier for a session.
@@ -144,6 +152,10 @@ func (sm *SessionManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid
 	// Notify each session that is interested in the blocks / HAVEs / DONT_HAVEs
 	for _, id := range sm.sessionInterestManager.InterestedSessions(blks, haves, dontHaves) {
 		sm.sessLk.RLock()
+		if sm.sessions == nil { // check if SessionManager was shutdown
+			sm.sessLk.RUnlock()
+			return
+		}
 		sess, ok := sm.sessions[id]
 		sm.sessLk.RUnlock()
 
