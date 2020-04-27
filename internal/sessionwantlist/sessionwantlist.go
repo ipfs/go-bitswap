@@ -61,18 +61,22 @@ func (swl *SessionWantlist) RemoveSession(ses uint64) []cid.Cid {
 }
 
 // Remove the session's wants
-func (swl *SessionWantlist) RemoveSessionKeys(ses uint64, ks []cid.Cid) {
+func (swl *SessionWantlist) RemoveSessionKeys(ses uint64, ks []cid.Cid) []cid.Cid {
 	swl.Lock()
 	defer swl.Unlock()
 
+	deletedKs := make([]cid.Cid, 0, len(ks))
 	for _, c := range ks {
 		if _, ok := swl.wants[c]; ok {
 			delete(swl.wants[c], ses)
 			if len(swl.wants[c]) == 0 {
 				delete(swl.wants, c)
+				deletedKs = append(deletedKs, c)
 			}
 		}
 	}
+
+	return deletedKs
 }
 
 // All keys wanted by all sessions

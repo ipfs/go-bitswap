@@ -2,6 +2,7 @@ package sessionmanager
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
+	"github.com/ipfs/go-bitswap/internal/testutil"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -23,8 +25,8 @@ type fakeSession struct {
 	wantBlocks []cid.Cid
 	wantHaves  []cid.Cid
 	id         uint64
-	onShutdown bssession.OnShutdown
 	pm         *fakeSesPeerManager
+	sm         bssession.SessionManager
 	notif      notifications.PubSub
 }
 
@@ -43,7 +45,7 @@ func (fs *fakeSession) ReceiveFrom(p peer.ID, ks []cid.Cid, wantBlocks []cid.Cid
 	fs.wantHaves = append(fs.wantHaves, wantHaves...)
 }
 func (fs *fakeSession) Shutdown() {
-	go fs.onShutdown(fs.id)
+	fs.sm.RemoveSession(fs.id)
 }
 
 type fakeSesPeerManager struct {
@@ -57,6 +59,7 @@ func (*fakeSesPeerManager) RemovePeer(peer.ID) bool { return false }
 func (*fakeSesPeerManager) HasPeers() bool          { return false }
 
 type fakePeerManager struct {
+	lk      sync.Mutex
 	cancels []cid.Cid
 }
 
@@ -65,11 +68,18 @@ func (*fakePeerManager) UnregisterSession(uint64)                               
 func (*fakePeerManager) SendWants(context.Context, peer.ID, []cid.Cid, []cid.Cid) {}
 func (*fakePeerManager) BroadcastWantHaves(context.Context, []cid.Cid)            {}
 func (fpm *fakePeerManager) SendCancels(ctx context.Context, cancels []cid.Cid) {
+	fpm.lk.Lock()
+	defer fpm.lk.Unlock()
 	fpm.cancels = append(fpm.cancels, cancels...)
+}
+func (fpm *fakePeerManager) cancelled() []cid.Cid {
+	fpm.lk.Lock()
+	defer fpm.lk.Unlock()
+	return fpm.cancels
 }
 
 func sessionFactory(ctx context.Context,
-	onShutdown bssession.OnShutdown,
+	sm bssession.SessionManager,
 	id uint64,
 	sprm bssession.SessionPeerManager,
 	sim *bssim.SessionInterestManager,
@@ -80,14 +90,14 @@ func sessionFactory(ctx context.Context,
 	rebroadcastDelay delay.D,
 	self peer.ID) Session {
 	fs := &fakeSession{
-		id:         id,
-		onShutdown: onShutdown,
-		pm:         sprm.(*fakeSesPeerManager),
-		notif:      notif,
+		id:    id,
+		pm:    sprm.(*fakeSesPeerManager),
+		sm:    sm,
+		notif: notif,
 	}
 	go func() {
 		<-ctx.Done()
-		fs.onShutdown(fs.id)
+		sm.RemoveSession(fs.id)
 	}()
 	return fs
 }
@@ -138,7 +148,7 @@ func TestReceiveFrom(t *testing.T) {
 		t.Fatal("should have received want-haves but didn't")
 	}
 
-	if len(pm.cancels) != 1 {
+	if len(pm.cancelled()) != 1 {
 		t.Fatal("should have sent cancel for received blocks")
 	}
 }
@@ -179,8 +189,7 @@ func TestReceiveBlocksWhenManagerShutdown(t *testing.T) {
 }
 
 func TestReceiveBlocksWhenSessionContextCancelled(t *testing.T) {
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	notif := notifications.New()
 	defer notif.Shutdown()
@@ -211,5 +220,40 @@ func TestReceiveBlocksWhenSessionContextCancelled(t *testing.T) {
 		len(secondSession.ks) > 0 ||
 		len(thirdSession.ks) == 0 {
 		t.Fatal("received blocks for sessions that are canceled")
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	notif := notifications.New()
+	defer notif.Shutdown()
+	sim := bssim.New()
+	bpm := bsbpm.New()
+	pm := &fakePeerManager{}
+	sm := New(ctx, sessionFactory, sim, peerManagerFactory, bpm, pm, notif, "")
+
+	p := peer.ID(123)
+	block := blocks.NewBlock([]byte("block"))
+	cids := []cid.Cid{block.Cid()}
+	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
+	sim.RecordSessionInterest(firstSession.ID(), cids)
+	sm.ReceiveFrom(ctx, p, []cid.Cid{}, []cid.Cid{}, cids)
+
+	if !bpm.HasKey(block.Cid()) {
+		t.Fatal("expected cid to be added to block presence manager")
+	}
+
+	sm.Shutdown()
+
+	// wait for cleanup
+	time.Sleep(10 * time.Millisecond)
+
+	if bpm.HasKey(block.Cid()) {
+		t.Fatal("expected cid to be removed from block presence manager")
+	}
+	if !testutil.MatchKeysIgnoreOrder(pm.cancelled(), cids) {
+		t.Fatal("expected cancels to be sent")
 	}
 }

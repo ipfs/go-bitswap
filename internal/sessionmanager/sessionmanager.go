@@ -25,7 +25,18 @@ type Session interface {
 }
 
 // SessionFactory generates a new session for the SessionManager to track.
-type SessionFactory func(ctx context.Context, onShutdown bssession.OnShutdown, id uint64, sprm bssession.SessionPeerManager, sim *bssim.SessionInterestManager, pm bssession.PeerManager, bpm *bsbpm.BlockPresenceManager, notif notifications.PubSub, provSearchDelay time.Duration, rebroadcastDelay delay.D, self peer.ID) Session
+type SessionFactory func(
+	ctx context.Context,
+	sm bssession.SessionManager,
+	id uint64,
+	sprm bssession.SessionPeerManager,
+	sim *bssim.SessionInterestManager,
+	pm bssession.PeerManager,
+	bpm *bsbpm.BlockPresenceManager,
+	notif notifications.PubSub,
+	provSearchDelay time.Duration,
+	rebroadcastDelay delay.D,
+	self peer.ID) Session
 
 // PeerManagerFactory generates a new peer manager for a session.
 type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPeerManager
@@ -77,7 +88,7 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 	id := sm.GetNextSessionID()
 
 	pm := sm.peerManagerFactory(ctx, id)
-	session := sm.sessionFactory(ctx, sm.removeSession, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
+	session := sm.sessionFactory(ctx, sm, id, pm, sm.sessionInterestManager, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
 
 	sm.sessLk.Lock()
 	sm.sessions[id] = session
@@ -88,17 +99,31 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 
 func (sm *SessionManager) Shutdown() {
 	sm.sessLk.Lock()
-	defer sm.sessLk.Unlock()
 
+	sessions := make([]Session, 0, len(sm.sessions))
 	for _, ses := range sm.sessions {
+		sessions = append(sessions, ses)
+	}
+
+	sm.sessLk.Unlock()
+
+	for _, ses := range sessions {
 		ses.Shutdown()
 	}
 }
 
-func (sm *SessionManager) removeSession(sesid uint64) {
+func (sm *SessionManager) RemoveSession(sesid uint64) {
+	// Remove session from SessionInterestManager - returns the keys that no
+	// session is interested in anymore.
+	cancelKs := sm.sessionInterestManager.RemoveSession(sesid)
+
+	// Cancel keys that no session is interested in anymore
+	sm.cancelWants(cancelKs)
+
 	sm.sessLk.Lock()
 	defer sm.sessLk.Unlock()
 
+	// Clean up session
 	delete(sm.sessions, sesid)
 }
 
@@ -129,4 +154,24 @@ func (sm *SessionManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid
 
 	// Send CANCEL to all peers with want-have / want-block
 	sm.peerManager.SendCancels(ctx, blks)
+}
+
+// CancelSessionWants is called when a session cancels wants because a call to
+// GetBlocks() is cancelled
+func (sm *SessionManager) CancelSessionWants(sesid uint64, wants []cid.Cid) {
+	// Remove session's interest in the given blocks - returns the keys that no
+	// session is interested in anymore.
+	cancelKs := sm.sessionInterestManager.RemoveSessionInterested(sesid, wants)
+	sm.cancelWants(cancelKs)
+}
+
+func (sm *SessionManager) cancelWants(wants []cid.Cid) {
+	// Free up block presence tracking for keys that no session is interested
+	// in anymore
+	sm.blockPresenceManager.RemoveKeys(wants)
+
+	// Send CANCEL to all peers for blocks that no session is interested in
+	// anymore.
+	// Note: use bitswap context because session context may already be Done.
+	sm.peerManager.SendCancels(sm.ctx, wants)
 }

@@ -35,7 +35,8 @@ func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Ci
 }
 
 // When the session shuts down it calls RemoveSessionInterest().
-func (sim *SessionInterestManager) RemoveSessionInterest(ses uint64) []cid.Cid {
+// Returns the keys that no session is interested in any more.
+func (sim *SessionInterestManager) RemoveSession(ses uint64) []cid.Cid {
 	sim.lk.Lock()
 	defer sim.lk.Unlock()
 
@@ -49,6 +50,16 @@ func (sim *SessionInterestManager) RemoveSessionWants(ses uint64, wants []cid.Ci
 	defer sim.lk.Unlock()
 
 	sim.wanted.RemoveSessionKeys(ses, wants)
+}
+
+// When a request is cancelled, the session calls RemoveSessionInterested().
+// Returns the keys that no session is interested in any more.
+func (sim *SessionInterestManager) RemoveSessionInterested(ses uint64, wants []cid.Cid) []cid.Cid {
+	sim.lk.Lock()
+	defer sim.lk.Unlock()
+
+	sim.wanted.RemoveSessionKeys(ses, wants)
+	return sim.interested.RemoveSessionKeys(ses, wants)
 }
 
 // The session calls FilterSessionInterested() to filter the sets of keys for
