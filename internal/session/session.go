@@ -43,6 +43,14 @@ type PeerManager interface {
 	SendCancels(context.Context, []cid.Cid)
 }
 
+// SessionManager manages all the sessions
+type SessionManager interface {
+	// Remove a session (called when the session shuts down)
+	RemoveSession(sesid uint64)
+	// Cancel wants (called when a call to GetBlocks() is cancelled)
+	CancelSessionWants(sid uint64, wants []cid.Cid)
+}
+
 // SessionPeerManager keeps track of peers in the session
 type SessionPeerManager interface {
 	// PeersDiscovered indicates if any peers have been discovered yet
@@ -86,19 +94,15 @@ type op struct {
 	keys []cid.Cid
 }
 
-type OnShutdown func(uint64)
-
 // Session holds state for an individual bitswap transfer operation.
 // This allows bitswap to make smarter decisions about who to send wantlist
 // info to, and who to request blocks from.
 type Session struct {
 	// dependencies
-	bsctx          context.Context // context for bitswap
-	ctx            context.Context // context for session
+	ctx            context.Context
 	shutdown       func()
-	onShutdown     OnShutdown
+	sm             SessionManager
 	pm             PeerManager
-	bpm            *bsbpm.BlockPresenceManager
 	sprm           SessionPeerManager
 	providerFinder ProviderFinder
 	sim            *bssim.SessionInterestManager
@@ -130,9 +134,8 @@ type Session struct {
 // New creates a new bitswap session whose lifetime is bounded by the
 // given context.
 func New(
-	bsctx context.Context, // context for bitswap
-	ctx context.Context, // context for this session
-	onShutdown OnShutdown,
+	ctx context.Context,
+	sm SessionManager,
 	id uint64,
 	sprm SessionPeerManager,
 	providerFinder ProviderFinder,
@@ -148,12 +151,10 @@ func New(
 	s := &Session{
 		sw:                  newSessionWants(broadcastLiveWantsLimit),
 		tickDelayReqs:       make(chan time.Duration),
-		bsctx:               bsctx,
 		ctx:                 ctx,
 		shutdown:            cancel,
-		onShutdown:          onShutdown,
+		sm:                  sm,
 		pm:                  pm,
-		bpm:                 bpm,
 		sprm:                sprm,
 		providerFinder:      providerFinder,
 		sim:                 sim,
@@ -167,7 +168,7 @@ func New(
 		periodicSearchDelay: periodicSearchDelay,
 		self:                self,
 	}
-	s.sws = newSessionWantSender(id, pm, sprm, bpm, s.onWantsSent, s.onPeersExhausted)
+	s.sws = newSessionWantSender(id, pm, sprm, sm, bpm, s.onWantsSent, s.onPeersExhausted)
 
 	go s.run(ctx)
 
@@ -308,6 +309,7 @@ func (s *Session) run(ctx context.Context) {
 			case opCancel:
 				// Wants were cancelled
 				s.sw.CancelPending(oper.keys)
+				s.sws.Cancel(oper.keys)
 			case opWantsSent:
 				// Wants were sent to a peer
 				s.sw.WantsSent(oper.keys)
@@ -402,23 +404,9 @@ func (s *Session) handleShutdown() {
 	// Shut down the sessionWantSender (blocks until sessionWantSender stops
 	// sending)
 	s.sws.Shutdown()
-
-	// Remove session's interest in the given blocks.
-	cancelKs := s.sim.RemoveSessionInterest(s.id)
-
-	// Free up block presence tracking for keys that no session is interested
-	// in anymore
-	s.bpm.RemoveKeys(cancelKs)
-
-	// Send CANCEL to all peers for blocks that no session is interested in
-	// anymore.
-	// Note: use bitswap context because session context has already been
-	// cancelled.
-	s.pm.SendCancels(s.bsctx, cancelKs)
-
 	// Signal to the SessionManager that the session has been shutdown
 	// and can be cleaned up
-	s.onShutdown(s.id)
+	s.sm.RemoveSession(s.id)
 }
 
 // handleReceive is called when the session receives blocks from a peer
