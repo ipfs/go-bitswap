@@ -10,13 +10,13 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/ipfs/go-bitswap/internal/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
-	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-peertaskqueue"
 	"github.com/ipfs/go-peertaskqueue/peertask"
 	process "github.com/jbenet/goprocess"
@@ -55,8 +55,7 @@ import (
 // whatever it sees fit to produce desired outcomes (get wanted keys
 // quickly, maintain good relationships with peers, etc).
 
-var log = logging.Logger("engine")
-var sflog = log.Desugar()
+var log = logutil.CreateLogger("bs:eng")
 
 const (
 	// outboxChanBuffer must be 0 to prevent stale messages from being sent
@@ -478,7 +477,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		}
 
 		// Save some CPU cycles and allocations if log level is higher than debug
-		if ce := sflog.Check(zap.DebugLevel, "Bitswap engine -> msg"); ce != nil {
+		if ce := log.Check(zap.DebugLevel, "Bitswap engine -> msg"); ce != nil {
 			blks := msg.Blocks()
 			blkCids := make([]cid.Cid, 0, len(blks))
 			for _, b := range blks {

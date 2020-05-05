@@ -1,4 +1,4 @@
-package testutil
+package fuzz
 
 import (
 	"bufio"
@@ -12,9 +12,11 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-const TimestampFormat = "2006-01-02T15:04:05-0700"
+// Zap's timestamp format
+// https://github.com/uber-go/zap/blob/fa2c78c024dc1f1481fd9940f2d85f7cc8450cd9/zapcore/encoder.go#L128
+var TimestampFormat = "2006-01-02T15:04:05.000Z0700"
 
-func CheckLogFileInvariants(filename string) error {
+func checkLogFileInvariants(filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -42,10 +44,10 @@ func CheckLogFileInvariants(filename string) error {
 		return err
 	}
 
-	return CheckInvariants(logs)
+	return checkInvariants(logs)
 }
 
-func CheckInvariants(logs []map[string]interface{}) error {
+func checkInvariants(logs []map[string]interface{}) error {
 	if err := checkBlockReceivedOncePerSession(logs); err != nil {
 		return err
 	}

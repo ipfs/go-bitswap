@@ -6,20 +6,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ipfs/go-bitswap/internal/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-bitswap/wantlist"
 	bswl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
-	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"go.uber.org/zap"
 )
 
-var log = logging.Logger("bitswap")
-var sflog = log.Desugar()
+var log = logutil.CreateLogger("bs:mq")
 
 const (
 	defaultRebroadcastInterval = 30 * time.Second
@@ -611,7 +610,7 @@ func (mq *MessageQueue) handleResponse(ks []cid.Cid) {
 
 func (mq *MessageQueue) logOutgoingMessage(wantlist []bsmsg.Entry) {
 	// Save some CPU cycles and allocations if log level is higher than debug
-	if ce := sflog.Check(zap.DebugLevel, "sent message"); ce == nil {
+	if ce := log.Check(zap.DebugLevel, "sent message"); ce == nil {
 		return
 	}
 

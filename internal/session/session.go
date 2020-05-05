@@ -6,6 +6,7 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
+	"github.com/ipfs/go-bitswap/internal/logutil"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
@@ -18,8 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-var log = logging.Logger("bs:sess")
-var sflog = log.Desugar()
+var log = logutil.CreateLogger("bs:sess")
 
 const (
 	broadcastLiveWantsLimit = 64
@@ -210,7 +210,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 
 func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	// Save some CPU cycles if log level is higher than debug
-	if ce := sflog.Check(zap.DebugLevel, "Bitswap <- rcv message"); ce == nil {
+	if ce := log.Check(zap.DebugLevel, "Bitswap <- rcv message"); ce == nil {
 		return
 	}
 

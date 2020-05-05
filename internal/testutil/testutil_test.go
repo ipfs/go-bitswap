@@ -14,9 +14,3 @@ func TestGenerateBlocksOfSize(t *testing.T) {
 		}
 	}
 }
-
-func TestCheckLogFileInvariants(t *testing.T) {
-	if err := CheckLogFileInvariants("/tmp/bsltest.txt"); err != nil {
-		t.Fatal(err)
-	}
-}
