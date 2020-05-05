@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -55,6 +56,7 @@ import (
 // quickly, maintain good relationships with peers, etc).
 
 var log = logging.Logger("engine")
+var sflog = log.Desugar()
 
 const (
 	// outboxChanBuffer must be 0 to prevent stale messages from being sent
@@ -475,7 +477,28 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			continue
 		}
 
-		log.Debugw("Bitswap engine -> msg", "local", e.self, "to", p, "blockCount", len(msg.Blocks()), "presenceCount", len(msg.BlockPresences()), "size", msg.Size())
+		// Save some CPU cycles and allocations if log level is higher than debug
+		if ce := sflog.Check(zap.DebugLevel, "Bitswap engine -> msg"); ce != nil {
+			blks := msg.Blocks()
+			blkCids := make([]cid.Cid, 0, len(blks))
+			for _, b := range blks {
+				blkCids = append(blkCids, b.Cid())
+			}
+
+			bps := msg.BlockPresences()
+			blkPresences := make([]string, 0, len(bps))
+			for _, bp := range bps {
+				blkPresences = append(blkPresences, bp.Type.String()+": "+bp.Cid.String())
+			}
+
+			log.Debugw("Bitswap engine -> msg",
+				"local", e.self,
+				"to", p,
+				"blocks", blkCids,
+				"blockPresences", blkPresences,
+				"size", msg.Size())
+		}
+
 		return &Envelope{
 			Peer:    p,
 			Message: msg,
