@@ -24,6 +24,10 @@ const mediumBandwidth = 500000.0
 const mediumBandwidthDeviation = 80000.0
 
 func TestCheckLogFileInvariants(t *testing.T) {
+	// if err := checkLogFileInvariants("/tmp/debug.log"); err != nil {
+	// 	t.Fatal(err)
+	// }
+
 	tmpfile := logutil.TeeLogs()
 
 	t.Logf("Writing test log to %s", tmpfile.Name())
