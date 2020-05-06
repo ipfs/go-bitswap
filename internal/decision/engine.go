@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 
 	"github.com/ipfs/go-bitswap/internal/logutil"
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -477,7 +476,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 		}
 
 		// Save some CPU cycles and allocations if log level is higher than debug
-		if ce := log.Check(zap.DebugLevel, "Bitswap engine -> msg"); ce != nil {
+		if !log.IsDebug() {
 			blks := msg.Blocks()
 			blkCids := make([]cid.Cid, 0, len(blks))
 			for _, b := range blks {

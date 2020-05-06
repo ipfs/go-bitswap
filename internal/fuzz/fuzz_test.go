@@ -60,12 +60,14 @@ func runSwarm(t *testing.T) {
 
 	instances := ig.Instances(numInstances)
 	blocks := bg.Blocks(numBlocks)
+	var blkeys []cid.Cid
+	for _, b := range blocks {
+		blkeys = append(blkeys, b.Cid())
+	}
 
 	// Put all blocks onto three instances
-	var blkeys []cid.Cid
 	for _, seed := range instances[:3] {
 		for _, b := range blocks {
-			blkeys = append(blkeys, b.Cid())
 			err := seed.Exchange.HasBlock(b)
 			if err != nil {
 				t.Fatal(err)
@@ -81,6 +83,8 @@ func runSwarm(t *testing.T) {
 		wg.Add(1)
 		go func(inst testinstance.Instance) {
 			defer wg.Done()
+
+			// Fetch the root block
 			outch, err := inst.Exchange.GetBlocks(ctx, blkeys[:1])
 			if err != nil {
 				errs <- err
@@ -88,13 +92,16 @@ func runSwarm(t *testing.T) {
 			for range outch {
 			}
 
+			// Fetch a few more blocks at a time until all blocks have been fetched
 			fetched := 1
 			for fetched < len(blkeys) {
 				time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+
 				end := fetched + 5 + rand.Intn(10)
 				if end > len(blkeys) {
 					end = len(blkeys)
 				}
+
 				outch, err := inst.Exchange.GetBlocks(ctx, blkeys[fetched:end])
 				if err != nil {
 					errs <- err
@@ -125,4 +132,7 @@ func runSwarm(t *testing.T) {
 			}
 		}
 	}
+
+	// Give bitswap time to send out cancels before shutting down
+	time.Sleep(100 * time.Millisecond)
 }

@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
-
-	cid "github.com/ipfs/go-cid"
 )
 
 // Zap's timestamp format
@@ -48,42 +45,10 @@ func checkLogFileInvariants(filename string) error {
 }
 
 func checkInvariants(logs []map[string]interface{}) error {
-	if err := checkBlockReceivedOncePerSession(logs); err != nil {
-		return err
-	}
-
 	if err := checkWantBlockCancel(logs); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func checkBlockReceivedOncePerSession(logs []map[string]interface{}) error {
-	peerSessions := make(map[string]*cid.Set)
-	for _, log := range logs {
-		if !strings.Contains(log["msg"].(string), "Bitswap <- block") {
-			continue
-		}
-
-		peerSess := log["local"].(string) + "-" + strconv.Itoa(int(log["session"].(float64)))
-		cids, ok := peerSessions[peerSess]
-		c, err := cid.Parse(log["cid"])
-		if err != nil {
-			return err
-		}
-
-		if ok {
-			if cids.Has(c) {
-				return fmt.Errorf("Block %s received by peer-session %s twice", c, peerSess)
-			}
-		} else {
-			cids = cid.NewSet()
-			peerSessions[peerSess] = cids
-		}
-		cids.Add(c)
-		// fmt.Println(peerSess, c)
-	}
 	return nil
 }
 
@@ -162,7 +127,10 @@ func checkWantBlockCancel(logs []map[string]interface{}) error {
 		for blk, rcvdAt := range blkAt {
 			for wantTo, peerWants := range sentWants[localNode] {
 				if wantAt, ok := peerWants[blk]; ok {
-					if wantAt.at.After(rcvdAt.at) {
+					// it's possible a block will be received right as a want is
+					// being sent, so allow a little bit of processing time
+					processingTime := 100 * time.Millisecond
+					if wantAt.at.After(rcvdAt.at.Add(processingTime)) {
 						msg := "Line %d: %s -> %s want %s: should not send want after receiving block "
 						msg += "(Line %d: rcv %s)"
 						return fmt.Errorf(msg, wantAt.line, localNode, wantTo, blk, rcvdAt.line, blk)

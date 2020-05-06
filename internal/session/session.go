@@ -16,7 +16,6 @@ import (
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	loggables "github.com/libp2p/go-libp2p-loggables"
-	"go.uber.org/zap"
 )
 
 var log = logutil.CreateLogger("bs:sess")
@@ -210,7 +209,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 
 func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	// Save some CPU cycles if log level is higher than debug
-	if ce := log.Check(zap.DebugLevel, "Bitswap <- rcv message"); ce == nil {
+	if !log.IsDebug() {
 		return
 	}
 

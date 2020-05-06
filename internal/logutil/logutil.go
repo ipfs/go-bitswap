@@ -9,21 +9,26 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var loggers = make(map[string]*BSLogger)
+var logAll bool
+
 type BSLogger struct {
 	*logging.ZapEventLogger
 	unsugared *zap.Logger
 }
 
-func (bsl *BSLogger) Check(level zapcore.Level, log string) *zapcore.CheckedEntry {
-	return bsl.unsugared.Check(level, log)
+func (bsl *BSLogger) IsDebug() bool {
+	if logAll {
+		return true
+	}
+	return bsl.unsugared.Check(zap.DebugLevel, "debug log") != nil
 }
-
-var loggers = make(map[string]*logging.ZapEventLogger)
 
 func CreateLogger(name string) *BSLogger {
 	logger := logging.Logger(name)
-	loggers[name] = logger
-	return &BSLogger{logger, logger.Desugar()}
+	bsLogger := &BSLogger{logger, logger.Desugar()}
+	loggers[name] = bsLogger
+	return bsLogger
 }
 
 func TeeLogs() *os.File {
@@ -31,6 +36,8 @@ func TeeLogs() *os.File {
 	if err != nil {
 		panic(err)
 	}
+
+	logAll = true
 
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -43,13 +50,13 @@ func TeeLogs() *os.File {
 		core := logger.Desugar().Core()
 		teed := zapcore.NewTee(core, fileLogger)
 
-		logger := zap.New(teed).Sugar()
 		combinedLogger := &logging.ZapEventLogger{
-			SugaredLogger: *logger,
+			SugaredLogger: *zap.New(teed).Sugar(),
 		}
+		bsLogger := &BSLogger{combinedLogger, combinedLogger.Desugar()}
 
-		ptr := loggers[name]
-		*ptr = *combinedLogger
+		existing := loggers[name]
+		*existing = *bsLogger
 	}
 
 	return tmpfile
