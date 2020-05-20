@@ -436,7 +436,7 @@ func TestMultipleSessions(t *testing.T) {
 }
 
 func TestWantlistClearsOnCancel(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 
 	vnet := getVirtualNetwork()
@@ -452,19 +452,22 @@ func TestWantlistClearsOnCancel(t *testing.T) {
 
 	inst := ig.Instances(1)
 
-	a := inst[0]
+	bs := inst[0].Exchange
 
-	ctx1, cancel1 := context.WithCancel(ctx)
-	ses := a.Exchange.NewSession(ctx1)
+	sesctx, sescancel := context.WithCancel(ctx)
+	ses := bs.NewSession(sesctx)
 
 	_, err := ses.GetBlocks(ctx, cids)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancel1()
 
+	// Cancel the session context (not the request context)
+	sescancel()
+
+	// Should send cancels for all 10 wants
 	if err := tu.WaitFor(ctx, func() error {
-		if len(a.Exchange.GetWantlist()) > 0 {
+		if len(bs.GetWantlist()) > 0 {
 			return fmt.Errorf("expected empty wantlist")
 		}
 		return nil

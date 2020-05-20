@@ -154,6 +154,10 @@ func (pm *PeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []ci
 // SendCancels sends cancels for the given keys to all peers who had previously
 // received a want for those keys.
 func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
+	if len(cancelKs) == 0 {
+		return
+	}
+
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
