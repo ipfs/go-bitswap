@@ -341,9 +341,13 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 		}
 	}
 
-	// If all blocks have been received, or there are no new blocks in the
-	// messagem bail out
-	if wr.allReceived || wanted.Len() == 0 {
+	// TODO: Actually we do want to keep sending notifications even after all
+	// blocks are received, so that the session can hear about other peers that
+	// have the blocks it's interested in
+
+	// If all blocks have been received already, no need to send the session
+	// any more notifications
+	if wr.allReceived {
 		return wanted
 	}
 
@@ -357,8 +361,8 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 		}
 	}
 
-	// Should never block because we create the channel to be the same size
-	// as the number of keys requested
+	// Send notification with the message and the list of wanted blocks
+	// (as opposed to duplicates)
 	wr.ntfns <- &Notification{fmsg, wanted}
 
 	// All blocks have been received, so close the notifications channel
