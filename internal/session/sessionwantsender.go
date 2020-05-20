@@ -30,12 +30,6 @@ const (
 	BPHave
 )
 
-// SessionWantsCanceller provides a method to cancel wants
-type SessionWantsCanceller interface {
-	// Cancel wants for this session
-	CancelSessionWants(sid uint64, wants []cid.Cid)
-}
-
 // update encapsulates a message received by the session
 type update struct {
 	// Which peer sent the update
@@ -65,6 +59,8 @@ type change struct {
 	update update
 	// peer has connected / disconnected
 	availability peerAvailability
+
+	callback func()
 }
 
 type onSendFn func(to peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid)
@@ -102,8 +98,6 @@ type sessionWantSender struct {
 	pm PeerManager
 	// Keeps track of peers in the session
 	spm SessionPeerManager
-	// Cancels wants
-	canceller SessionWantsCanceller
 	// Keeps track of which peer has / doesn't have a block
 	bpm *bsbpm.BlockPresenceManager
 	// Called when wants are sent
@@ -112,7 +106,7 @@ type sessionWantSender struct {
 	onPeersExhausted onPeersExhaustedFn
 }
 
-func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager, canceller SessionWantsCanceller,
+func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager,
 	bpm *bsbpm.BlockPresenceManager, onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionWantSender {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -129,7 +123,6 @@ func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager, ca
 
 		pm:               pm,
 		spm:              spm,
-		canceller:        canceller,
 		bpm:              bpm,
 		onSend:           onSend,
 		onPeersExhausted: onPeersExhausted,
@@ -151,23 +144,24 @@ func (sws *sessionWantSender) Add(ks []cid.Cid) {
 }
 
 // Cancel is called when a request is cancelled
-func (sws *sessionWantSender) Cancel(ks []cid.Cid) {
+func (sws *sessionWantSender) Cancel(ks []cid.Cid, cb func()) {
 	if len(ks) == 0 {
 		return
 	}
-	sws.addChange(change{cancel: ks})
+	sws.addChange(change{cancel: ks, callback: cb})
 }
 
 // Update is called when the session receives a message with incoming blocks
 // or HAVE / DONT_HAVE
-func (sws *sessionWantSender) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
+func (sws *sessionWantSender) Update(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, callback func()) {
 	hasUpdate := len(ks) > 0 || len(haves) > 0 || len(dontHaves) > 0
 	if !hasUpdate {
 		return
 	}
 
 	sws.addChange(change{
-		update: update{from, ks, haves, dontHaves},
+		update:   update{from, ks, haves, dontHaves},
+		callback: callback,
 	})
 }
 
@@ -180,30 +174,22 @@ func (sws *sessionWantSender) SignalAvailability(p peer.ID, isAvailable bool) {
 	sws.addChangeNonBlocking(change{availability: availability})
 }
 
-// Run is the main loop for processing incoming changes
-func (sws *sessionWantSender) Run() {
+// Shutdown the sessionWantSender
+func (sws *sessionWantSender) Shutdown() {
+	// Unregister the session with the PeerManager
+	sws.pm.UnregisterSession(sws.sessionID)
+
+	// Drain the changes queue and call any callbacks
 	for {
 		select {
-		case ch := <-sws.changes:
-			sws.onChange([]change{ch})
-		case <-sws.ctx.Done():
-			// Unregister the session with the PeerManager
-			sws.pm.UnregisterSession(sws.sessionID)
-
-			// Close the 'closed' channel to signal to Shutdown() that the run
-			// loop has exited
-			close(sws.closed)
+		case chng := <-sws.changes:
+			if chng.callback != nil {
+				chng.callback()
+			}
+		default:
 			return
 		}
 	}
-}
-
-// Shutdown the sessionWantSender
-func (sws *sessionWantSender) Shutdown() {
-	// Signal to the run loop to stop processing
-	sws.shutdown()
-	// Wait for run loop to complete
-	<-sws.closed
 }
 
 // addChange adds a new change to the queue
@@ -249,6 +235,7 @@ func (sws *sessionWantSender) onChange(changes []change) {
 	// Several changes may have been recorded since the last time we checked,
 	// so pop all outstanding changes from the channel
 	changes = sws.collectChanges(changes)
+	callbacks := make([]func(), 0, len(changes))
 
 	// Apply each change
 	availability := make(map[peer.ID]bool, len(changes))
@@ -273,11 +260,19 @@ func (sws *sessionWantSender) onChange(changes []change) {
 			if len(chng.update.ks) > 0 || len(chng.update.haves) > 0 {
 				availability[chng.update.from] = true
 			}
+			if chng.callback != nil {
+				callbacks = append(callbacks, chng.callback)
+			}
 
 			updates = append(updates, chng.update)
 		}
 		if chng.availability.target != "" {
 			availability[chng.availability.target] = chng.availability.available
+		}
+
+		// Add any associated callback to the list of callbacks
+		if chng.callback != nil {
+			callbacks = append(callbacks, chng.callback)
 		}
 	}
 
@@ -291,14 +286,14 @@ func (sws *sessionWantSender) onChange(changes []change) {
 	// don't have the want
 	sws.checkForExhaustedWants(dontHaves, newlyUnavailable)
 
-	// If there are any cancels, send them
-	if len(cancels) > 0 {
-		sws.canceller.CancelSessionWants(sws.sessionID, cancels)
-	}
-
 	// If there are some connected peers, send any pending wants
 	if sws.spm.HasPeers() {
 		sws.sendNextWants(newlyAvailable)
+	}
+
+	// The changes have been processed so call any associated callbacks
+	for _, cb := range callbacks {
+		cb()
 	}
 }
 
