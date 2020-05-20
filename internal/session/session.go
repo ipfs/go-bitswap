@@ -199,8 +199,9 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 		return nil, err
 	}
 
+	// Listens for incoming messages
 	listen := func() {
-		// When the go-routine exits
+		// When the function exits
 		defer func() {
 			// Close the channel of outgoing blocks
 			close(out)
@@ -291,10 +292,12 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	case s.incoming <- op{op: opWant, keys: keys}:
 		// Tell the sessionWantSender that the blocks have been requested
 		s.sws.Add(keys)
-		go listen()
 	case <-ctx.Done():
 	case <-s.ctx.Done():
 	}
+
+	// Listen for incoming messages
+	go listen()
 
 	return out, nil
 }
