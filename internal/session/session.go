@@ -246,15 +246,15 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 				// received, so they can be cancelled. Note that we need to
 				// make sure that cancels are sent after any corresponding
 				// wants that may be in the pipeline.
+				callback := func() {
+					wr.OnReceived(msg.Wanted.Keys())
+				}
+
+				// Inform the session want sender that a message has been received
 				blkCids := make([]cid.Cid, 0, len(msg.Blks))
 				for _, b := range msg.Blks {
 					blkCids = append(blkCids, b.Cid())
 				}
-				callback := func() {
-					wr.OnReceived(blkCids)
-				}
-
-				// Inform the session want sender that a message has been received
 				s.sws.Update(msg.From, blkCids, msg.Haves, msg.DontHaves, callback)
 
 				// Inform the session that blocks have been received
@@ -262,6 +262,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 
 				// Send the received blocks on the channel of outgoing blocks
 				for _, blk := range msg.Blks {
+					// Filter for blocks that are wanted by this session
 					if !msg.Wanted.Has(blk.Cid()) {
 						continue
 					}
@@ -357,6 +358,8 @@ func (s *Session) run(ctx context.Context) {
 
 	for ctx.Err() == nil {
 		select {
+
+		// Session event received
 		case oper := <-s.incoming:
 			switch oper.op {
 			case opReceive:
@@ -377,17 +380,24 @@ func (s *Session) run(ctx context.Context) {
 			default:
 				panic("unhandled operation")
 			}
-		case ch := <-s.sws.changes:
-			s.sws.onChange([]change{ch})
+
+		// State change to the session want sender received
+		case chng := <-s.sws.changes:
+			// Inform the session want sender
+			s.sws.onChange([]change{chng})
+
 		case <-s.idleTick.C:
 			// The session hasn't received blocks for a while, broadcast
 			s.broadcast(ctx, nil)
+
 		case <-s.periodicSearchTimer.C:
 			// Periodically search for a random live want
 			s.handlePeriodicSearch(ctx)
+
 		case baseTickDelay := <-s.tickDelayReqs:
 			// Set the base tick delay
 			s.baseTickDelay = baseTickDelay
+
 		case <-ctx.Done():
 			return
 		}

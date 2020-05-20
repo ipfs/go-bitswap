@@ -59,14 +59,12 @@ const (
 )
 
 type WantRequest struct {
-	wrm    *WantRequestManager
-	lk     sync.RWMutex
-	ks     map[cid.Cid]ReqKeyState
-	closed bool
-
-	ntfnslk     sync.Mutex
+	wrm         *WantRequestManager
+	lk          sync.RWMutex
+	ks          map[cid.Cid]ReqKeyState
+	closed      bool
 	ntfns       chan *Notification
-	ntfnsClosed bool
+	allReceived bool
 }
 
 type WantRequestManager struct {
@@ -317,13 +315,15 @@ func (wr *WantRequest) Notifications() <-chan *Notification {
 // for the keys in this WantRequest
 func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 	wr.lk.Lock()
+	defer wr.lk.Unlock()
 
 	wanted := cid.NewSet()
 	if wr.closed {
-		wr.lk.Unlock()
 		return wanted
 	}
 
+	// Filter incoming message for blocks / HAVEs / DONT_HAVEs that this
+	// particular WantRequest is interested in
 	fmsg := &IncomingMessage{
 		From:      msg.From,
 		Blks:      wr.filterBlocks(msg.Blks),
@@ -331,6 +331,8 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 		DontHaves: wr.filterKeys(msg.DontHaves),
 	}
 
+	// Work out which blocks are still wanted by this WantRequest (ie this is
+	// the first time the block was received)
 	for _, b := range fmsg.Blks {
 		c := b.Cid()
 		if state, ok := wr.ks[c]; ok && state == ReqKeyWanted {
@@ -339,20 +341,20 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 		}
 	}
 
+	// If all blocks have been received, or there are no new blocks in the
+	// messagem bail out
+	if wr.allReceived || wanted.Len() == 0 {
+		return wanted
+	}
+
+	// Check if there are any blocks that the WantRequest is still waiting
+	// to receive
 	remaining := false
 	for _, state := range wr.ks {
 		if state == ReqKeyWanted {
 			remaining = true
 			break
 		}
-	}
-
-	wr.lk.Unlock()
-
-	wr.ntfnslk.Lock()
-	defer wr.ntfnslk.Unlock()
-	if wr.ntfnsClosed {
-		return wanted
 	}
 
 	// Should never block because we create the channel to be the same size
@@ -362,7 +364,7 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 	// All blocks have been received, so close the notifications channel
 	if !remaining {
 		close(wr.ntfns)
-		wr.ntfnsClosed = true
+		wr.allReceived = true
 	}
 
 	return wanted
