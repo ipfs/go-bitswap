@@ -199,7 +199,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 		return nil, err
 	}
 
-	go func() {
+	listen := func() {
 		// When the go-routine exits
 		defer func() {
 			// Close the channel of outgoing blocks
@@ -280,7 +280,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 				return
 			}
 		}
-	}()
+	}
 
 	for _, c := range keys {
 		log.Debugw("Bitswap.GetBlockRequest.Start", "cid", c)
@@ -289,6 +289,9 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	// Add wanted keys to the session
 	select {
 	case s.incoming <- op{op: opWant, keys: keys}:
+		// Tell the sessionWantSender that the blocks have been requested
+		s.sws.Add(keys)
+		go listen()
 	case <-ctx.Done():
 	case <-s.ctx.Done():
 	}
@@ -486,8 +489,6 @@ func (s *Session) handleReceive(ks []cid.Cid) {
 func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 	// Tell the sessionWants tracker that that the wants have been requested
 	s.sw.BlocksRequested(newks)
-	// Tell the sessionWantSender that the blocks have been requested
-	s.sws.Add(newks)
 
 	// If we have discovered peers already, the sessionWantSender will
 	// send wants to them
