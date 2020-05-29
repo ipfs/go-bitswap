@@ -30,6 +30,8 @@ type peerWantManager struct {
 	// broadcastWants tracks all the current broadcast wants.
 	broadcastWants *cid.Set
 
+	// Keeps track of the number of active want-haves & want-blocks
+	wantGauge Gauge
 	// Keeps track of the number of active want-blocks
 	wantBlockGauge Gauge
 }
@@ -42,11 +44,12 @@ type peerWant struct {
 
 // New creates a new peerWantManager with a Gauge that keeps track of the
 // number of active want-blocks (ie sent but no response received)
-func newPeerWantManager(wantBlockGauge Gauge) *peerWantManager {
+func newPeerWantManager(wantGauge Gauge, wantBlockGauge Gauge) *peerWantManager {
 	return &peerWantManager{
 		broadcastWants: cid.NewSet(),
 		peerWants:      make(map[peer.ID]*peerWant),
 		wantPeers:      make(map[cid.Cid]map[peer.ID]struct{}),
+		wantGauge:      wantGauge,
 		wantBlockGauge: wantBlockGauge,
 	}
 }
@@ -68,6 +71,11 @@ func (pwm *peerWantManager) addPeer(peerQueue PeerQueue, p peer.ID) {
 	if pwm.broadcastWants.Len() > 0 {
 		wants := pwm.broadcastWants.Keys()
 		peerQueue.AddBroadcastWantHaves(wants)
+
+		// Increment want gauge
+		for range wants {
+			pwm.wantGauge.Inc()
+		}
 	}
 }
 
@@ -79,7 +87,8 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 	}
 
 	_ = pws.wantBlocks.ForEach(func(c cid.Cid) error {
-		// Decrement the gauge by the number of pending want-blocks to the peer
+		// Decrement the gauges by the number of pending want-blocks to the peer
+		pwm.wantGauge.Dec()
 		pwm.wantBlockGauge.Dec()
 		// Clean up want-blocks from the reverse index
 		pwm.reverseIndexRemove(c, p)
@@ -88,7 +97,18 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 
 	// Clean up want-haves from the reverse index
 	_ = pws.wantHaves.ForEach(func(c cid.Cid) error {
+		// Decrement the gauge by the number of pending want-haves to the peer
+		pwm.wantGauge.Dec()
+		// Clean up want-haves from the reverse index
 		pwm.reverseIndexRemove(c, p)
+		return nil
+	})
+
+	// Decrement total wants gauge for each broadcast want
+	_ = pwm.broadcastWants.ForEach(func(c cid.Cid) error {
+		if !pws.wantBlocks.Has(c) && !pws.wantHaves.Has(c) {
+			pwm.wantGauge.Dec()
+		}
 		return nil
 	})
 
@@ -127,6 +147,11 @@ func (pwm *peerWantManager) broadcastWantHaves(wantHaves []cid.Cid) {
 		if len(peerUnsent) > 0 {
 			pws.peerQueue.AddBroadcastWantHaves(peerUnsent)
 		}
+
+		// Increment the total wants gauge
+		for range peerUnsent {
+			pwm.wantGauge.Inc()
+		}
 	}
 }
 
@@ -160,7 +185,8 @@ func (pwm *peerWantManager) sendWants(p peer.ID, wantBlocks []cid.Cid, wantHaves
 			// Make sure the CID is no longer recorded as a want-have
 			pws.wantHaves.Remove(c)
 
-			// Increment the count of want-blocks
+			// Increment the want gauges
+			pwm.wantGauge.Inc()
 			pwm.wantBlockGauge.Inc()
 		}
 	}
@@ -183,6 +209,9 @@ func (pwm *peerWantManager) sendWants(p peer.ID, wantBlocks []cid.Cid, wantHaves
 
 			// Add the CID to the results
 			fltWantHvs = append(fltWantHvs, c)
+
+			// Increment the total wants gauge
+			pwm.wantGauge.Inc()
 		}
 	}
 
@@ -220,7 +249,7 @@ func (pwm *peerWantManager) sendCancels(cancelKs []cid.Cid) {
 				continue
 			}
 
-			// Update the want gauge.
+			// Update the want gauge
 			if wantBlock {
 				pwm.wantBlockGauge.Dec()
 			}
@@ -239,6 +268,11 @@ func (pwm *peerWantManager) sendCancels(cancelKs []cid.Cid) {
 		// Send cancels to the peer
 		if len(toCancel) > 0 {
 			pws.peerQueue.AddCancels(toCancel)
+		}
+
+		// Decrement the total wants gauge
+		for range toCancel {
+			pwm.wantGauge.Dec()
 		}
 	}
 
