@@ -88,9 +88,9 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 
 		// Decrement the gauges by the number of pending want-blocks to the peer
 		if removedLastPeer {
+			pwm.wantBlockGauge.Dec()
 			if !pwm.broadcastWants.Has(c) {
 				pwm.wantGauge.Dec()
-				pwm.wantBlockGauge.Dec()
 			}
 		}
 		return nil
