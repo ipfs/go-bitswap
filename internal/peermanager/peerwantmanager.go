@@ -102,10 +102,8 @@ func (pwm *peerWantManager) removePeer(p peer.ID) {
 		removedLastPeer := pwm.reverseIndexRemove(c, p)
 
 		// Decrement the gauge by the number of pending want-haves to the peer
-		if removedLastPeer {
-			if !pwm.broadcastWants.Has(c) {
-				pwm.wantGauge.Dec()
-			}
+		if removedLastPeer && !pwm.broadcastWants.Has(c) {
+			pwm.wantGauge.Dec()
 		}
 		return nil
 	})
@@ -213,10 +211,8 @@ func (pwm *peerWantManager) sendWants(p peer.ID, wantBlocks []cid.Cid, wantHaves
 			isNew := pwm.reverseIndexAdd(c, p)
 
 			// Increment the total wants gauge
-			if isNew {
-				if !pwm.broadcastWants.Has(c) {
-					pwm.wantGauge.Inc()
-				}
+			if isNew && !pwm.broadcastWants.Has(c) {
+				pwm.wantGauge.Inc()
 			}
 		}
 	}
