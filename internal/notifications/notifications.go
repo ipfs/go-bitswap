@@ -11,11 +11,6 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-// CancelSender
-type CancelSender interface {
-	SendCancels(ctx context.Context, cancelKs []cid.Cid)
-}
-
 // cid => interested sessions (s.wants())
 //     => cancelled
 
@@ -71,18 +66,16 @@ type WantRequestManager struct {
 	ctx              context.Context
 	bstore           blockstore.Blockstore
 	blockPresenceMgr *bsbpm.BlockPresenceManager
-	canceller        CancelSender
 	lk               sync.RWMutex
 	wrs              map[cid.Cid]map[*WantRequest]struct{}
 }
 
 // New creates a new WantRequestManager
-func New(ctx context.Context, bstore blockstore.Blockstore, bpm *bsbpm.BlockPresenceManager, canceller CancelSender) *WantRequestManager {
+func New(ctx context.Context, bstore blockstore.Blockstore, bpm *bsbpm.BlockPresenceManager) *WantRequestManager {
 	return &WantRequestManager{
 		ctx:              ctx,
 		bstore:           bstore,
 		blockPresenceMgr: bpm,
-		canceller:        canceller,
 		wrs:              make(map[cid.Cid]map[*WantRequest]struct{}),
 	}
 }
@@ -142,10 +135,10 @@ func (wrm *WantRequestManager) getBlocks(ks []cid.Cid) ([]blocks.Block, error) {
 	return blks, nil
 }
 
-func (wrm *WantRequestManager) OnMessageReceived(msg *IncomingMessage) (*cid.Set, error) {
+func (wrm *WantRequestManager) PublishToSessions(msg *IncomingMessage) (*cid.Set, error) {
+	local := msg.From == ""
 	if len(msg.Blks) > 0 {
 		wanted := msg.Blks
-		local := msg.From == ""
 		if !local {
 			// If the blocks came from the network, only put blocks to the
 			// blockstore if the local node actually wanted them
@@ -161,7 +154,10 @@ func (wrm *WantRequestManager) OnMessageReceived(msg *IncomingMessage) (*cid.Set
 		}
 	}
 
-	wrm.blockPresenceMgr.ReceiveFrom(msg.From, msg.Haves, msg.DontHaves)
+	if !local {
+		// Inform the BlockPresenceManager of any HAVEs / DONT_HAVEs
+		wrm.blockPresenceMgr.ReceiveFrom(msg.From, msg.Haves, msg.DontHaves)
+	}
 
 	// Publish the message to WantRequests that are interested in the
 	// blocks / HAVEs / DONT_HAVEs in the message
@@ -226,29 +222,13 @@ func (wrm *WantRequestManager) publish(msg *IncomingMessage) *cid.Set {
 	return wanted
 }
 
-// Called when received blocks have been processed by the session and the
-// session is ready to cancel the corresponding wants
-func (wrm *WantRequestManager) onCancelReady(ks []cid.Cid) {
-	if len(ks) == 0 {
-		return
-	}
-
+// Called when the WantRequest has been cancelled or has completed
+func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest) {
 	wrm.lk.Lock()
 	defer wrm.lk.Unlock()
-
-	wrm.cancelIfReady(ks)
-}
-
-// Called when the WantRequest has been cancelled or has completed and we want
-// to cancel any blocks that have not yet been received
-func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest, ks []cid.Cid) {
-	wrm.lk.Lock()
-	defer wrm.lk.Unlock()
-
-	wrm.cancelIfReady(ks)
 
 	// Remove WantRequest from WantRequestManager
-	for _, c := range ks {
+	for c := range wr.ks {
 		kwrs := wrm.wrs[c]
 
 		delete(kwrs, wr)
@@ -256,55 +236,6 @@ func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest, ks []cid.Cid) 
 			delete(wrm.wrs, c)
 		}
 	}
-}
-
-func (wrm *WantRequestManager) cancelIfReady(ks []cid.Cid) {
-	if len(ks) == 0 {
-		return
-	}
-
-	// If there are no WantRequests that still want the block, the want
-	// can be cancelled
-	cancels := make([]cid.Cid, 0, len(ks))
-	for _, c := range ks {
-		if wrm.shouldSendCancel(c) {
-			cancels = append(cancels, c)
-			for wr := range wrm.wrs[c] {
-				wr.markCancelled(c)
-			}
-		}
-	}
-
-	// Free up block presence tracking for keys that no session is interested
-	// in anymore
-	wrm.blockPresenceMgr.RemoveKeys(cancels)
-
-	wrm.canceller.SendCancels(wrm.ctx, cancels)
-}
-
-// Check if all WantRequests no longer want the block (ie it can be cancelled)
-func (wrm *WantRequestManager) shouldSendCancel(c cid.Cid) bool {
-	kwrs, ok := wrm.wrs[c]
-	if !ok {
-		return true
-	}
-
-	readyCount := 0
-	for wr := range kwrs {
-		if wr.cancelReady(c) {
-			readyCount++
-		} else if !wr.cancelled(c) {
-			// If there is a WantRequest that's not in the "ready to cancel"
-			// or "already cancelled" states, don't cancel yet
-			return false
-		}
-	}
-
-	// All WantRequests are either ready to cancel, or have already cancelled
-	// the want.
-	// Only send a cancel for the want if all WantRequests haven't already
-	// cancelled it.
-	return readyCount > 0
 }
 
 func (wr *WantRequest) Notifications() <-chan *Notification {
@@ -315,10 +246,10 @@ func (wr *WantRequest) Notifications() <-chan *Notification {
 // for the keys in this WantRequest
 func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 	wr.lk.Lock()
-	defer wr.lk.Unlock()
 
 	wanted := cid.NewSet()
 	if wr.closed {
+		wr.lk.Unlock()
 		return wanted
 	}
 
@@ -341,76 +272,12 @@ func (wr *WantRequest) receive(msg *IncomingMessage) *cid.Set {
 		}
 	}
 
-	// TODO: Actually we do want to keep sending notifications even after all
-	// blocks are received, so that the session can hear about other peers that
-	// have the blocks it's interested in
-
-	// If all blocks have been received already, no need to send the session
-	// any more notifications
-	if wr.allReceived {
-		return wanted
-	}
-
-	// Check if there are any blocks that the WantRequest is still waiting
-	// to receive
-	remaining := false
-	for _, state := range wr.ks {
-		if state == ReqKeyWanted {
-			remaining = true
-			break
-		}
-	}
-
-	// Send notification with the message and the list of wanted blocks
-	// (as opposed to duplicates)
-	wr.ntfns <- &Notification{fmsg, wanted}
-
-	// All blocks have been received, so close the notifications channel
-	if !remaining {
-		close(wr.ntfns)
-		wr.allReceived = true
-	}
-
-	return wanted
-}
-
-// Called when the Session has finished processing a received block
-func (wr *WantRequest) OnReceived(ks []cid.Cid) {
-	wr.lk.Lock()
-
-	if wr.closed {
-		wr.lk.Unlock()
-		return
-	}
-
-	for _, c := range ks {
-		if state, ok := wr.ks[c]; ok && state != ReqKeyCancelled {
-			wr.ks[c] = ReqKeyCancelReady
-		}
-	}
-
 	wr.lk.Unlock()
 
-	wr.wrm.onCancelReady(ks)
-}
+	// Send notification with the message and the set of cids of wanted blocks
+	wr.ntfns <- &Notification{fmsg, wanted}
 
-// Called when the request or session has completed
-func (wr *WantRequest) OnClosing() []cid.Cid {
-	wr.lk.Lock()
-	defer wr.lk.Unlock()
-
-	if wr.closed {
-		return []cid.Cid{}
-	}
-
-	remaining := make([]cid.Cid, 0, len(wr.ks))
-	for c, state := range wr.ks {
-		if state == ReqKeyWanted {
-			remaining = append(remaining, c)
-			wr.ks[c] = ReqKeyUnwanted
-		}
-	}
-	return remaining
+	return wanted
 }
 
 func (wr *WantRequest) Close() {
@@ -421,19 +288,11 @@ func (wr *WantRequest) Close() {
 		return
 	}
 
-	ks := make([]cid.Cid, 0, len(wr.ks))
-	for c, state := range wr.ks {
-		ks = append(ks, c)
-		if state != ReqKeyCancelled {
-			wr.ks[c] = ReqKeyCancelReady
-		}
-	}
-
 	wr.closed = true
 
 	wr.lk.Unlock()
 
-	wr.wrm.removeWantRequest(wr, ks)
+	wr.wrm.removeWantRequest(wr)
 }
 
 func (wr *WantRequest) wants(c cid.Cid) bool {
@@ -446,31 +305,6 @@ func (wr *WantRequest) wants(c cid.Cid) bool {
 
 	state, ok := wr.ks[c]
 	return ok && state == ReqKeyWanted
-}
-
-func (wr *WantRequest) cancelReady(c cid.Cid) bool {
-	wr.lk.RLock()
-	defer wr.lk.RUnlock()
-
-	state, ok := wr.ks[c]
-	return ok && state == ReqKeyCancelReady
-}
-
-func (wr *WantRequest) cancelled(c cid.Cid) bool {
-	wr.lk.RLock()
-	defer wr.lk.RUnlock()
-
-	state, ok := wr.ks[c]
-	return !ok || state == ReqKeyCancelled
-}
-
-func (wr *WantRequest) markCancelled(c cid.Cid) {
-	wr.lk.Lock()
-	defer wr.lk.Unlock()
-
-	if _, ok := wr.ks[c]; ok {
-		wr.ks[c] = ReqKeyCancelled
-	}
 }
 
 func (wr *WantRequest) filterBlocks(blks []blocks.Block) []blocks.Block {

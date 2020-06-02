@@ -127,7 +127,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	var notif *notifications.WantRequestManager
 	onDontHaveTimeout := func(p peer.ID, dontHaves []cid.Cid) {
 		// Simulate a message arriving with DONT_HAVEs
-		notif.OnMessageReceived(&notifications.IncomingMessage{From: p, DontHaves: dontHaves})
+		notif.PublishToSessions(&notifications.IncomingMessage{From: p, DontHaves: dontHaves})
 	}
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
 		return bsmq.New(ctx, p, network, onDontHaveTimeout)
@@ -153,7 +153,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
 	}
-	notif = notifications.New(ctx, bstore, bpm, pm)
+	notif = notifications.New(ctx, bstore, bpm)
 	sm := bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
@@ -313,7 +313,7 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	default:
 	}
 
-	wantedKs, err := bs.notif.OnMessageReceived(&notifications.IncomingMessage{
+	wantedKs, err := bs.notif.PublishToSessions(&notifications.IncomingMessage{
 		From:      from,
 		Blks:      blks,
 		Haves:     haves,

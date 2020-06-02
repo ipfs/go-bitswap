@@ -133,27 +133,27 @@ func (pm *PeerManager) ResponseReceived(p peer.ID, ks []cid.Cid) {
 // to discover seeds).
 // For each peer it filters out want-haves that have previously been sent to
 // the peer.
-func (pm *PeerManager) BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid) {
+func (pm *PeerManager) BroadcastWantHaves(sid uint64, wantHaves []cid.Cid) {
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
-	pm.pwm.broadcastWantHaves(wantHaves)
+	pm.pwm.broadcastWantHaves(sid, wantHaves)
 }
 
 // SendWants sends the given want-blocks and want-haves to the given peer.
 // It filters out wants that have previously been sent to the peer.
-func (pm *PeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
+func (pm *PeerManager) SendWants(sid uint64, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
 	if _, ok := pm.peerQueues[p]; ok {
-		pm.pwm.sendWants(p, wantBlocks, wantHaves)
+		pm.pwm.sendWants(sid, p, wantBlocks, wantHaves)
 	}
 }
 
 // SendCancels sends cancels for the given keys to all peers who had previously
 // received a want for those keys.
-func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
+func (pm *PeerManager) SendCancels(sid uint64, cancelKs []cid.Cid) {
 	if len(cancelKs) == 0 {
 		return
 	}
@@ -162,7 +162,12 @@ func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
 	defer pm.pqLk.Unlock()
 
 	// Send a CANCEL to each peer that has been sent a want-block or want-have
-	pm.pwm.sendCancels(cancelKs)
+	pm.pwm.sendCancels(sid, cancelKs)
+
+	// Free up block presence tracking for keys that no session is interested
+	// in anymore
+	// TODO
+	// wrm.blockPresenceMgr.RemoveKeys(cancels)
 }
 
 // CurrentWants returns the list of pending wants (both want-haves and want-blocks).
