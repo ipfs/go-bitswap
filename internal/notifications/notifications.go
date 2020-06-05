@@ -11,27 +11,6 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 )
 
-// cid => interested sessions (s.wants())
-//     => cancelled
-
-// Receive block:
-// - for each session
-//   - mark unwanted
-//   - tell session
-// - each session tells notifier to cancel
-// - once all sessions are ready to cancel
-//   - send cancel
-//   - for each session
-//     - mark cancelled
-
-// Request cancelled (once session has removed keys):
-// - remove session
-// - send cancel
-
-// Shutdown (once session shutdown)
-// - remove session
-// - send cancel
-
 type IncomingMessage struct {
 	From      peer.ID
 	Blks      []blocks.Block
@@ -79,13 +58,17 @@ func New(ctx context.Context, bstore blockstore.Blockstore, bpm *bsbpm.BlockPres
 	}
 }
 
+// NewWantRequest creates a new WantRequest with the given set of wants.
+// cancelFn is called when the want request is cancelled with any remaining
+// wants (for which blocks have not yet been received)
 func (wrm *WantRequestManager) NewWantRequest(ks []cid.Cid, cancelFn func([]cid.Cid)) (*WantRequest, error) {
 	wr := newWantRequest(wrm, ks, cancelFn)
 
 	wrm.lk.Lock()
 
 	for _, c := range ks {
-		// Add the WantRequest to the set for this key
+		// Add the WantRequest to the set of WantRequests that are interested
+		// in this key
 		wrs, ok := wrm.wrs[c]
 		if !ok {
 			wrs = make(map[*WantRequest]struct{})
@@ -110,6 +93,8 @@ func (wrm *WantRequestManager) NewWantRequest(ks []cid.Cid, cancelFn func([]cid.
 	return wr, nil
 }
 
+// getBlocks gets the blocks corresponding to the given keys from the
+// blockstore
 func (wrm *WantRequestManager) getBlocks(ks []cid.Cid) ([]blocks.Block, error) {
 	var blks []blocks.Block
 	for _, c := range ks {
@@ -128,8 +113,12 @@ func (wrm *WantRequestManager) getBlocks(ks []cid.Cid) ([]blocks.Block, error) {
 	return blks, nil
 }
 
+// PublishToSessions sends the message to all sessions that are interested in
+// it
 func (wrm *WantRequestManager) PublishToSessions(msg *IncomingMessage) (*cid.Set, error) {
 	local := msg.From == ""
+
+	// If the message includes blocks
 	if len(msg.Blks) > 0 {
 		wanted := msg.Blks
 		if !local {
@@ -341,17 +330,17 @@ func (wr *WantRequest) keys() *cid.Set {
 func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receiveMessage func(*IncomingMessage)) {
 	remaining := wr.keys()
 
-	chClosed := false
-
 	// When the function exits
 	defer func() {
 		// Clean up the want request
 		wr.close()
 
-		// Close the channel of outgoing blocks
-		if !chClosed {
-			close(wr.Out)
+		if remaining.Len() == 0 {
+			return
 		}
+
+		// Close the channel of outgoing blocks
+		close(wr.Out)
 
 		// Tell the session to cancel the remaining keys
 		wr.cancelFn(remaining.Keys())
@@ -364,7 +353,7 @@ func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receive
 			// Inform the session that a message has been received
 			receiveMessage(msg.IncomingMessage)
 
-			if chClosed {
+			if remaining.Len() == 0 {
 				break
 			}
 
@@ -375,6 +364,7 @@ func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receive
 					continue
 				}
 
+				// Send block to session
 				select {
 				case wr.Out <- blk:
 				case <-ctx.Done():
@@ -387,18 +377,17 @@ func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receive
 				remaining.Remove(blk.Cid())
 				if remaining.Len() == 0 {
 					close(wr.Out)
-					chClosed = true
 					break
-
-					// TODO:
-					// We keep listening for incoming messages as the
-					// session wants to know about other peers that have
-					// the blocks for wants from this request, so it can
-					// query them for wants requested in future.
-					// If there are already several go-routines listening
-					// for incoming messages for earlier requests, we can
-					// exit this go-routine now.
 				}
+
+				// TODO:
+				// We keep listening for incoming messages even after receiving
+				// all blocks, because the session wants to know about other
+				// peers that have the blocks for wants from this request, so
+				// it can query them for future wants.
+				// If there are already several go-routines listening
+				// for incoming messages for earlier requests, we can
+				// probably just exit this go-routine here.
 			}
 
 		// If the want request is cancelled, bail out

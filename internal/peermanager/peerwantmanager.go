@@ -16,60 +16,6 @@ type Gauge interface {
 	Dec()
 }
 
-type cidSessSet map[cid.Cid]map[uint64]struct{}
-
-func newCidSessSet() cidSessSet {
-	return make(cidSessSet)
-}
-
-func (css cidSessSet) has(c cid.Cid) bool {
-	_, ok := css[c]
-	return ok
-}
-
-func (css cidSessSet) sessionsFor(c cid.Cid) map[uint64]struct{} {
-	return css[c]
-}
-
-func (css cidSessSet) keys() []cid.Cid {
-	ks := make([]cid.Cid, 0, len(css))
-	for c := range css {
-		ks = append(ks, c)
-	}
-	return ks
-}
-
-func (css cidSessSet) add(c cid.Cid, sid uint64) bool {
-	s, ok := css[c]
-	if !ok {
-		css[c] = map[uint64]struct{}{sid: struct{}{}}
-		return true
-	}
-	s[sid] = struct{}{}
-	return false
-}
-
-func (css cidSessSet) remove(c cid.Cid, sid uint64) (int, bool) {
-	s, ok := css[c]
-	if !ok {
-		return 0, false
-	}
-
-	delete(s, sid)
-	if len(s) == 0 {
-		delete(css, c)
-	}
-	return len(s), true
-}
-
-func (css cidSessSet) len() int {
-	return len(css)
-}
-
-func (css cidSessSet) sessionsCount(c cid.Cid) int {
-	return len(css[c])
-}
-
 type wantType bool
 
 const (
@@ -295,13 +241,13 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 	bcstWants := make(map[cid.Cid]bool, len(cancelKs))
 	for _, c := range cancelKs {
 		// Remove the broadcast want
-		wantingSessCount, isBcstWant := pwm.broadcastWants.remove(c, sid)
+		cancellable, isBcstWant := pwm.broadcastWants.remove(c, sid)
 
 		// If the cancel is for a broadcast want
 		if isBcstWant {
 			// If this was the last session that wanted the broadcast want, it's
 			// ready to be removed
-			bcstWants[c] = wantingSessCount == 0
+			bcstWants[c] = cancellable
 		}
 	}
 
@@ -480,4 +426,60 @@ func (pwm *peerWantManager) String() string {
 		}
 	}
 	return b.String()
+}
+
+// cidSessSet keeps track of which keys are wanted by which sessions
+type cidSessSet map[cid.Cid]map[uint64]struct{}
+
+func newCidSessSet() cidSessSet {
+	return make(cidSessSet)
+}
+
+// has indicates whether any session wants the key
+func (css cidSessSet) has(c cid.Cid) bool {
+	_, ok := css[c]
+	return ok
+}
+
+// keys returns an array of all keys
+func (css cidSessSet) keys() []cid.Cid {
+	ks := make([]cid.Cid, 0, len(css))
+	for c := range css {
+		ks = append(ks, c)
+	}
+	return ks
+}
+
+// add a session that wants the key
+// returns true if this is the only session that wants the key
+func (css cidSessSet) add(c cid.Cid, sid uint64) bool {
+	s, ok := css[c]
+	if !ok {
+		css[c] = map[uint64]struct{}{sid: struct{}{}}
+		return true
+	}
+	s[sid] = struct{}{}
+	return false
+}
+
+// remove the session's interest in the key
+// returns
+// - true if this was the last session that was interested in the key
+// - true if there was a session interested in the key
+func (css cidSessSet) remove(c cid.Cid, sid uint64) (bool, bool) {
+	s, ok := css[c]
+	if !ok {
+		return false, false
+	}
+
+	delete(s, sid)
+	if len(s) == 0 {
+		delete(css, c)
+	}
+	return len(s) == 0, true
+}
+
+// len returns the number of keys
+func (css cidSessSet) len() int {
+	return len(css)
 }
