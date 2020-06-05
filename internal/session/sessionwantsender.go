@@ -184,6 +184,9 @@ func (sws *sessionWantSender) Run() {
 			// Drain queue of outstanding cancels
 			sws.drainCancels()
 
+			// Shut down the session peer manager
+			sws.spm.Shutdown()
+
 			// Close the 'closed' channel to signal to Shutdown() that the run
 			// loop has exited
 			close(sws.closed)

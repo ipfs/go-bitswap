@@ -50,8 +50,6 @@ type SessionManager interface {
 
 // SessionPeerManager keeps track of peers in the session
 type SessionPeerManager interface {
-	// PeersDiscovered indicates if any peers have been discovered yet
-	PeersDiscovered() bool
 	// Shutdown the SessionPeerManager
 	Shutdown()
 	// Adds a peer to the session, returning true if the peer is new
@@ -104,7 +102,6 @@ type Session struct {
 	shutdown       func()
 	sm             SessionManager
 	pm             PeerManager
-	sprm           SessionPeerManager
 	providerFinder ProviderFinder
 
 	sw  sessionWants
@@ -124,6 +121,8 @@ type Session struct {
 	initialSearchDelay  time.Duration
 	periodicSearchDelay delay.D
 	wantRequests        map[*notifications.WantRequest]struct{}
+	peersDiscovered     bool
+
 	// identifiers
 	wrm  *notifications.WantRequestManager
 	uuid logging.Loggable
@@ -155,7 +154,6 @@ func New(
 		shutdown:            cancel,
 		sm:                  sm,
 		pm:                  pm,
-		sprm:                sprm,
 		providerFinder:      providerFinder,
 		incoming:            make(chan op, 128),
 		latencyTrkr:         latencyTracker{},
@@ -193,98 +191,28 @@ func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, err
 // guaranteed on the returned blocks.
 func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	// If there are no keys supplied, just return a closed channel
-	out := make(chan blocks.Block)
 	if len(keys) == 0 {
+		out := make(chan blocks.Block)
 		close(out)
 		return out, nil
 	}
 
 	// Use a WantRequest to listen for incoming messages pertaining to the keys
-	remaining := cid.NewSet()
-	wr, err := s.wrm.NewWantRequest(keys)
+	var wr *notifications.WantRequest
+	var err error
+	wr, err = s.wrm.NewWantRequest(keys, func(ks []cid.Cid) {
+		s.incoming <- op{
+			op:          opCancel,
+			keys:        ks,
+			wantRequest: wr,
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: Move this into the WantRequest class
-	// Listens for incoming messages
-	listen := func() {
-		closed := false
-
-		// When the function exits
-		defer func() {
-			// Clean up the want request
-			wr.Close()
-
-			// Close the channel of outgoing blocks
-			if !closed {
-				close(out)
-			}
-
-			// Inform the session of the cancelled keys
-			s.incoming <- op{
-				op:          opCancel,
-				keys:        remaining.Keys(),
-				wantRequest: wr,
-			}
-		}()
-
-	incomingListener:
-		for {
-			select {
-			// Receive incoming message
-			case msg := <-wr.Notifications():
-				// Inform the session that a message has been received
-				s.onMsgReceived(msg.IncomingMessage)
-
-				if closed {
-					break incomingListener
-				}
-
-				// Send the received blocks on the channel of outgoing blocks
-				for _, blk := range msg.Blks {
-					// Filter for blocks that are wanted by this session
-					if !msg.Wanted.Has(blk.Cid()) {
-						continue
-					}
-
-					select {
-					case out <- blk:
-					case <-ctx.Done():
-						return
-					case <-s.ctx.Done():
-						return
-					}
-
-					// Received all requested blocks so close the outgoing channel
-					remaining.Remove(blk.Cid())
-					if remaining.Len() == 0 {
-						close(out)
-						closed = true
-						break incomingListener
-
-						// TODO:
-						// We keep listening for incoming messages as the
-						// session wants to know about other peers that have
-						// the blocks for wants from this request, so it can
-						// query them for wants requested in future.
-						// If there are already several go-routines listening
-						// for incoming messages for earlier requests, we can
-						// exit this go-routine now.
-					}
-				}
-
-			case <-ctx.Done():
-				return
-			case <-s.ctx.Done():
-				return
-			}
-		}
-	}
-
 	for _, c := range keys {
 		log.Debugw("Bitswap.GetBlockRequest.Start", "cid", c)
-		remaining.Add(c)
 	}
 
 	// Add wanted keys to the session
@@ -295,9 +223,20 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	}
 
 	// Listen for incoming messages
-	go listen()
+	go wr.Run(s.ctx, ctx, s.receiveMessage)
 
-	return out, nil
+	return wr.Out, nil
+}
+
+func (s *Session) receiveMessage(msg *notifications.IncomingMessage) {
+	// Log the incoming message
+	s.logReceiveFrom(msg)
+
+	blks := make([]cid.Cid, 0, len(msg.Blks))
+	for _, b := range msg.Blks {
+		blks = append(blks, b.Cid())
+	}
+	s.blockingEnqueue(op{op: opReceive, p: msg.From, keys: blks, haves: msg.Haves, dontHaves: msg.DontHaves})
 }
 
 // SetBaseTickDelay changes the rate at which ticks happen.
@@ -318,17 +257,6 @@ func (s *Session) onWantsSent(p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.C
 // a set of cids (or all peers become unavailable)
 func (s *Session) onPeersExhausted(ks []cid.Cid) {
 	s.nonBlockingEnqueue(op{op: opBroadcast, keys: ks})
-}
-
-func (s *Session) onMsgReceived(msg *notifications.IncomingMessage) {
-	// Log the incoming message
-	s.logReceiveFrom(msg)
-
-	blks := make([]cid.Cid, 0, len(msg.Blks))
-	for _, b := range msg.Blks {
-		blks = append(blks, b.Cid())
-	}
-	s.blockingEnqueue(op{op: opReceive, p: msg.From, keys: blks, haves: msg.Haves, dontHaves: msg.DontHaves})
 }
 
 // We don't want to block the sessionWantSender if the incoming channel
@@ -376,7 +304,7 @@ func (s *Session) run(ctx context.Context) {
 				// Inform the session want sender that a message was received
 				s.sws.Update(oper.p, oper.keys, oper.haves, oper.dontHaves)
 				// Received blocks
-				s.handleReceive(oper.keys)
+				s.handleReceive(oper.keys, oper.haves)
 			case opCancel:
 				// Send cancels
 				s.sws.Cancel(oper.keys)
@@ -417,8 +345,6 @@ func (s *Session) handleShutdown() {
 	// Stop the timers
 	s.idleTick.Stop()
 	s.periodicSearchTimer.Stop()
-	// Shut down the session peer manager
-	s.sprm.Shutdown()
 	// Drain any remaining cancels from the queue
 	s.drainCancels()
 	// Shut down the sessionWantSender (blocks till cancels have been processed)
@@ -506,8 +432,15 @@ func (s *Session) findMorePeers(ctx context.Context, c cid.Cid) {
 	}(c)
 }
 
-// handleReceive is called when the session receives blocks from a peer
-func (s *Session) handleReceive(ks []cid.Cid) {
+// handleReceive is called when the session receives a message from a peer
+func (s *Session) handleReceive(ks []cid.Cid, haves []cid.Cid) {
+	// If the peer sent blocks or HAVEs then it will be added to
+	// the session, so we can stop broadcasting wants (we start
+	// sending wants to peers in the session directly)
+	if len(ks) > 0 || len(haves) > 0 {
+		s.peersDiscovered = true
+	}
+
 	// Record which blocks have been received and figure out the total latency
 	// for fetching the blocks
 	wanted, totalLatency := s.sw.BlocksReceived(ks)
@@ -534,7 +467,7 @@ func (s *Session) wantBlocks(newks []cid.Cid) {
 
 	// If we have discovered peers already, the sessionWantSender will
 	// send wants to them
-	if s.sprm.PeersDiscovered() {
+	if s.peersDiscovered {
 		return
 	}
 

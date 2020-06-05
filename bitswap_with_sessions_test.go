@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	bitswap "github.com/ipfs/go-bitswap"
+	"github.com/ipfs/go-bitswap"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	testinstance "github.com/ipfs/go-bitswap/testinstance"
 	tn "github.com/ipfs/go-bitswap/testnet"
@@ -73,7 +73,7 @@ func TestSessionBetweenPeers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	vnet := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(time.Millisecond))
+	vnet := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(20*time.Millisecond))
 	ig := testinstance.NewTestInstanceGenerator(vnet, nil, nil)
 	defer ig.Close()
 	bgen := blocksutil.NewBlockGenerator()
@@ -197,6 +197,9 @@ func TestFetchNotConnected(t *testing.T) {
 		cids = append(cids, blk.Cid())
 	}
 
+	// Wait a moment for provide to propagate
+	time.Sleep(20 * time.Millisecond)
+
 	// Request blocks with Peer B
 	// Note: Peer A and Peer B are not initially connected, so this tests
 	// that Peer B will search for and find Peer A
@@ -213,6 +216,7 @@ func TestFetchNotConnected(t *testing.T) {
 	for b := range ch {
 		got = append(got, b)
 	}
+
 	if err := assertBlockLists(got, blks); err != nil {
 		t.Fatal(err)
 	}
