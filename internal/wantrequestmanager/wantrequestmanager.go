@@ -40,16 +40,14 @@ type WantRequest struct {
 }
 
 type WantRequestManager struct {
-	ctx    context.Context
 	bstore blockstore.Blockstore
 	lk     sync.RWMutex
 	wrs    map[cid.Cid]map[*WantRequest]struct{}
 }
 
 // New creates a new WantRequestManager
-func New(ctx context.Context, bstore blockstore.Blockstore) *WantRequestManager {
+func New(bstore blockstore.Blockstore) *WantRequestManager {
 	return &WantRequestManager{
-		ctx:    ctx,
 		bstore: bstore,
 		wrs:    make(map[cid.Cid]map[*WantRequest]struct{}),
 	}

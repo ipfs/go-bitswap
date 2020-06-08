@@ -41,7 +41,6 @@ type PeerManagerFactory func(ctx context.Context, id uint64) bssession.SessionPe
 // SessionManager is responsible for creating, managing, and dispatching to
 // sessions.
 type SessionManager struct {
-	ctx                  context.Context
 	sessionFactory       SessionFactory
 	peerManagerFactory   PeerManagerFactory
 	blockPresenceManager *bsbpm.BlockPresenceManager
@@ -60,11 +59,10 @@ type SessionManager struct {
 }
 
 // New creates a new SessionManager.
-func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory PeerManagerFactory,
+func New(sessionFactory SessionFactory, peerManagerFactory PeerManagerFactory,
 	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, wrm *bswrm.WantRequestManager, self peer.ID) *SessionManager {
 
 	return &SessionManager{
-		ctx:                  ctx,
 		sessionFactory:       sessionFactory,
 		peerManagerFactory:   peerManagerFactory,
 		blockPresenceManager: blockPresenceManager,
