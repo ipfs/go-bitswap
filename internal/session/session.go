@@ -293,6 +293,8 @@ func (s *Session) run(ctx context.Context) {
 		// Session event received
 		case oper := <-s.incoming:
 			switch oper.op {
+
+			// Request for new wants
 			case opWant:
 				// Save a reference to the WantRequest
 				s.wantRequests[oper.wantRequest] = struct{}{}
@@ -300,11 +302,15 @@ func (s *Session) run(ctx context.Context) {
 				s.sws.Add(oper.keys)
 				// Register that the client wants the blocks
 				s.wantBlocks(oper.keys)
+
+			// Message received
 			case opReceive:
 				// Inform the session want sender that a message was received
 				s.sws.Update(oper.p, oper.keys, oper.haves, oper.dontHaves)
 				// Received blocks
 				s.handleReceive(oper.keys, oper.haves)
+
+			// Want request cancelled
 			case opCancel:
 				// Send cancels
 				s.sws.Cancel(oper.keys)
@@ -312,12 +318,17 @@ func (s *Session) run(ctx context.Context) {
 				s.sw.CancelPending(oper.keys)
 				// Clean up WantRequest
 				delete(s.wantRequests, oper.wantRequest)
+
+			// sesssionWantSender sent wants
 			case opWantsSent:
 				// Wants were sent to a peer
 				s.sw.WantsSent(oper.keys)
+
+			// sessionWantSender requests broadcast
 			case opBroadcast:
 				// Broadcast want-haves to all peers
 				s.broadcast(ctx, oper.keys)
+
 			default:
 				panic("unhandled operation")
 			}
