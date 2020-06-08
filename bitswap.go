@@ -152,8 +152,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
 	}
-	wrm = bswrm.New(ctx, bstore)
-	sm := bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, bpm, pm, wrm, network.Self())
+	wrm = bswrm.New(bstore)
+	sm := bssm.New(sessionFactory, sessionPeerManagerFactory, bpm, pm, wrm, network.Self())
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
 	bs := &Bitswap{
