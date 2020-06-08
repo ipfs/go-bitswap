@@ -2,14 +2,15 @@ package session
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
+	bswrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	delay "github.com/ipfs/go-ipfs-delay"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -86,7 +87,7 @@ const (
 
 type op struct {
 	op          opType
-	wantRequest *notifications.WantRequest
+	wantRequest *bswrm.WantRequest
 	p           peer.ID
 	keys        []cid.Cid
 	haves       []cid.Cid
@@ -120,11 +121,11 @@ type Session struct {
 	consecutiveTicks    int
 	initialSearchDelay  time.Duration
 	periodicSearchDelay delay.D
-	wantRequests        map[*notifications.WantRequest]struct{}
+	wantRequests        map[*bswrm.WantRequest]struct{}
 	peersDiscovered     bool
 
 	// identifiers
-	wrm  *notifications.WantRequestManager
+	wrm  *bswrm.WantRequestManager
 	uuid logging.Loggable
 	id   uint64
 
@@ -141,7 +142,7 @@ func New(
 	providerFinder ProviderFinder,
 	pm PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
-	wrm *notifications.WantRequestManager,
+	wrm *bswrm.WantRequestManager,
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D,
 	self peer.ID) *Session {
@@ -163,7 +164,7 @@ func New(
 		id:                  id,
 		initialSearchDelay:  initialSearchDelay,
 		periodicSearchDelay: periodicSearchDelay,
-		wantRequests:        make(map[*notifications.WantRequest]struct{}),
+		wantRequests:        make(map[*bswrm.WantRequest]struct{}),
 		self:                self,
 	}
 	s.sws = newSessionWantSender(id, pm, sprm, bpm, s.onWantsSent, s.onPeersExhausted)
@@ -182,8 +183,40 @@ func (s *Session) Shutdown() {
 }
 
 // GetBlock fetches a single block.
-func (s *Session) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, error) {
-	return bsgetter.SyncGetBlock(parent, k, s.GetBlocks)
+func (s *Session) GetBlock(reqctx context.Context, k cid.Cid) (blocks.Block, error) {
+	if !k.Defined() {
+		log.Error("undefined cid in GetBlock")
+		return nil, blockstore.ErrNotFound
+	}
+
+	gbctx, cancel := context.WithCancel(reqctx)
+	defer cancel()
+
+	// Call GetBlocks with the single key as an array
+	blkch, err := s.GetBlocks(gbctx, []cid.Cid{k})
+	if err != nil {
+		return nil, err
+	}
+
+	// Receive a single block from the channel
+	select {
+	case blk, ok := <-blkch:
+		if ok {
+			return blk, nil
+		}
+
+		// The channel should only be closed if the request context was
+		// cancelled
+		select {
+		case <-gbctx.Done():
+			return nil, gbctx.Err()
+		default:
+			return nil, errors.New("promise channel was closed")
+		}
+	case <-reqctx.Done():
+		return nil, reqctx.Err()
+	}
+
 }
 
 // GetBlocks fetches a set of blocks within the context of this session and
@@ -198,7 +231,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	}
 
 	// Use a WantRequest to listen for incoming messages pertaining to the keys
-	var wr *notifications.WantRequest
+	var wr *bswrm.WantRequest
 	var err error
 	wr, err = s.wrm.NewWantRequest(keys, func(ks []cid.Cid) {
 		s.incoming <- op{
@@ -228,7 +261,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	return wr.Out, nil
 }
 
-func (s *Session) receiveMessage(msg *notifications.IncomingMessage) {
+func (s *Session) receiveMessage(msg *bswrm.IncomingMessage) {
 	// Log the incoming message
 	s.logReceiveFrom(msg)
 
@@ -496,7 +529,7 @@ func (s *Session) broadcastWantHaves(wants []cid.Cid) {
 	s.pm.BroadcastWantHaves(s.id, wants)
 }
 
-func (s *Session) logReceiveFrom(msg *notifications.IncomingMessage) {
+func (s *Session) logReceiveFrom(msg *bswrm.IncomingMessage) {
 	// Save some CPU cycles if log level is higher than debug
 	if ce := sflog.Check(zap.DebugLevel, "Bitswap <- rcv message"); ce == nil {
 		return

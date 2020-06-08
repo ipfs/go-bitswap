@@ -1,4 +1,4 @@
-package notifications
+package wrm
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type IncomingMessage struct {
 	DontHaves []cid.Cid
 }
 
-type notification struct {
+type messageWanted struct {
 	*IncomingMessage
 	Wanted *cid.Set
 }
@@ -33,7 +33,7 @@ type WantRequest struct {
 	Out      chan blocks.Block
 	wrm      *WantRequestManager
 	cancelFn func([]cid.Cid)
-	ntfns    chan *notification
+	messages chan *messageWanted
 	lk       sync.RWMutex
 	ks       map[cid.Cid]ReqKeyState
 	closed   bool
@@ -219,7 +219,7 @@ func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.C
 	wr := &WantRequest{
 		wrm:      wrm,
 		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
-		ntfns:    make(chan *notification, len(ks)),
+		messages: make(chan *messageWanted, len(ks)),
 		cancelFn: cancelFn,
 		Out:      make(chan blocks.Block),
 	}
@@ -232,7 +232,7 @@ func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.C
 	return wr
 }
 
-// Called when a incoming message arrives that has blocks / HAVEs / DONT_HAVEs
+// Called when an incoming message arrives that has blocks / HAVEs / DONT_HAVEs
 // for the keys in this WantRequest
 func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 	wr.lk.Lock()
@@ -255,8 +255,8 @@ func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 
 	wr.lk.Unlock()
 
-	// Send notification with the message and the set of cids of wanted blocks
-	wr.ntfns <- &notification{fmsg, wanted}
+	// Send the message and the set of cids of wanted blocks
+	wr.messages <- &messageWanted{fmsg, wanted}
 
 	return wanted
 }
@@ -341,7 +341,7 @@ func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receive
 	for {
 		select {
 		// Receive incoming message
-		case msg := <-wr.ntfns:
+		case msg := <-wr.messages:
 			// Inform the session that a message has been received
 			receiveMessage(msg.IncomingMessage)
 

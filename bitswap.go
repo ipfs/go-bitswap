@@ -13,14 +13,13 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	decision "github.com/ipfs/go-bitswap/internal/decision"
-	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
 	bsmq "github.com/ipfs/go-bitswap/internal/messagequeue"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bspqm "github.com/ipfs/go-bitswap/internal/providerquerymanager"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	bssm "github.com/ipfs/go-bitswap/internal/sessionmanager"
 	bsspm "github.com/ipfs/go-bitswap/internal/sessionpeermanager"
+	bswrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	blocks "github.com/ipfs/go-block-format"
@@ -124,10 +123,10 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	// onDontHaveTimeout is called when a want-block is sent to a peer that
 	// has an old version of Bitswap that doesn't support DONT_HAVE messages,
 	// or when no response is received within a timeout.
-	var notif *notifications.WantRequestManager
+	var wrm *bswrm.WantRequestManager
 	onDontHaveTimeout := func(p peer.ID, dontHaves []cid.Cid) {
 		// Simulate a message arriving with DONT_HAVEs
-		notif.PublishToSessions(&notifications.IncomingMessage{From: p, DontHaves: dontHaves})
+		wrm.PublishToSessions(&bswrm.IncomingMessage{From: p, DontHaves: dontHaves})
 	}
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
 		return bsmq.New(ctx, p, network, onDontHaveTimeout)
@@ -144,7 +143,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		spm bssession.SessionPeerManager,
 		pm bssession.PeerManager,
 		bpm *bsbpm.BlockPresenceManager,
-		wrm *notifications.WantRequestManager,
+		wrm *bswrm.WantRequestManager,
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D,
 		self peer.ID) bssm.Session {
@@ -153,8 +152,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
 	}
-	notif = notifications.New(ctx, bstore)
-	sm := bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
+	wrm = bswrm.New(ctx, bstore)
+	sm := bssm.New(ctx, sessionFactory, sessionPeerManagerFactory, bpm, pm, wrm, network.Self())
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
 	bs := &Bitswap{
@@ -167,7 +166,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		pm:               pm,
 		pqm:              pqm,
 		sm:               sm,
-		notif:            notif,
+		wrm:              wrm,
 		bpm:              bpm,
 		counters:         new(counters),
 		dupMetric:        dupHist,
@@ -220,7 +219,7 @@ type Bitswap struct {
 	blockstore blockstore.Blockstore
 
 	// manages channels of outgoing blocks for sessions
-	notif *notifications.WantRequestManager
+	wrm *bswrm.WantRequestManager
 
 	// keeps track of which peers have / dont have each block
 	bpm *bsbpm.BlockPresenceManager
@@ -266,12 +265,6 @@ type counters struct {
 	messagesRecvd  uint64
 }
 
-// GetBlock attempts to retrieve a particular block from peers within the
-// deadline enforced by the context.
-func (bs *Bitswap) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, error) {
-	return bsgetter.SyncGetBlock(parent, k, bs.GetBlocks)
-}
-
 // WantlistForPeer returns the currently understood list of blocks requested by a
 // given peer.
 func (bs *Bitswap) WantlistForPeer(p peer.ID) []cid.Cid {
@@ -286,6 +279,13 @@ func (bs *Bitswap) WantlistForPeer(p peer.ID) []cid.Cid {
 // with a given peer.
 func (bs *Bitswap) LedgerForPeer(p peer.ID) *decision.Receipt {
 	return bs.engine.LedgerForPeer(p)
+}
+
+// GetBlock attempts to retrieve a particular block from peers within the
+// deadline enforced by the context.
+func (bs *Bitswap) GetBlock(ctx context.Context, k cid.Cid) (blocks.Block, error) {
+	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
+	return session.GetBlock(ctx, k)
 }
 
 // GetBlocks returns a channel where the caller may receive blocks that
@@ -317,7 +317,7 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 	default:
 	}
 
-	wantedKs, err := bs.notif.PublishToSessions(&notifications.IncomingMessage{
+	wantedKs, err := bs.wrm.PublishToSessions(&bswrm.IncomingMessage{
 		From:      from,
 		Blks:      blks,
 		Haves:     haves,

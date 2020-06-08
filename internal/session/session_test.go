@@ -7,11 +7,11 @@ import (
 	"time"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	bsspm "github.com/ipfs/go-bitswap/internal/sessionpeermanager"
 	"github.com/ipfs/go-bitswap/internal/testutil"
+	wrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
 	cid "github.com/ipfs/go-cid"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -123,7 +123,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -219,7 +219,7 @@ func TestSessionFindMorePeers(t *testing.T) {
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -294,7 +294,7 @@ func TestSessionOnPeersExhausted(t *testing.T) {
 
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -339,7 +339,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -452,7 +452,7 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -502,7 +502,7 @@ func TestSessionOnShutdownCalled(t *testing.T) {
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
@@ -531,7 +531,7 @@ func TestSessionReceiveMessageAfterCtxCancel(t *testing.T) {
 
 	sim := bssim.New()
 	bpm := bsbpm.New()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()

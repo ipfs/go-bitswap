@@ -9,11 +9,11 @@ import (
 	delay "github.com/ipfs/go-ipfs-delay"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	"github.com/ipfs/go-bitswap/internal/testutil"
+	wrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -27,7 +27,7 @@ type fakeSession struct {
 	id         uint64
 	pm         *fakeSesPeerManager
 	sm         bssession.SessionManager
-	notif      notifications.PubSub
+	notif      wrm.PubSub
 }
 
 func (*fakeSession) GetBlock(context.Context, cid.Cid) (blocks.Block, error) {
@@ -85,7 +85,7 @@ func sessionFactory(ctx context.Context,
 	sim *bssim.SessionInterestManager,
 	pm bssession.PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
-	notif notifications.PubSub,
+	notif wrm.PubSub,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D,
 	self peer.ID) Session {
@@ -110,7 +110,7 @@ func TestReceiveFrom(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	sim := bssim.New()
 	bpm := bsbpm.New()
@@ -157,7 +157,7 @@ func TestReceiveBlocksWhenManagerShutdown(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	sim := bssim.New()
 	bpm := bsbpm.New()
@@ -191,7 +191,7 @@ func TestReceiveBlocksWhenManagerShutdown(t *testing.T) {
 func TestReceiveBlocksWhenSessionContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	sim := bssim.New()
 	bpm := bsbpm.New()
@@ -227,7 +227,7 @@ func TestShutdown(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	notif := notifications.New()
+	notif := wrm.New()
 	defer notif.Shutdown()
 	sim := bssim.New()
 	bpm := bsbpm.New()

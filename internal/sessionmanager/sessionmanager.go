@@ -8,8 +8,9 @@ import (
 	delay "github.com/ipfs/go-ipfs-delay"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
+	bswrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
+	wrm "github.com/ipfs/go-bitswap/internal/wantrequestmanager"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -18,7 +19,6 @@ import (
 type Session interface {
 	exchange.Fetcher
 	ID() uint64
-	// ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
 	Shutdown()
 }
 
@@ -30,7 +30,7 @@ type SessionFactory func(
 	sprm bssession.SessionPeerManager,
 	pm bssession.PeerManager,
 	bpm *bsbpm.BlockPresenceManager,
-	notif *notifications.WantRequestManager,
+	wrm *bswrm.WantRequestManager,
 	provSearchDelay time.Duration,
 	rebroadcastDelay delay.D,
 	self peer.ID) Session
@@ -46,7 +46,7 @@ type SessionManager struct {
 	peerManagerFactory   PeerManagerFactory
 	blockPresenceManager *bsbpm.BlockPresenceManager
 	peerManager          bssession.PeerManager
-	notif                *notifications.WantRequestManager
+	wrm                  *wrm.WantRequestManager
 
 	// Sessions
 	sessLk   sync.RWMutex
@@ -61,7 +61,7 @@ type SessionManager struct {
 
 // New creates a new SessionManager.
 func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory PeerManagerFactory,
-	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, notif *notifications.WantRequestManager, self peer.ID) *SessionManager {
+	blockPresenceManager *bsbpm.BlockPresenceManager, peerManager bssession.PeerManager, wrm *bswrm.WantRequestManager, self peer.ID) *SessionManager {
 
 	return &SessionManager{
 		ctx:                  ctx,
@@ -69,7 +69,7 @@ func New(ctx context.Context, sessionFactory SessionFactory, peerManagerFactory 
 		peerManagerFactory:   peerManagerFactory,
 		blockPresenceManager: blockPresenceManager,
 		peerManager:          peerManager,
-		notif:                notif,
+		wrm:                  wrm,
 		sessions:             make(map[uint64]Session),
 		self:                 self,
 	}
@@ -83,7 +83,7 @@ func (sm *SessionManager) NewSession(ctx context.Context,
 	id := sm.GetNextSessionID()
 
 	pm := sm.peerManagerFactory(ctx, id)
-	session := sm.sessionFactory(ctx, sm, id, pm, sm.peerManager, sm.blockPresenceManager, sm.notif, provSearchDelay, rebroadcastDelay, sm.self)
+	session := sm.sessionFactory(ctx, sm, id, pm, sm.peerManager, sm.blockPresenceManager, sm.wrm, provSearchDelay, rebroadcastDelay, sm.self)
 
 	sm.sessLk.Lock()
 	if sm.sessions == nil { // check if SessionManager was shutdown
