@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -83,7 +84,7 @@ func TestAddingAndRemovingPeers(t *testing.T) {
 
 	tp := testutil.GeneratePeers(6)
 	self, peer1, peer2, peer3, peer4, peer5 := tp[0], tp[1], tp[2], tp[3], tp[4], tp[5]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	peerManager.Connected(peer1)
 	peerManager.Connected(peer2)
@@ -127,7 +128,7 @@ func TestBroadcastOnConnect(t *testing.T) {
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(2)
 	self, peer1 := tp[0], tp[1]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	cids := testutil.GenerateCids(2)
 	peerManager.BroadcastWantHaves(sid, cids)
@@ -149,7 +150,7 @@ func TestBroadcastWantHaves(t *testing.T) {
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(3)
 	self, peer1, peer2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	cids := testutil.GenerateCids(3)
 
@@ -191,7 +192,7 @@ func TestSendWants(t *testing.T) {
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(2)
 	self, peer1 := tp[0], tp[1]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 	cids := testutil.GenerateCids(4)
 
 	peerManager.Connected(peer1)
@@ -226,7 +227,7 @@ func TestSendCancels(t *testing.T) {
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(3)
 	self, peer1, peer2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 	cids := testutil.GenerateCids(4)
 
 	// Connect to peer1 and peer2
@@ -286,7 +287,7 @@ func TestSessionRegistration(t *testing.T) {
 
 	tp := testutil.GeneratePeers(3)
 	self, p1, p2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	id := uint64(1)
 	s := newSess(id)
@@ -348,7 +349,7 @@ func BenchmarkPeerManager(b *testing.B) {
 
 	self := testutil.GeneratePeers(1)[0]
 	peers := testutil.GeneratePeers(500)
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	// Create a bunch of connections
 	connected := 0

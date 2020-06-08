@@ -695,12 +695,59 @@ func TestPWMMultiSessionCancelBcstAndWantBlock(t *testing.T) {
 		t.Fatal("wrong number of cancels sent")
 	}
 
-	// Cancel cid for session 2
+	// Cancel cid for session 1
 	pwm.sendCancels(sid1, cids1)
 
 	// Expect cancel to be sent now
 	if len(pq0.cancels) != 1 {
 		t.Fatal("wrong number of cancels sent")
+	}
+}
+
+func TestPWMMultiSessionUnwanted(t *testing.T) {
+	pwm := newPeerWantManager(&gauge{})
+
+	sid1 := uint64(1)
+	sid2 := uint64(2)
+	peers := testutil.GeneratePeers(1)
+	cids := testutil.GenerateCids(2)
+	cid0 := cids[:1]
+
+	// Add peer
+	p0 := peers[0]
+	pq0 := &mockPQ{}
+	pwm.addPeer(pq0, p0)
+
+	if len(pwm.unwanted(cids)) != 2 {
+		t.Fatal("wrong unwanted count")
+	}
+
+	// broadcast cid0 s1
+	pwm.broadcastWantHaves(sid1, cid0)
+
+	if len(pwm.unwanted(cids)) != 1 {
+		t.Fatal("wrong unwanted count")
+	}
+
+	// want-block cid0 s2
+	pwm.sendWants(sid2, p0, cid0, nil)
+
+	if len(pwm.unwanted(cids)) != 1 {
+		t.Fatal("wrong unwanted count")
+	}
+
+	// Cancel cid for session 2
+	pwm.sendCancels(sid2, cid0)
+
+	if len(pwm.unwanted(cids)) != 1 {
+		t.Fatal("wrong unwanted count")
+	}
+
+	// Cancel cid for session 1
+	pwm.sendCancels(sid1, cid0)
+
+	if len(pwm.unwanted(cids)) != 2 {
+		t.Fatal("wrong unwanted count")
 	}
 }
 

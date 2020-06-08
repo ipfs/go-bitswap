@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -41,20 +40,18 @@ type WantRequest struct {
 }
 
 type WantRequestManager struct {
-	ctx              context.Context
-	bstore           blockstore.Blockstore
-	blockPresenceMgr *bsbpm.BlockPresenceManager
-	lk               sync.RWMutex
-	wrs              map[cid.Cid]map[*WantRequest]struct{}
+	ctx    context.Context
+	bstore blockstore.Blockstore
+	lk     sync.RWMutex
+	wrs    map[cid.Cid]map[*WantRequest]struct{}
 }
 
 // New creates a new WantRequestManager
-func New(ctx context.Context, bstore blockstore.Blockstore, bpm *bsbpm.BlockPresenceManager) *WantRequestManager {
+func New(ctx context.Context, bstore blockstore.Blockstore) *WantRequestManager {
 	return &WantRequestManager{
-		ctx:              ctx,
-		bstore:           bstore,
-		blockPresenceMgr: bpm,
-		wrs:              make(map[cid.Cid]map[*WantRequest]struct{}),
+		ctx:    ctx,
+		bstore: bstore,
+		wrs:    make(map[cid.Cid]map[*WantRequest]struct{}),
 	}
 }
 
@@ -134,11 +131,6 @@ func (wrm *WantRequestManager) PublishToSessions(msg *IncomingMessage) (*cid.Set
 				return nil, err
 			}
 		}
-	}
-
-	if !local {
-		// Inform the BlockPresenceManager of any HAVEs / DONT_HAVEs
-		wrm.blockPresenceMgr.ReceiveFrom(msg.From, msg.Haves, msg.DontHaves)
 	}
 
 	// Publish the message to WantRequests that are interested in the

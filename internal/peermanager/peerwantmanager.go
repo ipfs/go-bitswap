@@ -337,6 +337,24 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 	}
 }
 
+// unwanted filters the keys for those that are no longer wanted by any session
+func (pwm *peerWantManager) unwanted(ks []cid.Cid) []cid.Cid {
+	unw := make([]cid.Cid, 0, len(ks))
+	for _, c := range ks {
+		if pwm.broadcastWants.has(c) {
+			continue
+		}
+
+		if _, ok := pwm.wantPeers[c]; ok {
+			continue
+		}
+
+		unw = append(unw, c)
+	}
+
+	return unw
+}
+
 // Add the peer to the list of peers that have sent a want with the cid
 func (pwm *peerWantManager) reverseIndexAdd(c cid.Cid, p peer.ID) {
 	peers, ok := pwm.wantPeers[c]

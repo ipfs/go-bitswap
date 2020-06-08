@@ -7,6 +7,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-metrics-interface"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -41,6 +42,7 @@ type PeerManager struct {
 
 	createPeerQueue PeerQueueFactory
 	ctx             context.Context
+	bpm             *bsbpm.BlockPresenceManager
 
 	psLk         sync.RWMutex
 	sessions     map[uint64]Session
@@ -50,7 +52,7 @@ type PeerManager struct {
 }
 
 // New creates a new PeerManager, given a context and a peerQueueFactory.
-func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *PeerManager {
+func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID, bpm *bsbpm.BlockPresenceManager) *PeerManager {
 	wantGauge := metrics.NewCtx(ctx, "wantlist_total", "Number of items in wantlist.").Gauge()
 	return &PeerManager{
 		peerQueues:      make(map[peer.ID]PeerQueue),
@@ -58,6 +60,7 @@ func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *P
 		createPeerQueue: createPeerQueue,
 		ctx:             ctx,
 		self:            self,
+		bpm:             bpm,
 
 		sessions:     make(map[uint64]Session),
 		peerSessions: make(map[peer.ID]map[uint64]struct{}),
@@ -166,8 +169,8 @@ func (pm *PeerManager) SendCancels(sid uint64, cancelKs []cid.Cid) {
 
 	// Free up block presence tracking for keys that no session is interested
 	// in anymore
-	// TODO
-	// wrm.blockPresenceMgr.RemoveKeys(cancels)
+	unwanted := pm.pwm.unwanted(cancelKs)
+	pm.bpm.RemoveKeys(unwanted)
 }
 
 // CurrentWants returns the list of pending wants (both want-haves and want-blocks).
