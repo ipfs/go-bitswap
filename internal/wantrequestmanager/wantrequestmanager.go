@@ -1,4 +1,4 @@
-package wrm
+package wantrequestmanager
 
 import (
 	"context"
