@@ -82,12 +82,6 @@ func (fpf *fakeProviderFinder) FindProvidersAsync(ctx context.Context, k cid.Cid
 type bcstWantReq struct {
 	cids []cid.Cid
 }
-type wantReq struct {
-	sid        uint64
-	p          peer.ID
-	wantBlocks []cid.Cid
-	wantHaves  []cid.Cid
-}
 
 type fakePeerManager struct {
 	bcstWantReqs chan bcstWantReq
@@ -166,10 +160,13 @@ func TestSessionGetBlocks(t *testing.T) {
 	peers := testutil.GeneratePeers(5)
 	for i, p := range peers {
 		blk := blks[testutil.IndexOf(blks, receivedWantReq.cids[i])]
-		wrm.PublishToSessions(&bswrm.IncomingMessage{
+		_, err := wrm.PublishToSessions(&bswrm.IncomingMessage{
 			From:  p,
 			Haves: []cid.Cid{blk.Cid()},
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -180,18 +177,24 @@ func TestSessionGetBlocks(t *testing.T) {
 	}
 
 	// Simulate receiving DONT_HAVE for a CID
-	wrm.PublishToSessions(&bswrm.IncomingMessage{
+	_, err = wrm.PublishToSessions(&bswrm.IncomingMessage{
 		From:      peers[0],
 		DontHaves: []cid.Cid{blks[0].Cid()},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	time.Sleep(10 * time.Millisecond)
 
 	// Simulate receiving block for a CID
-	wrm.PublishToSessions(&bswrm.IncomingMessage{
+	_, err = wrm.PublishToSessions(&bswrm.IncomingMessage{
 		From: peers[1],
 		Blks: []blocks.Block{blks[0]},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -259,10 +262,13 @@ func TestSessionFindMorePeers(t *testing.T) {
 	p := testutil.GeneratePeers(1)[0]
 
 	// Simulate receiving block for a CID
-	wrm.PublishToSessions(&bswrm.IncomingMessage{
+	_, err = wrm.PublishToSessions(&bswrm.IncomingMessage{
 		From: p,
 		Blks: []blocks.Block{blks[0]},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// The session should now time out waiting for a response and broadcast
 	// want-haves again
@@ -557,10 +563,13 @@ func TestSessionReceiveMessageAfterCtxCancel(t *testing.T) {
 
 	// Simulate receiving block for a CID
 	p := testutil.GeneratePeers(1)[0]
-	wrm.PublishToSessions(&bswrm.IncomingMessage{
+	_, err = wrm.PublishToSessions(&bswrm.IncomingMessage{
 		From: p,
 		Blks: []blocks.Block{blks[0]},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	time.Sleep(5 * time.Millisecond)
 

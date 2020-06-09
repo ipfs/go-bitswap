@@ -126,7 +126,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	var wrm *bswrm.WantRequestManager
 	onDontHaveTimeout := func(p peer.ID, dontHaves []cid.Cid) {
 		// Simulate a message arriving with DONT_HAVEs
-		wrm.PublishToSessions(&bswrm.IncomingMessage{From: p, DontHaves: dontHaves})
+		_, _ = wrm.PublishToSessions(&bswrm.IncomingMessage{From: p, DontHaves: dontHaves})
 	}
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
 		return bsmq.New(ctx, p, network, onDontHaveTimeout)

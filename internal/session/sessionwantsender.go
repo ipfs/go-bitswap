@@ -205,14 +205,10 @@ func (sws *sessionWantSender) drainCancels() []cid.Cid {
 		select {
 		case chng := <-sws.changes:
 			// Add cancels because of a request being cancelled
-			for _, c := range chng.cancel {
-				cancels = append(cancels, c)
-			}
+			cancels = append(cancels, chng.cancel...)
 			// Add cancels for each received block
 			if chng.update.from != "" {
-				for _, c := range chng.update.ks {
-					cancels = append(cancels, c)
-				}
+				cancels = append(cancels, chng.update.ks...)
 			}
 		default:
 			return cancels

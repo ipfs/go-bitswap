@@ -21,9 +21,6 @@ import (
 )
 
 type fakeSession struct {
-	ks             []cid.Cid
-	wantBlocks     []cid.Cid
-	wantHaves      []cid.Cid
 	id             uint64
 	lk             sync.Mutex
 	shutdownCalled bool
@@ -69,7 +66,6 @@ func (*fakePeerManager) UnregisterSession(uint64)                        {}
 func (*fakePeerManager) SendWants(uint64, peer.ID, []cid.Cid, []cid.Cid) {}
 func (*fakePeerManager) BroadcastWantHaves(uint64, []cid.Cid)            {}
 func (fpm *fakePeerManager) SendCancels(sid uint64, cancels []cid.Cid)   {}
-func (fpm *fakePeerManager) cancelled() []cid.Cid                        { return nil }
 
 func sessionFactory(
 	ctx context.Context,

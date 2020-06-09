@@ -7,7 +7,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 type IncomingMessage struct {
@@ -177,7 +177,7 @@ func (wrm *WantRequestManager) publish(msg *IncomingMessage) *cid.Set {
 		wrWanted := wr.receiveMessage(msg)
 
 		// Record which WantRequests wanted the blocks in the message
-		wrWanted.ForEach(func(c cid.Cid) error {
+		_ = wrWanted.ForEach(func(c cid.Cid) error {
 			wanted.Add(c)
 			return nil
 		})
