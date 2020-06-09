@@ -100,19 +100,23 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	bstore := createBlockstore()
 
 	p0 := testutil.GeneratePeers(1)[0]
-	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
+	blks := testutil.GenerateBlocksOfSize(5, 8*1024)
 	cids := []cid.Cid{}
 	for _, b := range blks {
 		cids = append(cids, b.Cid())
 	}
 
-	incomingBlks := blks[:1]
-	haves := cids[1:2]
-	dontHaves := cids[2:3]
+	// Incoming blocks, HAVEs and DONT_HAVEs
+	incomingBlks := blks[:2]
+	haves := cids[2:4]
+	dontHaves := cids[4:6]
+
+	// Only interested in one of each
+	wants := []cid.Cid{cids[0], cids[2], cids[4]}
 
 	wrm := New(bstore)
 
-	wr, err := wrm.NewWantRequest(cids, func([]cid.Cid) {})
+	wr, err := wrm.NewWantRequest(wants, func([]cid.Cid) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,11 +127,16 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 		incoming <- msg
 	})
 
-	// Read blocks from the Out channel so the run loop doesn't get stuck
-	go func() {
-		for range wr.Out {
-		}
-	}()
+	// Add another WantRequest that is not interested in the CIDs
+	// (shouldn't receive anything)
+	wrOther, err := wrm.NewWantRequest(testutil.GenerateCids(2), func([]cid.Cid) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherIncoming := make(chan *IncomingMessage)
+	go wrOther.Run(ctx, ctx, func(msg *IncomingMessage) {
+		otherIncoming <- msg
+	})
 
 	// Receive the incoming message
 	receiveMessage := func() *IncomingMessage {
@@ -149,6 +158,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Only interested in first block
 	rcvd := receiveMessage()
 	if len(rcvd.Blks) != 1 || !testutil.ContainsBlock(rcvd.Blks, incomingBlks[0]) {
 		t.Fatal("expected to receive block")
@@ -163,8 +173,9 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Only interested in first HAVE
 	rcvd = receiveMessage()
-	if !testutil.MatchKeysIgnoreOrder(rcvd.Haves, haves) {
+	if !testutil.MatchKeysIgnoreOrder(rcvd.Haves, haves[:1]) {
 		t.Fatal("expected to receive have")
 	}
 
@@ -177,9 +188,16 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Only interested in first DONT_HAVE
 	rcvd = receiveMessage()
-	if !testutil.MatchKeysIgnoreOrder(rcvd.DontHaves, dontHaves) {
+	if !testutil.MatchKeysIgnoreOrder(rcvd.DontHaves, dontHaves[:1]) {
 		t.Fatal("expected to receive dontHave")
+	}
+
+	// Other WantRequest is not interested in any of the keys so should not
+	// receive anything
+	if len(otherIncoming) > 0 {
+		t.Fatal("expected other WantRequest not to receive anything")
 	}
 }
 
@@ -247,5 +265,209 @@ func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 	err = wg.Wait()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPublishWanted(t *testing.T) {
+	ctx := context.Background()
+	bstore := createBlockstore()
+
+	p0 := testutil.GeneratePeers(1)[0]
+	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
+	cids := []cid.Cid{}
+	for _, b := range blks {
+		cids = append(cids, b.Cid())
+	}
+
+	wrm := New(bstore)
+
+	wr, err := wrm.NewWantRequest(cids, func([]cid.Cid) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {})
+
+	// Publish first block
+	wanted, err := wrm.PublishToSessions(&IncomingMessage{
+		From: p0,
+		Blks: blks[:1],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Expect first block to be wanted
+	if wanted.Len() != 1 {
+		t.Fatal("expected block to be wanted")
+	}
+
+	// Publish first two blocks
+	wanted, err = wrm.PublishToSessions(&IncomingMessage{
+		From: p0,
+		Blks: blks[:2],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Expect only second block to be wanted
+	if wanted.Len() != 1 {
+		t.Fatal("expected one of two blocks to be wanted")
+	}
+}
+
+func TestWantRequestCancelled(t *testing.T) {
+	ctx := context.Background()
+	reqctx, cancel := context.WithCancel(ctx)
+	testCancel(t, ctx, reqctx, cancel)
+}
+
+func TestSessionCancelled(t *testing.T) {
+	ctx := context.Background()
+	sessctx, cancel := context.WithCancel(ctx)
+	testCancel(t, sessctx, ctx, cancel)
+}
+
+func testCancel(t *testing.T, sessctx context.Context, reqctx context.Context, cancelfn func()) {
+	bstore := createBlockstore()
+
+	p0 := testutil.GeneratePeers(1)[0]
+	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
+	cids := []cid.Cid{}
+	for _, b := range blks {
+		cids = append(cids, b.Cid())
+	}
+
+	wrm := New(bstore)
+
+	cancelled := make(chan []cid.Cid)
+	wr, err := wrm.NewWantRequest(cids, func(cancels []cid.Cid) {
+		cancelled <- cancels
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Pop incoming messages
+	go wr.Run(sessctx, reqctx, func(msg *IncomingMessage) {})
+	// Pop outgoing blocks
+	go func() {
+		for range wr.Out {
+		}
+	}()
+
+	// Publish first block
+	_, err = wrm.PublishToSessions(&IncomingMessage{
+		From: p0,
+		Blks: blks[:1],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Cancel context
+	cancelfn()
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Should call cancel function with remaining blocks
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case cancels := <-cancelled:
+		if len(cancels) != len(blks)-1 {
+			t.Fatal("received wrong number of cancels", len(cancels))
+		}
+	}
+
+	// Should close outgoing channel
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case _, ok := <-wr.Out:
+		if ok {
+			t.Fatal("expected channel to be closed")
+		}
+	}
+}
+
+func TestAllBlocksReceived(t *testing.T) {
+	ctx := context.Background()
+	bstore := createBlockstore()
+
+	p0 := testutil.GeneratePeers(1)[0]
+	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
+	cids := []cid.Cid{}
+	for _, b := range blks {
+		cids = append(cids, b.Cid())
+	}
+
+	wrm := New(bstore)
+
+	cancelled := make(chan []cid.Cid)
+	wr, err := wrm.NewWantRequest(cids, func(cancels []cid.Cid) {
+		cancelled <- cancels
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Listen for incoming messages
+	incoming := make(chan *IncomingMessage)
+	reqctx, cancel := context.WithCancel(ctx)
+	go wr.Run(ctx, reqctx, func(msg *IncomingMessage) {
+		incoming <- msg
+	})
+
+	// Publish all blocks
+	_, err = wrm.PublishToSessions(&IncomingMessage{
+		From: p0,
+		Blks: blks,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should receiving incoming message
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case <-incoming:
+	}
+
+	// Should receive blocks on outgoing channel then it should be closed
+	rcvd := 0
+	for range wr.Out {
+		rcvd++
+	}
+	if rcvd != len(blks) {
+		t.Fatal("expected to send all blocks on outgoing channel")
+	}
+
+	// Publish another message
+	_, err = wrm.PublishToSessions(&IncomingMessage{
+		From: p0,
+		Blks: blks,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should receive message even though all blocks have already been received
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case <-incoming:
+	}
+
+	// Cancel request
+	cancel()
+
+	time.Sleep(10 * time.Millisecond)
+
+	// No remaining blocks so expect want request cancel function not to be
+	// called
+	if len(cancelled) > 0 {
+		t.Fatal("expected no cancels")
 	}
 }
