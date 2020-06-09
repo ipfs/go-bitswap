@@ -22,23 +22,13 @@ type messageWanted struct {
 	Wanted *cid.Set
 }
 
-type ReqKeyState bool
-
-const (
-	ReqKeyWanted   ReqKeyState = true
-	ReqKeyUnwanted ReqKeyState = false
-)
-
-type WantRequest struct {
-	Out      chan blocks.Block
-	wrm      *WantRequestManager
-	cancelFn func([]cid.Cid)
-	messages chan *messageWanted
-	lk       sync.RWMutex
-	ks       map[cid.Cid]ReqKeyState
-	closed   bool
-}
-
+//
+// The WantRequestManager keeps track of WantRequests.
+// When the client calls Session.WantBlocks(keys), the session creates a
+// WantRequest with those keys on the WantRequestManager.
+// When a message arrives Bitswap calls PublishToSessions and the
+// WantRequestManager informs all Sessions that are interested in the message.
+//
 type WantRequestManager struct {
 	bstore blockstore.Blockstore
 	lk     sync.RWMutex
@@ -156,6 +146,7 @@ func (wrm *WantRequestManager) wantedBlocks(blks []blocks.Block) []blocks.Block 
 	return wanted
 }
 
+// publish the message to all WantRequests that are interested in it
 func (wrm *WantRequestManager) publish(msg *IncomingMessage) *cid.Set {
 	wrm.lk.RLock()
 
@@ -230,6 +221,35 @@ func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.C
 	return wr
 }
 
+// Keys are in the wanted state until the block is received and they change to
+// the unwanted state.
+type ReqKeyState bool
+
+const (
+	ReqKeyWanted   ReqKeyState = true
+	ReqKeyUnwanted ReqKeyState = false
+)
+
+// A WantRequest keeps track of all the wants for a Session.GetBlocks(keys)
+// call.
+type WantRequest struct {
+	// channel of received blocks
+	Out chan blocks.Block
+	// reference to the WantRequestManager
+	wrm *WantRequestManager
+	// cancelFn is called when the WantRequest is cancelled, with the remaining
+	// keys (for which blocks have not yet been received)
+	cancelFn func([]cid.Cid)
+	// messages is a channel of incoming messages received by Bitswap
+	messages chan *messageWanted
+	lk       sync.RWMutex
+	// the keys this WantRequest is interested in and their state:
+	// wanted / unwanted
+	ks map[cid.Cid]ReqKeyState
+	// closed indicates whether the WantRequest has been cancelled
+	closed bool
+}
+
 // Called when an incoming message arrives that has blocks / HAVEs / DONT_HAVEs
 // for the keys in this WantRequest
 func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
@@ -243,7 +263,7 @@ func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 
 	// Filter incoming message for blocks / HAVEs / DONT_HAVEs that this
 	// particular WantRequest is interested in
-	blks, wanted := wr.filterBlocks(msg.Blks)
+	blks, wanted := wr.receiveBlocks(msg.Blks)
 	fmsg := &IncomingMessage{
 		From:      msg.From,
 		Blks:      blks,
@@ -259,7 +279,10 @@ func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 	return wanted
 }
 
-func (wr *WantRequest) filterBlocks(blks []blocks.Block) ([]blocks.Block, *cid.Set) {
+// receiveBlocks marks the corresponding wants as unwanted, and returns
+// - the list of blocks that this WantRequest was interested in
+// - the set of CIDs of those blocks that the WantRequest hadn't already received
+func (wr *WantRequest) receiveBlocks(blks []blocks.Block) ([]blocks.Block, *cid.Set) {
 	// Filter for blocks the WantRequest is interested in
 	filtered := make([]blocks.Block, 0, len(blks))
 
@@ -283,6 +306,7 @@ func (wr *WantRequest) filterBlocks(blks []blocks.Block) ([]blocks.Block, *cid.S
 	return filtered, wanted
 }
 
+// filterKeys returns the keys that this WantRequest is interested in
 func (wr *WantRequest) filterKeys(ks []cid.Cid) []cid.Cid {
 	filtered := make([]cid.Cid, 0, len(ks))
 	for _, c := range ks {
@@ -293,6 +317,8 @@ func (wr *WantRequest) filterKeys(ks []cid.Cid) []cid.Cid {
 	return filtered
 }
 
+// Indicates whether the WantRequest is still waiting to receive the block
+// corresponding to the given key
 func (wr *WantRequest) wants(c cid.Cid) bool {
 	wr.lk.RLock()
 	defer wr.lk.RUnlock()
@@ -306,6 +332,7 @@ func (wr *WantRequest) wants(c cid.Cid) bool {
 	return ok && state == ReqKeyWanted
 }
 
+// The set of keys that the WantRequest is interested in
 func (wr *WantRequest) keys() *cid.Set {
 	wr.lk.RLock()
 	defer wr.lk.RUnlock()
@@ -317,6 +344,9 @@ func (wr *WantRequest) keys() *cid.Set {
 	return ks
 }
 
+// Calls receivedMessage() with incoming messages, and sends blocks on the Out
+// channel.
+// When the request is cancelled, calls wr.cancelFn with any pending wants.
 func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receiveMessage func(*IncomingMessage)) {
 	remaining := wr.keys()
 
