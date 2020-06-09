@@ -474,7 +474,7 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	sessctx, sesscancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	session := New(sessctx, sm, id, fspm, fpf, fpm, bpm, wrm, time.Second, delay.Fixed(time.Minute), "")
 
-	timerCtx, timerCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	timerCtx, timerCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer timerCancel()
 
 	// Request a block with a new context
@@ -487,6 +487,8 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal("error getting blocks")
 	}
+
+	time.Sleep(10 * time.Millisecond)
 
 	// Cancel the session context
 	sesscancel()
@@ -502,6 +504,12 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	}
 
 	time.Sleep(10 * time.Millisecond)
+
+	// Expect cancels to have been sent for the wanted keys
+	cancels := fpm.cancels()
+	if !testutil.MatchKeysIgnoreOrder(cancels, []cid.Cid{blks[0].Cid()}) {
+		t.Fatal("expected session to send cancel for wanted block")
+	}
 
 	// Verify session was removed
 	removed := sm.removedSessions()
@@ -524,10 +532,25 @@ func TestSessionOnShutdownCalled(t *testing.T) {
 	defer sesscancel()
 	session := New(sessctx, sm, id, fspm, fpf, fpm, bpm, wrm, time.Second, delay.Fixed(time.Minute), "")
 
+	blockGenerator := blocksutil.NewBlockGenerator()
+	blks := blockGenerator.Blocks(1)
+	_, err := session.GetBlocks(context.Background(), []cid.Cid{blks[0].Cid()})
+	if err != nil {
+		t.Fatal("error getting blocks")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
 	// Shutdown the session
 	session.Shutdown()
 
 	time.Sleep(10 * time.Millisecond)
+
+	// Expect cancels to have been sent for the wanted keys
+	cancels := fpm.cancels()
+	if !testutil.MatchKeysIgnoreOrder(cancels, []cid.Cid{blks[0].Cid()}) {
+		t.Fatal("expected session to send cancel for wanted block")
+	}
 
 	// Verify session was removed
 	removed := sm.removedSessions()
