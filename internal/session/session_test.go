@@ -24,7 +24,6 @@ import (
 type mockSessionMgr struct {
 	lk      sync.Mutex
 	removes []uint64
-	cancels []cid.Cid
 }
 
 func newMockSessionMgr() *mockSessionMgr {
@@ -37,22 +36,10 @@ func (msm *mockSessionMgr) removedSessions() []uint64 {
 	return msm.removes
 }
 
-func (msm *mockSessionMgr) cancelled() []cid.Cid {
-	msm.lk.Lock()
-	defer msm.lk.Unlock()
-	return msm.cancels
-}
-
 func (msm *mockSessionMgr) RemoveSession(sesid uint64) {
 	msm.lk.Lock()
 	defer msm.lk.Unlock()
 	msm.removes = append(msm.removes, sesid)
-}
-
-func (msm *mockSessionMgr) CancelSessionWants(sid uint64, wants []cid.Cid) {
-	msm.lk.Lock()
-	defer msm.lk.Unlock()
-	msm.cancels = append(msm.cancels, wants...)
 }
 
 func newFakeSessionPeerManager() *bsspm.SessionPeerManager {

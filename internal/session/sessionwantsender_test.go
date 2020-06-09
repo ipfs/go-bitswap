@@ -1,7 +1,6 @@
 package session
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -49,6 +48,7 @@ type mockPeerManager struct {
 	lk           sync.Mutex
 	peerSessions map[peer.ID]bspm.Session
 	peerSends    map[peer.ID]*sentWants
+	cancels      []cid.Cid
 }
 
 func newMockPeerManager() *mockPeerManager {
@@ -66,11 +66,23 @@ func (pm *mockPeerManager) RegisterSession(p peer.ID, sess bspm.Session) bool {
 	return true
 }
 
-func (*mockPeerManager) UnregisterSession(uint64)                      {}
-func (*mockPeerManager) BroadcastWantHaves(context.Context, []cid.Cid) {}
-func (*mockPeerManager) SendCancels(context.Context, []cid.Cid)        {}
+func (*mockPeerManager) UnregisterSession(uint64)             {}
+func (*mockPeerManager) BroadcastWantHaves(uint64, []cid.Cid) {}
+func (pm *mockPeerManager) SendCancels(sid uint64, cancels []cid.Cid) {
+	pm.lk.Lock()
+	defer pm.lk.Unlock()
 
-func (pm *mockPeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
+	pm.cancels = append(pm.cancels, cancels...)
+}
+
+func (pm *mockPeerManager) sentCancels() []cid.Cid {
+	pm.lk.Lock()
+	defer pm.lk.Unlock()
+
+	return pm.cancels
+}
+
+func (pm *mockPeerManager) SendWants(sid uint64, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	pm.lk.Lock()
 	defer pm.lk.Unlock()
 
@@ -101,6 +113,7 @@ func (pm *mockPeerManager) clearWants() {
 	for p := range pm.peerSends {
 		delete(pm.peerSends, p)
 	}
+	pm.cancels = nil
 }
 
 type exhaustedPeers struct {
@@ -136,11 +149,10 @@ func TestSendWants(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -176,11 +188,10 @@ func TestSendsWantBlockToOnePeerOnly(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -236,11 +247,10 @@ func TestReceiveBlock(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -295,11 +305,10 @@ func TestCancelWants(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -318,7 +327,7 @@ func TestCancelWants(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 
 	// Should have sent cancels for cid0, cid2
-	sent := swc.cancelled()
+	sent := pm.sentCancels()
 	if !testutil.MatchKeysIgnoreOrder(sent, cancelCids) {
 		t.Fatal("Wrong keys")
 	}
@@ -332,11 +341,10 @@ func TestPeerUnavailable(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -399,12 +407,11 @@ func TestPeersExhausted(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 
 	ep := exhaustedPeers{}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, ep.onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, ep.onPeersExhausted)
 
 	go spm.Run()
 
@@ -476,12 +483,11 @@ func TestPeersExhaustedLastWaitingPeerUnavailable(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 
 	ep := exhaustedPeers{}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, ep.onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, ep.onPeersExhausted)
 
 	go spm.Run()
 
@@ -525,12 +531,11 @@ func TestPeersExhaustedAllPeersUnavailable(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 
 	ep := exhaustedPeers{}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, ep.onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, ep.onPeersExhausted)
 
 	go spm.Run()
 
@@ -565,11 +570,10 @@ func TestConsecutiveDontHaveLimit(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -623,11 +627,10 @@ func TestConsecutiveDontHaveLimitInterrupted(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -680,11 +683,10 @@ func TestConsecutiveDontHaveReinstateAfterRemoval(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
@@ -766,11 +768,10 @@ func TestConsecutiveDontHaveDontRemoveIfHasWantedBlock(t *testing.T) {
 	sid := uint64(1)
 	pm := newMockPeerManager()
 	fpm := newFakeSessionPeerManager()
-	swc := newMockSessionMgr()
 	bpm := bsbpm.New()
 	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
 	onPeersExhausted := func([]cid.Cid) {}
-	spm := newSessionWantSender(sid, pm, fpm, swc, bpm, onSend, onPeersExhausted)
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
 	defer spm.Shutdown()
 
 	go spm.Run()
