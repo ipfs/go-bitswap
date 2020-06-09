@@ -182,7 +182,10 @@ func (sws *sessionWantSender) Run() {
 			sws.pm.UnregisterSession(sws.sessionID)
 
 			// Drain queue of outstanding cancels
-			sws.drainCancels()
+			cancels := sws.drainCancels()
+			if len(cancels) > 0 {
+				sws.pm.SendCancels(sws.sessionID, cancels)
+			}
 
 			// Shut down the session peer manager
 			sws.spm.Shutdown()
@@ -196,7 +199,7 @@ func (sws *sessionWantSender) Run() {
 }
 
 // Drain queue of outstanding cancels
-func (sws *sessionWantSender) drainCancels() {
+func (sws *sessionWantSender) drainCancels() []cid.Cid {
 	cancels := make([]cid.Cid, 0, len(sws.changes))
 	for {
 		select {
@@ -212,11 +215,8 @@ func (sws *sessionWantSender) drainCancels() {
 				}
 			}
 		default:
-			break
+			return cancels
 		}
-	}
-	if len(cancels) > 0 {
-		sws.pm.SendCancels(sws.sessionID, cancels)
 	}
 }
 
