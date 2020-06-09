@@ -13,20 +13,13 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 )
 
-func createBlockstore(t *testing.T, ctx context.Context) blockstore.Blockstore {
-	bstore, err := blockstore.CachedBlockstore(ctx,
-		blockstore.NewBlockstore(ds_sync.MutexWrap(ds.NewMapDatastore())),
-		blockstore.DefaultCacheOpts())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return bstore
+func createBlockstore() blockstore.Blockstore {
+	return blockstore.NewBlockstore(ds_sync.MutexWrap(ds.NewMapDatastore()))
 }
 
 func TestWantRequestManager(t *testing.T) {
 	ctx := context.Background()
-	bstore := createBlockstore(t, ctx)
+	bstore := createBlockstore()
 
 	p0 := testutil.GeneratePeers(1)[0]
 	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
@@ -96,7 +89,7 @@ func TestWantRequestManager(t *testing.T) {
 
 func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	ctx := context.Background()
-	bstore := createBlockstore(t, ctx)
+	bstore := createBlockstore()
 
 	p0 := testutil.GeneratePeers(1)[0]
 	blks := testutil.GenerateBlocksOfSize(3, 8*1024)
@@ -175,7 +168,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 
 func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 	ctx := context.Background()
-	bstore := createBlockstore(t, ctx)
+	bstore := createBlockstore()
 
 	blk := testutil.GenerateBlocksOfSize(1, 8*1024)[0]
 	cids := []cid.Cid{blk.Cid()}

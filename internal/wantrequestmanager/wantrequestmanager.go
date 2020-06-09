@@ -201,26 +201,6 @@ func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest) {
 	}
 }
 
-// Creates a new WantRequest for the given keys.
-// Calls cancelFn with keys of blocks that have not yet been received when the
-// WantRequest is cancelled or the session is shutdown.
-func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.Cid)) *WantRequest {
-	wr := &WantRequest{
-		wrm:      wrm,
-		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
-		messages: make(chan *messageWanted, len(ks)),
-		cancelFn: cancelFn,
-		Out:      make(chan blocks.Block),
-	}
-
-	for _, c := range ks {
-		// Initialize the want state to "wanted"
-		wr.ks[c] = ReqKeyWanted
-	}
-
-	return wr
-}
-
 // Keys are in the wanted state until the block is received and they change to
 // the unwanted state.
 type ReqKeyState bool
@@ -248,6 +228,26 @@ type WantRequest struct {
 	ks map[cid.Cid]ReqKeyState
 	// closed indicates whether the WantRequest has been cancelled
 	closed bool
+}
+
+// Creates a new WantRequest for the given keys.
+// Calls cancelFn with keys of blocks that have not yet been received when the
+// WantRequest is cancelled or the session is shutdown.
+func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.Cid)) *WantRequest {
+	wr := &WantRequest{
+		wrm:      wrm,
+		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
+		messages: make(chan *messageWanted, len(ks)),
+		cancelFn: cancelFn,
+		Out:      make(chan blocks.Block, len(ks)),
+	}
+
+	for _, c := range ks {
+		// Initialize the want state to "wanted"
+		wr.ks[c] = ReqKeyWanted
+	}
+
+	return wr
 }
 
 // Called when an incoming message arrives that has blocks / HAVEs / DONT_HAVEs
