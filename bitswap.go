@@ -267,7 +267,6 @@ type counters struct {
 	blocksSent     uint64
 	dataSent       uint64
 	dataRecvd      uint64
-	messagesRecvd  uint64
 }
 
 // GetBlock attempts to retrieve a particular block from peers within the
@@ -353,10 +352,6 @@ func (bs *Bitswap) processNewBlocks(blks []blocks.Block) error {
 // ReceiveMessage is called by the network interface when a new message is
 // received.
 func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg.BitSwapMessage) {
-	bs.counterLk.Lock()
-	bs.counters.messagesRecvd++
-	bs.counterLk.Unlock()
-
 	select {
 	case <-bs.process.Closing():
 		return
