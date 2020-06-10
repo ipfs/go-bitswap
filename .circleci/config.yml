@@ -12,7 +12,7 @@ workflows:
       - ci-go/test:
           race: true
           name: "ci-go/test/race"
-      - ci-go/benchmark:
-          tolerance: 50
-          requires:
-            - ci-go/test
+      #- ci-go/benchmark:
+      #    tolerance: 50
+      #    requires:
+      #      - ci-go/test
