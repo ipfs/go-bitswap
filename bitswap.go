@@ -375,15 +375,6 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		return
 	}
 
-	// Update metrics.
-
-	if len(iblocks) > 0 {
-		bs.updateReceiveCounters(iblocks)
-		for _, b := range iblocks {
-			log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
-		}
-	}
-
 	// Figure out which blocks we actually want.
 	wanted, notWanted := bs.sim.SplitWantedUnwanted(iblocks)
 	for _, b := range notWanted {
@@ -399,6 +390,14 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 		}
 		// inform the engine about these wanted blocks
 		bs.engine.BlocksReceived(ctx, p, wanted)
+	}
+
+	// Record stats.
+	if len(iblocks) > 0 {
+		bs.updateReceiveCounters(wanted, notWanted)
+		for _, b := range iblocks {
+			log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
+		}
 	}
 
 	// Notify subsystems.
@@ -425,57 +424,28 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	}
 }
 
-func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
-	// Check which blocks are in the datastore
-	// (Note: any errors from the blockstore are simply logged out in
-	// blockstoreHas())
-	blocksHas := bs.blockstoreHas(blocks)
+func (bs *Bitswap) updateReceiveCounters(wanted, unwanted []blocks.Block) {
+	var wantedData, unwantedData uint64
+	for _, b := range wanted {
+		size := len(b.RawData())
+		wantedData += uint64(size)
+		bs.allMetric.Observe(float64(size))
+	}
 
+	for _, b := range unwanted {
+		size := len(b.RawData())
+		unwantedData += uint64(len(b.RawData()))
+		bs.dupMetric.Observe(float64(size))
+		bs.allMetric.Observe(float64(size))
+	}
+
+	// Record stats
 	bs.counterLk.Lock()
-	defer bs.counterLk.Unlock()
-
-	// Do some accounting for each block
-	for i, b := range blocks {
-		has := blocksHas[i]
-
-		blkLen := len(b.RawData())
-		bs.allMetric.Observe(float64(blkLen))
-		if has {
-			bs.dupMetric.Observe(float64(blkLen))
-		}
-
-		c := bs.counters
-
-		c.blocksRecvd++
-		c.dataRecvd += uint64(blkLen)
-		if has {
-			c.dupBlocksRecvd++
-			c.dupDataRecvd += uint64(blkLen)
-		}
-	}
-}
-
-func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
-	res := make([]bool, len(blks))
-
-	wg := sync.WaitGroup{}
-	for i, block := range blks {
-		wg.Add(1)
-		go func(i int, b blocks.Block) {
-			defer wg.Done()
-
-			has, err := bs.blockstore.Has(b.Cid())
-			if err != nil {
-				log.Infof("blockstore.Has error: %s", err)
-				has = false
-			}
-
-			res[i] = has
-		}(i, block)
-	}
-	wg.Wait()
-
-	return res
+	bs.counters.blocksRecvd += uint64(len(wanted) + len(unwanted))
+	bs.counters.dupBlocksRecvd += uint64(len(unwanted))
+	bs.counters.dataRecvd += wantedData + unwantedData
+	bs.counters.dupDataRecvd += unwantedData
+	bs.counterLk.Unlock()
 }
 
 // PeerConnected is called by the network interface
