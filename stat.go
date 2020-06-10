@@ -18,10 +18,13 @@ type Stat struct {
 	DupBlksReceived  uint64
 	DupDataReceived  uint64
 	MessagesReceived uint64
+	MessagesSent     uint64
 }
 
 // Stat returns aggregated statistics about bitswap operations
 func (bs *Bitswap) Stat() (*Stat, error) {
+	nstats := bs.network.Stats()
+
 	st := new(Stat)
 	st.ProvideBufLen = len(bs.newBlocks)
 	st.Wantlist = bs.GetWantlist()
@@ -33,7 +36,8 @@ func (bs *Bitswap) Stat() (*Stat, error) {
 	st.BlocksSent = c.blocksSent
 	st.DataSent = c.dataSent
 	st.DataReceived = c.dataRecvd
-	st.MessagesReceived = c.messagesRecvd
+	st.MessagesReceived = nstats.MessagesRecvd
+	st.MessagesSent = nstats.MessagesSent
 	bs.counterLk.Unlock()
 
 	peers := bs.engine.Peers()
