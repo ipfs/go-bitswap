@@ -153,6 +153,8 @@ func (pwm *peerWantManager) sendWants(sid uint64, p peer.ID, wantBlocks []cid.Ci
 	// Get the existing want-blocks and want-haves for the peer
 	pws, ok := pwm.peerWants[p]
 	if !ok {
+		// In practice this should never happen
+		log.Errorf("sendWants() called with peer %s but peer not found in peerWantManager", string(p))
 		return
 	}
 
@@ -254,6 +256,18 @@ func (pwm *peerWantManager) sendWants(sid uint64, p peer.ID, wantBlocks []cid.Ci
 	pws.peerQueue.AddWants(fltWantBlks, fltWantHvs)
 }
 
+// Used internally by the sendCancels to keep track of the state of a key
+type bcstType int
+
+const (
+	// key is not a broadcast key
+	bcstTypeNone bcstType = iota
+	// there is at least one session that still wants the key
+	bcstTypeInUse
+	// no session wants the key
+	bcstTypeCancellable
+)
+
 // sendCancels sends a cancel to each peer to which a corresponding want was
 // sent. It will only send a cancel for keys that no session wants anymore.
 func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
@@ -269,16 +283,26 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 	}
 
 	// Find which broadcast wants are ready to be removed
-	bcstWants := make(map[cid.Cid]bool, len(cancelKs))
-	for _, c := range cancelKs {
+	hasBcstWants := false
+	bcstWants := make([]bcstType, len(cancelKs))
+	for i, c := range cancelKs {
 		// Remove the broadcast want
 		cancellable, isBcstWant := pwm.broadcastWants.remove(c, sid)
 
-		// If the cancel is for a broadcast want
-		if isBcstWant {
-			// If this was the last session that wanted the broadcast want, it's
-			// ready to be removed
-			bcstWants[c] = cancellable
+		// Check if the cancel is for a broadcast want
+		if !isBcstWant {
+			bcstWants[i] = bcstTypeNone
+			continue
+		}
+
+		hasBcstWants = true
+
+		// If this was the last session that wanted the broadcast want, it's
+		// ready to be removed
+		if cancellable {
+			bcstWants[i] = bcstTypeCancellable
+		} else {
+			bcstWants[i] = bcstTypeInUse
 		}
 	}
 
@@ -290,7 +314,7 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 		toCancel := cancelBuffer[:0]
 
 		// For each cancel
-		for _, c := range cancelKs {
+		for i, c := range cancelKs {
 			peerWantCancellable := false
 
 			// Get the wantInfo for the key
@@ -317,13 +341,14 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 				}
 			}
 
-			bcstWantCancellable, isBcstWant := bcstWants[c]
-
 			// Cancel the want if this session was the last session that wanted
 			// it in either the broadcast list or the peer want list, and there
 			// are no other sessions that want it in either of those lists.
+			bcstTp := bcstWants[i]
+			bcstStillWants := bcstTp == bcstTypeInUse
+			bcstWantCancellable := bcstTp == bcstTypeCancellable
+
 			peerStillWants := isPeerWant && !peerWantCancellable
-			bcstStillWants := isBcstWant && !bcstWantCancellable
 			if (bcstWantCancellable || peerWantCancellable) && !peerStillWants && !bcstStillWants {
 				toCancel = append(toCancel, c)
 			}
@@ -335,7 +360,7 @@ func (pwm *peerWantManager) sendCancels(sid uint64, cancelKs []cid.Cid) {
 		}
 	}
 
-	if len(bcstWants) > 0 {
+	if hasBcstWants {
 		// If a broadcast want is being cancelled, send the cancel to all
 		// peers
 		for p, pws := range pwm.peerWants {
