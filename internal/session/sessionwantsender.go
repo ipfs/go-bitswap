@@ -289,7 +289,11 @@ func (sws *sessionWantSender) onChange(changes []change) {
 			// If the update includes blocks or haves, treat it as signaling that
 			// the peer is available
 			if len(chng.update.ks) > 0 || len(chng.update.haves) > 0 {
-				availability[chng.update.from] = true
+				p := chng.update.from
+				availability[p] = true
+
+				// Register with the PeerManager
+				sws.pm.RegisterSession(p, sws)
 			}
 
 			updates = append(updates, chng.update)
@@ -399,6 +403,11 @@ func (sws *sessionWantSender) processUpdates(updates []update) ([]cid.Cid, []cid
 				// Inform the peer tracker that this peer was the first to send
 				// us the block
 				sws.peerRspTrkr.receivedBlockFrom(upd.from)
+
+				// Protect the connection to this peer so that we can ensure
+				// that the connection doesn't get pruned by the connection
+				// manager
+				sws.spm.ProtectConnection(upd.from)
 			}
 			delete(sws.peerConsecutiveDontHaves, upd.from)
 		}

@@ -30,7 +30,7 @@ const (
 type PeerManager interface {
 	// RegisterSession tells the PeerManager that the session is interested
 	// in a peer's connection state
-	RegisterSession(peer.ID, bspm.Session) bool
+	RegisterSession(peer.ID, bspm.Session)
 	// UnregisterSession tells the PeerManager that the session is no longer
 	// interested in a peer's connection state
 	UnregisterSession(uint64)
@@ -61,6 +61,8 @@ type SessionPeerManager interface {
 	Peers() []peer.ID
 	// Whether there are any peers in the session
 	HasPeers() bool
+	// Protect connection from being pruned by the connection manager
+	ProtectConnection(peer.ID)
 }
 
 // ProviderFinder is used to find providers for a given key

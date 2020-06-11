@@ -7,6 +7,7 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
+	bsspm "github.com/ipfs/go-bitswap/internal/sessionpeermanager"
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -58,12 +59,21 @@ func newMockPeerManager() *mockPeerManager {
 	}
 }
 
-func (pm *mockPeerManager) RegisterSession(p peer.ID, sess bspm.Session) bool {
+func (pm *mockPeerManager) RegisterSession(p peer.ID, sess bspm.Session) {
 	pm.lk.Lock()
 	defer pm.lk.Unlock()
 
 	pm.peerSessions[p] = sess
-	return true
+}
+
+func (pm *mockPeerManager) has(p peer.ID, sid uint64) bool {
+	pm.lk.Lock()
+	defer pm.lk.Unlock()
+
+	if session, ok := pm.peerSessions[p]; ok {
+		return session.ID() == sid
+	}
+	return false
 }
 
 func (*mockPeerManager) UnregisterSession(uint64)             {}
@@ -330,6 +340,100 @@ func TestCancelWants(t *testing.T) {
 	sent := pm.sentCancels()
 	if !testutil.MatchKeysIgnoreOrder(sent, cancelCids) {
 		t.Fatal("Wrong keys")
+	}
+}
+
+func TestRegisterSessionWithPeerManager(t *testing.T) {
+	cids := testutil.GenerateCids(2)
+	peers := testutil.GeneratePeers(2)
+	peerA := peers[0]
+	peerB := peers[1]
+	sid := uint64(1)
+	pm := newMockPeerManager()
+	fpm := newFakeSessionPeerManager()
+	bpm := bsbpm.New()
+	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
+	defer spm.Shutdown()
+
+	go spm.Run()
+
+	// peerA: HAVE cid0
+	spm.Update(peerA, nil, cids[:1], nil)
+
+	// Wait for processing to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect session to have been registered with PeerManager
+	if !pm.has(peerA, sid) {
+		t.Fatal("Expected HAVE to register session with PeerManager")
+	}
+
+	// peerB: block cid1
+	spm.Update(peerB, cids[1:], nil, nil)
+
+	// Wait for processing to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect session to have been registered with PeerManager
+	if !pm.has(peerB, sid) {
+		t.Fatal("Expected HAVE to register session with PeerManager")
+	}
+}
+
+func TestProtectConnFirstPeerToSendWantedBlock(t *testing.T) {
+	cids := testutil.GenerateCids(2)
+	peers := testutil.GeneratePeers(3)
+	peerA := peers[0]
+	peerB := peers[1]
+	peerC := peers[2]
+	sid := uint64(1)
+	pm := newMockPeerManager()
+	fpt := newFakePeerTagger()
+	fpm := bsspm.New(1, fpt)
+	bpm := bsbpm.New()
+	onSend := func(peer.ID, []cid.Cid, []cid.Cid) {}
+	onPeersExhausted := func([]cid.Cid) {}
+	spm := newSessionWantSender(sid, pm, fpm, bpm, onSend, onPeersExhausted)
+	defer spm.Shutdown()
+
+	go spm.Run()
+
+	// add cid0
+	spm.Add(cids[:1])
+
+	// peerA: block cid0
+	spm.Update(peerA, cids[:1], nil, nil)
+
+	// Wait for processing to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect peer A to be protected as it was first to send the block
+	if !fpt.isProtected(peerA) {
+		t.Fatal("Expected first peer to send block to have protected connection")
+	}
+
+	// peerB: block cid0
+	spm.Update(peerB, cids[:1], nil, nil)
+
+	// Wait for processing to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect peer B not to be protected as it was not first to send the block
+	if fpt.isProtected(peerB) {
+		t.Fatal("Expected peer not to be protected")
+	}
+
+	// peerC: block cid1
+	spm.Update(peerC, cids[1:], nil, nil)
+
+	// Wait for processing to complete
+	time.Sleep(10 * time.Millisecond)
+
+	// Expect peer C not to be protected as we didn't want the block it sent
+	if fpt.isProtected(peerC) {
+		t.Fatal("Expected peer not to be protected")
 	}
 }
 

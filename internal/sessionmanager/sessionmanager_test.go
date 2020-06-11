@@ -51,17 +51,18 @@ func (fs *fakeSession) wasShutdownCalled() bool {
 type fakeSesPeerManager struct {
 }
 
-func (*fakeSesPeerManager) Peers() []peer.ID        { return nil }
-func (*fakeSesPeerManager) PeersDiscovered() bool   { return false }
-func (*fakeSesPeerManager) Shutdown()               {}
-func (*fakeSesPeerManager) AddPeer(peer.ID) bool    { return false }
-func (*fakeSesPeerManager) RemovePeer(peer.ID) bool { return false }
-func (*fakeSesPeerManager) HasPeers() bool          { return false }
+func (*fakeSesPeerManager) Peers() []peer.ID          { return nil }
+func (*fakeSesPeerManager) PeersDiscovered() bool     { return false }
+func (*fakeSesPeerManager) Shutdown()                 {}
+func (*fakeSesPeerManager) AddPeer(peer.ID) bool      { return false }
+func (*fakeSesPeerManager) RemovePeer(peer.ID) bool   { return false }
+func (*fakeSesPeerManager) HasPeers() bool            { return false }
+func (*fakeSesPeerManager) ProtectConnection(peer.ID) {}
 
 type fakePeerManager struct {
 }
 
-func (*fakePeerManager) RegisterSession(peer.ID, bspm.Session) bool      { return true }
+func (*fakePeerManager) RegisterSession(peer.ID, bspm.Session)           {}
 func (*fakePeerManager) UnregisterSession(uint64)                        {}
 func (*fakePeerManager) SendWants(uint64, peer.ID, []cid.Cid, []cid.Cid) {}
 func (*fakePeerManager) BroadcastWantHaves(uint64, []cid.Cid)            {}

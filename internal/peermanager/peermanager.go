@@ -54,9 +54,10 @@ type PeerManager struct {
 // New creates a new PeerManager, given a context and a peerQueueFactory.
 func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID, bpm *bsbpm.BlockPresenceManager) *PeerManager {
 	wantGauge := metrics.NewCtx(ctx, "wantlist_total", "Number of items in wantlist.").Gauge()
+	wantBlockGauge := metrics.NewCtx(ctx, "want_blocks_total", "Number of want-blocks in wantlist.").Gauge()
 	return &PeerManager{
 		peerQueues:      make(map[peer.ID]PeerQueue),
-		pwm:             newPeerWantManager(wantGauge),
+		pwm:             newPeerWantManager(wantGauge, wantBlockGauge),
 		createPeerQueue: createPeerQueue,
 		ctx:             ctx,
 		self:            self,
@@ -209,7 +210,7 @@ func (pm *PeerManager) getOrCreate(p peer.ID) PeerQueue {
 
 // RegisterSession tells the PeerManager that the given session is interested
 // in events about the given peer.
-func (pm *PeerManager) RegisterSession(p peer.ID, s Session) bool {
+func (pm *PeerManager) RegisterSession(p peer.ID, s Session) {
 	pm.psLk.Lock()
 	defer pm.psLk.Unlock()
 
@@ -221,9 +222,6 @@ func (pm *PeerManager) RegisterSession(p peer.ID, s Session) bool {
 		pm.peerSessions[p] = make(map[uint64]struct{})
 	}
 	pm.peerSessions[p][s.ID()] = struct{}{}
-
-	_, ok := pm.peerQueues[p]
-	return ok
 }
 
 // UnregisterSession tells the PeerManager that the given session is no longer
