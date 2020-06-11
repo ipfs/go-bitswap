@@ -593,42 +593,42 @@ func TestPWMMultiSessionCancelWantBlock(t *testing.T) {
 	}
 }
 
-// func TestPWMMultiSessionCancelWantHaveAndBlock(t *testing.T) {
-// 	pwm := newPeerWantManager(&gauge{}, &gauge{})
+func TestPWMMultiSessionCancelWantHaveAndBlock(t *testing.T) {
+	pwm := newPeerWantManager(&gauge{}, &gauge{})
 
-// 	sid1 := uint64(1)
-// 	sid2 := uint64(2)
-// 	peers := testutil.GeneratePeers(1)
+	sid1 := uint64(1)
+	sid2 := uint64(2)
+	peers := testutil.GeneratePeers(1)
 
-// 	p0 := peers[0]
-// 	pq0 := &mockPQ{}
+	p0 := peers[0]
+	pq0 := &mockPQ{}
 
-// 	// Add peer
-// 	pwm.addPeer(pq0, p0)
+	// Add peer
+	pwm.addPeer(pq0, p0)
 
-// 	cids1 := testutil.GenerateCids(1)
-// 	// want-have cid0 s1
-// 	pwm.sendWants(sid1, p0, nil, cids1)
-// 	// want-block cid0 s2
-// 	pwm.sendWants(sid2, p0, cids1, nil)
+	cids1 := testutil.GenerateCids(1)
+	// want-have cid0 s1
+	pwm.sendWants(sid1, p0, nil, cids1)
+	// want-block cid0 s2
+	pwm.sendWants(sid2, p0, cids1, nil)
 
-// 	// Cancel cid for session 2
-// 	pwm.sendCancels(sid2, cids1)
+	// Cancel cid for session 2
+	pwm.sendCancels(sid2, cids1)
 
-// 	// Expect cancel not to be sent - there's still a want-have for cid0 from
-// 	// session 1
-// 	if len(pq0.cancels) != 0 {
-// 		t.Fatal("wrong number of cancels sent")
-// 	}
+	// Expect cancel not to be sent - there's still a want-have for cid0 from
+	// session 1
+	if len(pq0.cancels) != 0 {
+		t.Fatal("wrong number of cancels sent")
+	}
 
-// 	// Cancel cid for session 2
-// 	pwm.sendCancels(sid1, cids1)
+	// Cancel cid for session 2
+	pwm.sendCancels(sid1, cids1)
 
-// 	// Expect cancel to be sent now
-// 	if len(pq0.cancels) != 1 {
-// 		t.Fatal("wrong number of cancels sent")
-// 	}
-// }
+	// Expect cancel to be sent now
+	if len(pq0.cancels) != 1 {
+		t.Fatal("wrong number of cancels sent")
+	}
+}
 
 func TestPWMMultiSessionCancelBcstAndWantHave(t *testing.T) {
 	pwm := newPeerWantManager(&gauge{}, &gauge{})
@@ -829,7 +829,7 @@ func TestStats(t *testing.T) {
 		t.Fatal("Expected 3 wants")
 	}
 	if wbg.count != 0 {
-		t.Fatal("Expected all want-blocks to be removed")
+		t.Fatal("Expected all want-blocks to be removed", wbg.count)
 	}
 
 	// Remove second peer
@@ -850,6 +850,86 @@ func TestStats(t *testing.T) {
 	}
 	if wbg.count != 0 {
 		t.Fatal("Expected 0 want-blocks")
+	}
+}
+
+func TestStatsOverlappingWantBlockWantHave(t *testing.T) {
+	g := &gauge{}
+	wbg := &gauge{}
+	pwm := newPeerWantManager(g, wbg)
+
+	sid := uint64(1)
+	peers := testutil.GeneratePeers(2)
+	p0 := peers[0]
+	p1 := peers[1]
+	cids := testutil.GenerateCids(2)
+	cids2 := testutil.GenerateCids(2)
+
+	pwm.addPeer(&mockPQ{}, p0)
+	pwm.addPeer(&mockPQ{}, p1)
+
+	// Send 2 want-blocks and 2 want-haves to p0
+	pwm.sendWants(sid, p0, cids, cids2)
+
+	// Send opposite:
+	// 2 want-haves and 2 want-blocks to p1
+	pwm.sendWants(sid, p1, cids2, cids)
+
+	if g.count != 4 {
+		t.Fatal("Expected 4 wants")
+	}
+	if wbg.count != 4 {
+		t.Fatal("Expected 4 want-blocks")
+	}
+
+	// Cancel 1 of each group of cids
+	pwm.sendCancels(sid, []cid.Cid{cids[0], cids2[0]})
+
+	if g.count != 2 {
+		t.Fatal("Expected 2 wants")
+	}
+	if wbg.count != 2 {
+		t.Fatal("Expected 2 want-blocks")
+	}
+}
+
+func TestStatsRemovePeerOverlappingWantBlockWantHave(t *testing.T) {
+	g := &gauge{}
+	wbg := &gauge{}
+	pwm := newPeerWantManager(g, wbg)
+
+	sid := uint64(1)
+	peers := testutil.GeneratePeers(2)
+	p0 := peers[0]
+	p1 := peers[1]
+	cids := testutil.GenerateCids(2)
+	cids2 := testutil.GenerateCids(2)
+
+	pwm.addPeer(&mockPQ{}, p0)
+	pwm.addPeer(&mockPQ{}, p1)
+
+	// Send 2 want-blocks and 2 want-haves to p0
+	pwm.sendWants(sid, p0, cids, cids2)
+
+	// Send opposite:
+	// 2 want-haves and 2 want-blocks to p1
+	pwm.sendWants(sid, p1, cids2, cids)
+
+	if g.count != 4 {
+		t.Fatal("Expected 4 wants")
+	}
+	if wbg.count != 4 {
+		t.Fatal("Expected 4 want-blocks")
+	}
+
+	// Remove p0
+	pwm.removePeer(p0)
+
+	if g.count != 4 {
+		t.Fatal("Expected 4 wants")
+	}
+	if wbg.count != 2 {
+		t.Fatal("Expected 2 want-blocks")
 	}
 }
 

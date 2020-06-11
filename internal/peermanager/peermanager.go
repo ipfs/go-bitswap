@@ -243,6 +243,9 @@ func (pm *PeerManager) UnregisterSession(ses uint64) {
 // signalAvailability is called when a peer's connectivity changes.
 // It informs interested sessions.
 func (pm *PeerManager) signalAvailability(p peer.ID, isConnected bool) {
+	pm.psLk.Lock()
+	defer pm.psLk.Unlock()
+
 	sesIds, ok := pm.peerSessions[p]
 	if !ok {
 		return

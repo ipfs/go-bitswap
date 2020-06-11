@@ -29,6 +29,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.2.1
 	github.com/multiformats/go-multistream v0.1.1
 	go.uber.org/zap v1.14.1
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 )
 
 go 1.12
