@@ -36,7 +36,7 @@ func TestWantRequestManager(t *testing.T) {
 
 	// Create two want requests that want all the blocks
 	for i := 0; i < 2; i++ {
-		wr, err := wrm.NewWantRequest(cids, func([]cid.Cid) {})
+		wr, err := wrm.NewWantRequest(cids)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,7 +45,7 @@ func TestWantRequestManager(t *testing.T) {
 		incoming := make(chan *IncomingMessage)
 		go wr.Run(ctx, ctx, func(msg *IncomingMessage) {
 			incoming <- msg
-		})
+		}, func([]cid.Cid) {})
 
 		// Receive the incoming message
 		wg.Go(func() error {
@@ -116,7 +116,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 
 	wrm := New(bstore)
 
-	wr, err := wrm.NewWantRequest(wants, func([]cid.Cid) {})
+	wr, err := wrm.NewWantRequest(wants)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,18 +125,18 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	incoming := make(chan *IncomingMessage)
 	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {
 		incoming <- msg
-	})
+	}, func([]cid.Cid) {})
 
 	// Add another WantRequest that is not interested in the CIDs
 	// (shouldn't receive anything)
-	wrOther, err := wrm.NewWantRequest(testutil.GenerateCids(2), func([]cid.Cid) {})
+	wrOther, err := wrm.NewWantRequest(testutil.GenerateCids(2))
 	if err != nil {
 		t.Fatal(err)
 	}
 	otherIncoming := make(chan *IncomingMessage)
 	go wrOther.Run(ctx, ctx, func(msg *IncomingMessage) {
 		otherIncoming <- msg
-	})
+	}, func([]cid.Cid) {})
 
 	// Receive the incoming message
 	receiveMessage := func() *IncomingMessage {
@@ -217,7 +217,7 @@ func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 	wrm := New(bstore)
 
 	// Create a want request for the block that is already in the blockstore
-	wr, err := wrm.NewWantRequest(cids, func([]cid.Cid) {})
+	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 	incoming := make(chan *IncomingMessage)
 	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {
 		incoming <- msg
-	})
+	}, func([]cid.Cid) {})
 
 	// WantRequestManager should find the block in the blockstore and
 	// immmediately publish a message
@@ -281,11 +281,11 @@ func TestPublishWanted(t *testing.T) {
 
 	wrm := New(bstore)
 
-	wr, err := wrm.NewWantRequest(cids, func([]cid.Cid) {})
+	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
 		t.Fatal(err)
 	}
-	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {})
+	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {}, func([]cid.Cid) {})
 
 	// Publish first block
 	wanted, err := wrm.PublishToSessions(&IncomingMessage{
@@ -338,16 +338,16 @@ func testCancel(t *testing.T, sessctx context.Context, reqctx context.Context, c
 
 	wrm := New(bstore)
 
-	cancelled := make(chan []cid.Cid)
-	wr, err := wrm.NewWantRequest(cids, func(cancels []cid.Cid) {
-		cancelled <- cancels
-	})
+	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Pop incoming messages
-	go wr.Run(sessctx, reqctx, func(msg *IncomingMessage) {})
+	cancelled := make(chan []cid.Cid)
+	go wr.Run(sessctx, reqctx, func(msg *IncomingMessage) {}, func(cancels []cid.Cid) {
+		cancelled <- cancels
+	})
 	// Pop outgoing blocks
 	go func() {
 		for range wr.Out {
@@ -404,19 +404,19 @@ func TestAllBlocksReceived(t *testing.T) {
 
 	wrm := New(bstore)
 
-	cancelled := make(chan []cid.Cid)
-	wr, err := wrm.NewWantRequest(cids, func(cancels []cid.Cid) {
-		cancelled <- cancels
-	})
+	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Listen for incoming messages
 	incoming := make(chan *IncomingMessage)
+	cancelled := make(chan []cid.Cid)
 	reqctx, cancel := context.WithCancel(ctx)
 	go wr.Run(ctx, reqctx, func(msg *IncomingMessage) {
 		incoming <- msg
+	}, func(cancels []cid.Cid) {
+		cancelled <- cancels
 	})
 
 	// Publish all blocks
@@ -465,9 +465,13 @@ func TestAllBlocksReceived(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	// No remaining blocks so expect want request cancel function not to be
-	// called
-	if len(cancelled) > 0 {
-		t.Fatal("expected no cancels")
+	// Should call cancel function with no keys
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case ks := <-cancelled:
+		if len(ks) != 0 {
+			t.Fatal("expected no pending wants")
+		}
 	}
 }

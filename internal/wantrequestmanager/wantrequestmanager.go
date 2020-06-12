@@ -10,6 +10,7 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// A message received by Bitswap
 type IncomingMessage struct {
 	From      peer.ID
 	Blks      []blocks.Block
@@ -17,6 +18,8 @@ type IncomingMessage struct {
 	DontHaves []cid.Cid
 }
 
+// The incoming message and the set of CIDs of blocks that are wanted by a
+// particular session
 type messageWanted struct {
 	*IncomingMessage
 	Wanted *cid.Set
@@ -44,10 +47,8 @@ func New(bstore blockstore.Blockstore) *WantRequestManager {
 }
 
 // NewWantRequest creates a new WantRequest with the given set of wants.
-// cancelFn is called when the want request is cancelled with any remaining
-// wants (for which blocks have not yet been received)
-func (wrm *WantRequestManager) NewWantRequest(ks []cid.Cid, cancelFn func([]cid.Cid)) (*WantRequest, error) {
-	wr := newWantRequest(wrm, ks, cancelFn)
+func (wrm *WantRequestManager) NewWantRequest(ks []cid.Cid) (*WantRequest, error) {
+	wr := newWantRequest(wrm, ks)
 
 	wrm.lk.Lock()
 
@@ -217,9 +218,6 @@ type WantRequest struct {
 	Out chan blocks.Block
 	// reference to the WantRequestManager
 	wrm *WantRequestManager
-	// cancelFn is called when the WantRequest is cancelled, with the remaining
-	// keys (for which blocks have not yet been received)
-	cancelFn func([]cid.Cid)
 	// messages is a channel of incoming messages received by Bitswap
 	messages chan *messageWanted
 	lk       sync.RWMutex
@@ -231,14 +229,11 @@ type WantRequest struct {
 }
 
 // Creates a new WantRequest for the given keys.
-// Calls cancelFn with keys of blocks that have not yet been received when the
-// WantRequest is cancelled or the session is shutdown.
-func newWantRequest(wrm *WantRequestManager, ks []cid.Cid, cancelFn func([]cid.Cid)) *WantRequest {
+func newWantRequest(wrm *WantRequestManager, ks []cid.Cid) *WantRequest {
 	wr := &WantRequest{
 		wrm:      wrm,
 		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
 		messages: make(chan *messageWanted, len(ks)),
-		cancelFn: cancelFn,
 		Out:      make(chan blocks.Block, len(ks)),
 	}
 
@@ -344,10 +339,15 @@ func (wr *WantRequest) keys() *cid.Set {
 	return ks
 }
 
-// Calls receivedMessage() with incoming messages, and sends blocks on the Out
-// channel.
-// When the request is cancelled, calls wr.cancelFn with any pending wants.
-func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receiveMessage func(*IncomingMessage)) {
+// When an incoming message arrives, calls receiveMessage(), and sends blocks
+// on the wr.Out channel.
+// When the request is cancelled, calls cancelFn with any pending wants.
+func (wr *WantRequest) Run(
+	sessCtx context.Context,
+	ctx context.Context,
+	receiveMessage func(*IncomingMessage),
+	cancelFn func([]cid.Cid),
+) {
 	remaining := wr.keys()
 
 	// When the function exits
@@ -355,15 +355,15 @@ func (wr *WantRequest) Run(sessCtx context.Context, ctx context.Context, receive
 		// Clean up the want request
 		wr.close()
 
-		if remaining.Len() == 0 {
-			return
+		// Close the channel of outgoing blocks if it hasn't already been closed
+		if remaining.Len() > 0 {
+			close(wr.Out)
 		}
 
-		// Close the channel of outgoing blocks
-		close(wr.Out)
-
-		// Tell the session to cancel the remaining keys
-		wr.cancelFn(remaining.Keys())
+		// Tell the session to cancel the remaining keys. Note that we want to
+		// call cancelFn even if there are no remaining keys, so that the
+		// session knows the WantRequest is complete.
+		cancelFn(remaining.Keys())
 	}()
 
 	for {

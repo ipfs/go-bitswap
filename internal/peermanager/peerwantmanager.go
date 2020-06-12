@@ -16,6 +16,7 @@ type Gauge interface {
 	Dec()
 }
 
+// Indicates if a want is want-block or want-have
 type wantType bool
 
 const (
@@ -23,6 +24,7 @@ const (
 	wantTypeBlock wantType = true
 )
 
+// The sessions that are interested in a want, and the type of the want
 type wantInfo struct {
 	sessions map[uint64]struct{}
 	tp       wantType
@@ -48,6 +50,7 @@ type peerWantManager struct {
 	wantBlockGauge Gauge
 }
 
+// The wants sent to a particular peer
 type peerWant struct {
 	wants     map[cid.Cid]*wantInfo
 	peerQueue PeerQueue

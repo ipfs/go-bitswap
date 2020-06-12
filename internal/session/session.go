@@ -233,15 +233,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	}
 
 	// Use a WantRequest to listen for incoming messages pertaining to the keys
-	var wr *bswrm.WantRequest
-	var err error
-	wr, err = s.wrm.NewWantRequest(keys, func(ks []cid.Cid) {
-		s.incoming <- op{
-			op:          opCancel,
-			keys:        ks,
-			wantRequest: wr,
-		}
-	})
+	wr, err := s.wrm.NewWantRequest(keys)
 	if err != nil {
 		return nil, err
 	}
@@ -258,11 +250,22 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	}
 
 	// Listen for incoming messages
-	go wr.Run(s.ctx, ctx, s.receiveMessage)
+	cancelFn := func(ks []cid.Cid) {
+		// cancelFn is called when the request context or the session context
+		// are cancelled. If the session shuts down it will drain the incoming
+		// queue, so sending on this channel will not block.
+		s.incoming <- op{
+			op:          opCancel,
+			keys:        ks,
+			wantRequest: wr,
+		}
+	}
+	go wr.Run(s.ctx, ctx, s.receiveMessage, cancelFn)
 
 	return wr.Out, nil
 }
 
+// Receive an incoming message
 func (s *Session) receiveMessage(msg *bswrm.IncomingMessage) {
 	// Log the incoming message
 	s.logReceiveFrom(msg)

@@ -218,7 +218,7 @@ type Bitswap struct {
 	// NB: ensure threadsafety
 	blockstore blockstore.Blockstore
 
-	// manages channels of outgoing blocks for sessions
+	// manages requests made by sessions
 	wrm *bswrm.WantRequestManager
 
 	// keeps track of which peers have / dont have each block
