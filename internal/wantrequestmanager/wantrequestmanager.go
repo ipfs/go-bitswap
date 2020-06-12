@@ -220,7 +220,12 @@ type WantRequest struct {
 	wrm *WantRequestManager
 	// messages is a channel of incoming messages received by Bitswap
 	messages chan *messageWanted
-	lk       sync.RWMutex
+	// closedCh is used to signal when the WantRequest has closed, so as to
+	// stop sending on the messages channel
+	closedCh chan struct{}
+
+	// Locks the variables below
+	lk sync.RWMutex
 	// the keys this WantRequest is interested in and their state:
 	// wanted / unwanted
 	ks map[cid.Cid]ReqKeyState
@@ -235,6 +240,7 @@ func newWantRequest(wrm *WantRequestManager, ks []cid.Cid) *WantRequest {
 		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
 		messages: make(chan *messageWanted, len(ks)),
 		Out:      make(chan blocks.Block, len(ks)),
+		closedCh: make(chan struct{}),
 	}
 
 	for _, c := range ks {
@@ -269,7 +275,11 @@ func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 	wr.lk.Unlock()
 
 	// Send the message and the set of cids of wanted blocks
-	wr.messages <- &messageWanted{fmsg, wanted}
+	select {
+	case wr.messages <- &messageWanted{fmsg, wanted}:
+	case <-wr.closedCh:
+		return cid.NewSet()
+	}
 
 	return wanted
 }
@@ -423,6 +433,8 @@ func (wr *WantRequest) Run(
 
 // Close the WantRequest, and remove it from the WantRequestManager
 func (wr *WantRequest) close() {
+	close(wr.closedCh)
+
 	wr.lk.Lock()
 	wr.closed = true
 	wr.lk.Unlock()

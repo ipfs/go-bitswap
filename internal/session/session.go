@@ -249,7 +249,6 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	case <-s.ctx.Done():
 	}
 
-	// Listen for incoming messages
 	cancelFn := func(ks []cid.Cid) {
 		// cancelFn is called when the request context or the session context
 		// are cancelled. If the session shuts down it will drain the incoming
@@ -260,6 +259,7 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 			wantRequest: wr,
 		}
 	}
+	// Listen for incoming messages
 	go wr.Run(s.ctx, ctx, s.receiveMessage, cancelFn)
 
 	return wr.Out, nil
