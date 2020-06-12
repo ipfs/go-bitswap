@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -34,14 +35,16 @@ type messageWanted struct {
 //
 type WantRequestManager struct {
 	bstore blockstore.Blockstore
+	bpm    *bsbpm.BlockPresenceManager
 	lk     sync.RWMutex
 	wrs    map[cid.Cid]map[*WantRequest]struct{}
 }
 
 // New creates a new WantRequestManager
-func New(bstore blockstore.Blockstore) *WantRequestManager {
+func New(bstore blockstore.Blockstore, bpm *bsbpm.BlockPresenceManager) *WantRequestManager {
 	return &WantRequestManager{
 		bstore: bstore,
+		bpm:    bpm,
 		wrs:    make(map[cid.Cid]map[*WantRequest]struct{}),
 	}
 }
@@ -172,8 +175,15 @@ func (wrm *WantRequestManager) publish(msg *IncomingMessage) *cid.Set {
 
 	wrm.lk.RUnlock()
 
-	// Inform interested WantRequests
 	wanted := cid.NewSet()
+	if len(interested) == 0 {
+		return wanted
+	}
+
+	// Inform the BlockPresenceManager of any HAVEs / DONT_HAVEs
+	wrm.bpm.ReceiveFrom(msg.From, msg.Haves, msg.DontHaves)
+
+	// Inform interested WantRequests
 	for wr := range interested {
 		wrWanted := wr.receiveMessage(msg)
 

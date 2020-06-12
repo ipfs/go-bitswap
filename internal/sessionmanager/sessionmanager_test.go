@@ -93,8 +93,8 @@ func TestSessionManager(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	wrm := bswrm.New(blockstore.NewBlockstore(ds_sync.MutexWrap(ds.NewMapDatastore())))
 	bpm := bsbpm.New()
+	wrm := bswrm.New(blockstore.NewBlockstore(ds_sync.MutexWrap(ds.NewMapDatastore())), bpm)
 	pm := &fakePeerManager{}
 	sm := New(sessionFactory, peerManagerFactory, bpm, pm, wrm, "")
 

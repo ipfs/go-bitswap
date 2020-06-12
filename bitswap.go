@@ -152,7 +152,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
 	}
-	wrm = bswrm.New(bstore)
+	wrm = bswrm.New(bstore, bpm)
 	sm := bssm.New(sessionFactory, sessionPeerManagerFactory, bpm, pm, wrm, network.Self())
 	engine := decision.NewEngine(ctx, bstore, network.ConnectionManager(), network.Self())
 
@@ -410,9 +410,6 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	haves := incoming.Haves()
 	dontHaves := incoming.DontHaves()
 	if len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0 {
-		// Inform the BlockPresenceManager of any HAVEs / DONT_HAVEs
-		bs.bpm.ReceiveFrom(p, haves, dontHaves)
-
 		// Process blocks
 		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
@@ -32,7 +33,7 @@ func TestWantRequestManager(t *testing.T) {
 	incomingBlks := blks[:2]
 
 	wg, gctx := errgroup.WithContext(ctx)
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	// Create two want requests that want all the blocks
 	for i := 0; i < 2; i++ {
@@ -114,7 +115,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	// Only interested in one of each
 	wants := []cid.Cid{cids[0], cids[2], cids[4]}
 
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	wr, err := wrm.NewWantRequest(wants)
 	if err != nil {
@@ -201,6 +202,54 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	}
 }
 
+func TestUpdatesBlockPresenceManager(t *testing.T) {
+	ctx := context.Background()
+	bstore := createBlockstore()
+	bpm := bsbpm.New()
+	wrm := New(bstore, bpm)
+
+	p0 := testutil.GeneratePeers(1)[0]
+	blks := testutil.GenerateBlocksOfSize(2, 8*1024)
+	cids := []cid.Cid{}
+	for _, b := range blks {
+		cids = append(cids, b.Cid())
+	}
+
+	haves := cids[:1]
+	dontHaves := cids[1:]
+
+	wr, err := wrm.NewWantRequest(cids)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Listen for the incoming message from each want request
+	incoming := make(chan *IncomingMessage)
+	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {
+		incoming <- msg
+	}, func([]cid.Cid) {})
+
+	// Publish message with 1 HAVE and 1 DONT_HAVE
+	_, err = wrm.PublishToSessions(&IncomingMessage{
+		From:      p0,
+		Haves:     haves,
+		DontHaves: dontHaves,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receive the incoming message
+	select {
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("timed out")
+	case <-incoming:
+		if !bpm.PeerHasBlock(p0, haves[0]) || !bpm.PeerDoesNotHaveBlock(p0, dontHaves[0]) {
+			t.Fatal("did not register HAVEs / DONT_HAVEs with BlockPresenceManager")
+		}
+	}
+}
+
 func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 	ctx := context.Background()
 	bstore := createBlockstore()
@@ -214,7 +263,7 @@ func TestWantForBlockAlreadyInBlockstore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	// Create a want request for the block that is already in the blockstore
 	wr, err := wrm.NewWantRequest(cids)
@@ -279,7 +328,7 @@ func TestPublishWanted(t *testing.T) {
 		cids = append(cids, b.Cid())
 	}
 
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
@@ -336,7 +385,7 @@ func testCancel(t *testing.T, sessctx context.Context, reqctx context.Context, c
 		cids = append(cids, b.Cid())
 	}
 
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
@@ -402,7 +451,7 @@ func TestAllBlocksReceived(t *testing.T) {
 		cids = append(cids, b.Cid())
 	}
 
-	wrm := New(bstore)
+	wrm := New(bstore, bsbpm.New())
 
 	wr, err := wrm.NewWantRequest(cids)
 	if err != nil {
