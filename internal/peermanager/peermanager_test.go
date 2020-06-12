@@ -263,6 +263,49 @@ func TestSendCancels(t *testing.T) {
 	}
 }
 
+func TestRemoveKeysFromBPMOnCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	sid1 := uint64(1)
+	sid2 := uint64(2)
+	msgs := make(chan msg, 16)
+	peerQueueFactory := makePeerQueueFactory(msgs)
+	peers := testutil.GeneratePeers(2)
+	self, p := peers[0], peers[1]
+	bpm := bsbpm.New()
+	peerManager := New(ctx, peerQueueFactory, self, bpm)
+
+	// Connect to peer
+	peerManager.Connected(p)
+
+	// Send want-block and want-have to peer from session1 and session2
+	cids := testutil.GenerateCids(2)
+	peerManager.SendWants(sid1, p, cids[:1], cids[1:])
+	peerManager.SendWants(sid2, p, cids[:1], cids[1:])
+
+	// Simulate Bitswap informing BlockPresenceManager of received
+	// HAVEs for cids
+	bpm.ReceiveFrom(p, cids, nil)
+
+	if !bpm.PeerHasBlock(p, cids[0]) || !bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("BlockPresenceManager should record that peer has blocks")
+	}
+
+	// Send cancel for want-block and want-have from session1
+	peerManager.SendCancels(sid1, []cid.Cid{cids[0], cids[1]})
+
+	if !bpm.PeerHasBlock(p, cids[0]) || !bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("BlockPresenceManager should record that peer has blocks")
+	}
+
+	// Send cancel for want-block and want-have from session2
+	peerManager.SendCancels(sid2, []cid.Cid{cids[0], cids[1]})
+
+	if bpm.PeerHasBlock(p, cids[0]) || bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("wants should have been removed from BlockPresenceManager")
+	}
+}
+
 func (s *sess) ID() uint64 {
 	return s.id
 }
