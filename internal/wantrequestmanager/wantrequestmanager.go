@@ -27,11 +27,14 @@ type messageWanted struct {
 }
 
 //
-// The WantRequestManager keeps track of WantRequests.
+// The WantRequestManager keeps track of which sessions want which blocks,
+// distributes incoming messages to those sessions, and writes blocks to
+// the blockstore.
 // When the client calls Session.WantBlocks(keys), the session creates a
 // WantRequest with those keys on the WantRequestManager.
 // When a message arrives Bitswap calls PublishToSessions and the
-// WantRequestManager informs all Sessions that are interested in the message.
+// WantRequestManager writes the blocks to the blockstore and informs all
+// Sessions that are interested in the message.
 //
 type WantRequestManager struct {
 	bstore blockstore.Blockstore
@@ -103,7 +106,9 @@ func (wrm *WantRequestManager) getBlocks(ks []cid.Cid) ([]blocks.Block, error) {
 }
 
 // PublishToSessions sends the message to all sessions that are interested in
-// it
+// it.
+// Returns the set of CIDs of blocks that were wanted by a session (hadn't been
+// received yet)
 func (wrm *WantRequestManager) PublishToSessions(msg *IncomingMessage) (*cid.Set, error) {
 	local := msg.From == ""
 
@@ -143,7 +148,7 @@ func (wrm *WantRequestManager) wantedBlocks(blks []blocks.Block) []blocks.Block 
 		for wr := range wrm.wrs[c] {
 			if wr.wants(c) {
 				wanted = append(wanted, b)
-				continue
+				break
 			}
 		}
 	}
@@ -151,6 +156,8 @@ func (wrm *WantRequestManager) wantedBlocks(blks []blocks.Block) []blocks.Block 
 }
 
 // publish the message to all WantRequests that are interested in it
+// Returns the set of CIDs of blocks that were wanted by a session (hadn't been
+// received yet)
 func (wrm *WantRequestManager) publish(msg *IncomingMessage) *cid.Set {
 	wrm.lk.RLock()
 
@@ -212,13 +219,16 @@ func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest) {
 	}
 }
 
-// Keys are in the wanted state until the block is received and they change to
-// the unwanted state.
-type ReqKeyState bool
+// Keys are in the pending state until the block is received and they change to
+// the received state.
+// Note that the Session still needs to receive subsequent messages about wants
+// that have been received, because the Session needs to discover other peers
+// who had the block, so it can send requests for other wants to those peers.
+type WantState bool
 
 const (
-	ReqKeyWanted   ReqKeyState = true
-	ReqKeyUnwanted ReqKeyState = false
+	WantPending  WantState = true
+	WantReceived WantState = false
 )
 
 // A WantRequest keeps track of all the wants for a Session.GetBlocks(keys)
@@ -238,7 +248,7 @@ type WantRequest struct {
 	lk sync.RWMutex
 	// the keys this WantRequest is interested in and their state:
 	// wanted / unwanted
-	ks map[cid.Cid]ReqKeyState
+	ks map[cid.Cid]WantState
 	// closed indicates whether the WantRequest has been cancelled
 	closed bool
 }
@@ -247,22 +257,24 @@ type WantRequest struct {
 func newWantRequest(wrm *WantRequestManager, ks []cid.Cid) *WantRequest {
 	wr := &WantRequest{
 		wrm:      wrm,
-		ks:       make(map[cid.Cid]ReqKeyState, len(ks)),
+		ks:       make(map[cid.Cid]WantState, len(ks)),
 		messages: make(chan *messageWanted, len(ks)),
 		Out:      make(chan blocks.Block, len(ks)),
 		closedCh: make(chan struct{}),
 	}
 
 	for _, c := range ks {
-		// Initialize the want state to "wanted"
-		wr.ks[c] = ReqKeyWanted
+		// Initialize the want state to "pending"
+		wr.ks[c] = WantPending
 	}
 
 	return wr
 }
 
 // Called when an incoming message arrives that has blocks / HAVEs / DONT_HAVEs
-// for the keys in this WantRequest
+// for the keys in this WantRequest.
+// Returns the set of CIDs of blocks that were wanted by a session (hadn't been
+// received yet)
 func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 	wr.lk.Lock()
 
@@ -294,14 +306,14 @@ func (wr *WantRequest) receiveMessage(msg *IncomingMessage) *cid.Set {
 	return wanted
 }
 
-// receiveBlocks marks the corresponding wants as unwanted, and returns
+// receiveBlocks marks the corresponding wants as received, and returns
 // - the list of blocks that this WantRequest was interested in
 // - the set of CIDs of those blocks that the WantRequest hadn't already received
 func (wr *WantRequest) receiveBlocks(blks []blocks.Block) ([]blocks.Block, *cid.Set) {
 	// Filter for blocks the WantRequest is interested in
 	filtered := make([]blocks.Block, 0, len(blks))
 
-	// Work out which blocks are still wanted by this WantRequest (ie this is
+	// Work out which blocks are still pending for this WantRequest (ie this is
 	// the first time the block was received)
 	wanted := cid.NewSet()
 
@@ -313,8 +325,8 @@ func (wr *WantRequest) receiveBlocks(blks []blocks.Block) ([]blocks.Block, *cid.
 		}
 
 		filtered = append(filtered, b)
-		if state == ReqKeyWanted {
-			wr.ks[c] = ReqKeyUnwanted
+		if state == WantPending {
+			wr.ks[c] = WantReceived
 			wanted.Add(c)
 		}
 	}
@@ -344,7 +356,7 @@ func (wr *WantRequest) wants(c cid.Cid) bool {
 	}
 
 	state, ok := wr.ks[c]
-	return ok && state == ReqKeyWanted
+	return ok && state == WantPending
 }
 
 // The set of keys that the WantRequest is interested in
