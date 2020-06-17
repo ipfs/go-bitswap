@@ -32,7 +32,7 @@ type messageWanted struct {
 // the blockstore.
 // When the client calls Session.WantBlocks(keys), the session creates a
 // WantRequest with those keys on the WantRequestManager.
-// When a message arrives Bitswap calls PublishToSessions and the
+// When a message arrives Bitswap calls ReceiveMessage and the
 // WantRequestManager writes the blocks to the blockstore and informs all
 // Sessions that are interested in the message.
 //
@@ -105,11 +105,11 @@ func (wrm *WantRequestManager) getBlocks(ks []cid.Cid) ([]blocks.Block, error) {
 	return blks, nil
 }
 
-// PublishToSessions sends the message to all sessions that are interested in
+// ReceiveMessage sends the message to all sessions that are interested in
 // it.
 // Returns the set of CIDs of blocks that were wanted by a session (hadn't been
 // received yet)
-func (wrm *WantRequestManager) PublishToSessions(msg *IncomingMessage) (*cid.Set, error) {
+func (wrm *WantRequestManager) ReceiveMessage(msg *IncomingMessage) (*cid.Set, error) {
 	local := msg.From == ""
 
 	// If the message includes blocks

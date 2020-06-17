@@ -82,7 +82,7 @@ func TestWantRequestManager(t *testing.T) {
 		})
 	}
 
-	_, err := wrm.PublishToSessions(&IncomingMessage{
+	_, err := wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: incomingBlks,
 	})
@@ -151,7 +151,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	}
 
 	// Publish block - should be received by listening want request
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: incomingBlks,
 	})
@@ -166,7 +166,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	}
 
 	// Publish HAVE - should be received by listening want request
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From:  p0,
 		Haves: haves,
 	})
@@ -181,7 +181,7 @@ func TestSubscribeForBlockHaveDontHave(t *testing.T) {
 	}
 
 	// Publish DONT_HAVE - should be received by listening want request
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From:      p0,
 		DontHaves: dontHaves,
 	})
@@ -230,7 +230,7 @@ func TestUpdatesBlockPresenceManager(t *testing.T) {
 	}, func([]cid.Cid) {})
 
 	// Publish message with 1 HAVE and 1 DONT_HAVE
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From:      p0,
 		Haves:     haves,
 		DontHaves: dontHaves,
@@ -337,7 +337,7 @@ func TestPublishWanted(t *testing.T) {
 	go wr.Run(ctx, ctx, func(msg *IncomingMessage) {}, func([]cid.Cid) {})
 
 	// Publish first block
-	wanted, err := wrm.PublishToSessions(&IncomingMessage{
+	wanted, err := wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: blks[:1],
 	})
@@ -350,7 +350,7 @@ func TestPublishWanted(t *testing.T) {
 	}
 
 	// Publish first two blocks
-	wanted, err = wrm.PublishToSessions(&IncomingMessage{
+	wanted, err = wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: blks[:2],
 	})
@@ -404,7 +404,7 @@ func testCancel(t *testing.T, sessctx context.Context, reqctx context.Context, c
 	}()
 
 	// Publish first block
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: blks[:1],
 	})
@@ -469,7 +469,7 @@ func TestAllBlocksReceived(t *testing.T) {
 	})
 
 	// Publish all blocks
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: blks,
 	})
@@ -494,7 +494,7 @@ func TestAllBlocksReceived(t *testing.T) {
 	}
 
 	// Publish another message
-	_, err = wrm.PublishToSessions(&IncomingMessage{
+	_, err = wrm.ReceiveMessage(&IncomingMessage{
 		From: p0,
 		Blks: blks,
 	})
