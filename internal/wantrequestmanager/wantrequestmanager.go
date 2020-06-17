@@ -224,11 +224,11 @@ func (wrm *WantRequestManager) removeWantRequest(wr *WantRequest) {
 // Note that the Session still needs to receive subsequent messages about wants
 // that have been received, because the Session needs to discover other peers
 // who had the block, so it can send requests for other wants to those peers.
-type WantState bool
+type BlockState bool
 
 const (
-	WantPending  WantState = true
-	WantReceived WantState = false
+	BlockWanted   BlockState = true
+	BlockReceived BlockState = false
 )
 
 // A WantRequest keeps track of all the wants for a Session.GetBlocks(keys)
@@ -248,7 +248,7 @@ type WantRequest struct {
 	lk sync.RWMutex
 	// the keys this WantRequest is interested in and their state:
 	// wanted / unwanted
-	ks map[cid.Cid]WantState
+	ks map[cid.Cid]BlockState
 	// closed indicates whether the WantRequest has been cancelled
 	closed bool
 }
@@ -257,15 +257,15 @@ type WantRequest struct {
 func newWantRequest(wrm *WantRequestManager, ks []cid.Cid) *WantRequest {
 	wr := &WantRequest{
 		wrm:      wrm,
-		ks:       make(map[cid.Cid]WantState, len(ks)),
+		ks:       make(map[cid.Cid]BlockState, len(ks)),
 		messages: make(chan *messageWanted, len(ks)),
 		Out:      make(chan blocks.Block, len(ks)),
 		closedCh: make(chan struct{}),
 	}
 
 	for _, c := range ks {
-		// Initialize the want state to "pending"
-		wr.ks[c] = WantPending
+		// Initialize the key state to "wanted", ie not yet received
+		wr.ks[c] = BlockWanted
 	}
 
 	return wr
@@ -325,8 +325,8 @@ func (wr *WantRequest) receiveBlocks(blks []blocks.Block) ([]blocks.Block, *cid.
 		}
 
 		filtered = append(filtered, b)
-		if state == WantPending {
-			wr.ks[c] = WantReceived
+		if state == BlockWanted {
+			wr.ks[c] = BlockReceived
 			wanted.Add(c)
 		}
 	}
@@ -356,7 +356,7 @@ func (wr *WantRequest) wants(c cid.Cid) bool {
 	}
 
 	state, ok := wr.ks[c]
-	return ok && state == WantPending
+	return ok && state == BlockWanted
 }
 
 // The set of keys that the WantRequest is interested in
