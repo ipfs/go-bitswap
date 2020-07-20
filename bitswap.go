@@ -307,8 +307,8 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 
 // HasBlock announces the existence of a block to this bitswap service. The
 // service will potentially notify its peers.
-func (bs *Bitswap) HasBlock(blk blocks.Block) error {
-	return bs.receiveBlocksFrom(context.Background(), "", []blocks.Block{blk}, nil, nil)
+func (bs *Bitswap) HasBlock(ctx context.Context, blk blocks.Block) error {
+	return bs.receiveBlocksFrom(ctx, "", []blocks.Block{blk}, nil, nil)
 }
 
 // TODO: Some of this stuff really only needs to be done when adding a block
@@ -335,7 +335,7 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 
 	// Put wanted blocks into blockstore
 	if len(wanted) > 0 {
-		err := bs.blockstore.PutMany(wanted)
+		err := bs.blockstore.PutMany(ctx, wanted)
 		if err != nil {
 			log.Errorf("Error writing %d blocks to datastore: %s", len(wanted), err)
 			return err
@@ -414,7 +414,7 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	iblocks := incoming.Blocks()
 
 	if len(iblocks) > 0 {
-		bs.updateReceiveCounters(iblocks)
+		bs.updateReceiveCounters(ctx, iblocks)
 		for _, b := range iblocks {
 			log.Debugf("[recv] block; cid=%s, peer=%s", b.Cid(), p)
 		}
@@ -432,11 +432,11 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	}
 }
 
-func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
+func (bs *Bitswap) updateReceiveCounters(ctx context.Context, blocks []blocks.Block) {
 	// Check which blocks are in the datastore
 	// (Note: any errors from the blockstore are simply logged out in
 	// blockstoreHas())
-	blocksHas := bs.blockstoreHas(blocks)
+	blocksHas := bs.blockstoreHas(ctx, blocks)
 
 	bs.counterLk.Lock()
 	defer bs.counterLk.Unlock()
@@ -462,7 +462,7 @@ func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 	}
 }
 
-func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
+func (bs *Bitswap) blockstoreHas(ctx context.Context, blks []blocks.Block) []bool {
 	res := make([]bool, len(blks))
 
 	wg := sync.WaitGroup{}
@@ -471,7 +471,7 @@ func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
 		go func(i int, b blocks.Block) {
 			defer wg.Done()
 
-			has, err := bs.blockstore.Has(b.Cid())
+			has, err := bs.blockstore.Has(ctx, b.Cid())
 			if err != nil {
 				log.Infof("blockstore.Has error: %s", err)
 				has = false

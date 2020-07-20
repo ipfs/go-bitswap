@@ -203,13 +203,14 @@ func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 }
 
 func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
+	ctx := context.Background()
 	alphabet := "abcdefghijklmnopqrstuvwxyz"
 	vowels := "aeiou"
 
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
 	for _, letter := range strings.Split(alphabet, "") {
 		block := blocks.NewBlock([]byte(letter))
-		if err := bs.Put(block); err != nil {
+		if err := bs.Put(ctx, block); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -542,12 +543,13 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 }
 
 func TestPartnerWantHaveWantBlockActive(t *testing.T) {
+	ctx := context.Background()
 	alphabet := "abcdefghijklmnopqrstuvwxyz"
 
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
 	for _, letter := range strings.Split(alphabet, "") {
 		block := blocks.NewBlock([]byte(letter))
-		if err := bs.Put(block); err != nil {
+		if err := bs.Put(ctx, block); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -813,6 +815,7 @@ func formatPresencesDiff(presences []message.BlockPresence, expHaves []string, e
 }
 
 func TestPartnerWantsThenCancels(t *testing.T) {
+	ctx := context.Background()
 	numRounds := 10
 	if testing.Short() {
 		numRounds = 1
@@ -846,12 +849,11 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
 	for _, letter := range alphabet {
 		block := blocks.NewBlock([]byte(letter))
-		if err := bs.Put(block); err != nil {
+		if err := bs.Put(ctx, block); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	ctx := context.Background()
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
 		e := newEngine(ctx, bs, &fakePeerTagger{}, "localhost", 0, shortTerm, nil)
@@ -875,6 +877,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 }
 
 func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
+	ctx := context.Background()
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
 	partner := libp2ptest.RandPeerIDFatal(t)
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
@@ -897,7 +900,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 		t.Fatal("expected no envelope yet")
 	}
 
-	if err := bs.PutMany([]blocks.Block{blks[0], blks[2]}); err != nil {
+	if err := bs.PutMany(ctx, []blocks.Block{blks[0], blks[2]}); err != nil {
 		t.Fatal(err)
 	}
 	e.ReceiveFrom(otherPeer, []blocks.Block{blks[0], blks[2]}, []cid.Cid{})
@@ -919,6 +922,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 }
 
 func TestSendDontHave(t *testing.T) {
+	ctx := context.Background()
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
 	partner := libp2ptest.RandPeerIDFatal(t)
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
@@ -960,7 +964,7 @@ func TestSendDontHave(t *testing.T) {
 	}
 
 	// Receive all the blocks
-	if err := bs.PutMany(blks); err != nil {
+	if err := bs.PutMany(ctx, blks); err != nil {
 		t.Fatal(err)
 	}
 	e.ReceiveFrom(otherPeer, blks, []cid.Cid{})
@@ -1025,7 +1029,7 @@ func TestTaggingPeers(t *testing.T) {
 	keys := []string{"a", "b", "c", "d", "e"}
 	for _, letter := range keys {
 		block := blocks.NewBlock([]byte(letter))
-		if err := sanfrancisco.Blockstore.Put(block); err != nil {
+		if err := sanfrancisco.Blockstore.Put(ctx, block); err != nil {
 			t.Fatal(err)
 		}
 	}
