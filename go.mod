@@ -6,7 +6,7 @@ require (
 	github.com/golang/protobuf v1.3.2 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/ipfs/go-block-format v0.0.2
-	github.com/ipfs/go-cid v0.0.5
+	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.4.4
 	github.com/ipfs/go-detect-race v0.0.1
 	github.com/ipfs/go-ipfs-blockstore v0.1.4
