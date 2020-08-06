@@ -420,8 +420,8 @@ func assertStat(t *testing.T, st *bitswap.Stat, sblks, rblks, sdata, rdata uint6
 		t.Errorf("mismatch in data sent: %d vs %d", sdata, st.DataSent)
 	}
 
-	if rdata != st.DataReceived {
-		t.Errorf("mismatch in data recvd: %d vs %d", rdata, st.DataReceived)
+	if rdata != st.BlockDataReceived {
+		t.Errorf("mismatch in data recvd: %d vs %d", rdata, st.BlockDataReceived)
 	}
 }
 
@@ -482,8 +482,10 @@ func TestBasicBitswap(t *testing.T) {
 
 	t.Log("stat node 0")
 	assertStat(t, st0, 1, 0, uint64(len(blk.RawData())), 0)
+
 	t.Log("stat node 1")
 	assertStat(t, st1, 0, 1, 0, uint64(len(blk.RawData())))
+
 	t.Log("stat node 2")
 	assertStat(t, st2, 0, 0, 0, 0)
 
