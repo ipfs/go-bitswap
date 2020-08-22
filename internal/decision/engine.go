@@ -510,12 +510,22 @@ func (e *Engine) Peers() []peer.ID {
 	return response
 }
 
-// MessageReceived is called when a message is received from a remote peer.
-// For each item in the wantlist, add a want-have or want-block entry to the
-// request queue (this is later popped off by the workerTasks)
-func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwapMessage) {
-	entries := m.Wantlist()
+// BlocksReceived is called whenever we receive new blocks we want.
+func (e *Engine) BlocksReceived(ctx context.Context, p peer.ID, blks []blocks.Block) {
+	// Get the ledger for the peer
+	l := e.findOrCreate(p)
+	l.lk.Lock()
+	defer l.lk.Unlock()
 
+	// Record how many bytes were received in the ledger
+	for _, block := range blks {
+		log.Debugw("Bitswap engine <- block", "local", e.self, "from", p, "cid", block.Cid(), "size", len(block.RawData()))
+		l.ReceivedBytes(len(block.RawData()))
+	}
+}
+
+// WantlistReceived is called whenever a peer sends us a new wantlist.
+func (e *Engine) WantlistReceived(ctx context.Context, p peer.ID, entries []bsmsg.Entry, full bool) {
 	if len(entries) > 0 {
 		log.Debugw("Bitswap engine <- msg", "local", e.self, "from", p, "entryCount", len(entries))
 		for _, et := range entries {
@@ -527,10 +537,6 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 				}
 			}
 		}
-	}
-
-	if m.Empty() {
-		log.Infof("received empty message from %s", p)
 	}
 
 	newWorkExists := false
@@ -558,7 +564,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 	defer l.lk.Unlock()
 
 	// If the peer sent a full wantlist, replace the ledger's wantlist
-	if m.Full() {
+	if full {
 		l.wantList = wl.New()
 	}
 
@@ -654,27 +660,11 @@ func (e *Engine) splitWantsCancels(es []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Ent
 	return wants, cancels
 }
 
-// ReceiveFrom is called when new blocks are received and added to the block
-// store, meaning there may be peers who want those blocks, so we should send
-// the blocks to them.
-//
-// This function also updates the receive side of the ledger.
-func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid) {
+// AddBlocks is called when new blocks become available, meaning there may be
+// peers who want those blocks, so we should send the blocks to them.
+func (e *Engine) AddBlocks(blks []blocks.Block) {
 	if len(blks) == 0 {
 		return
-	}
-
-	if from != "" {
-		l := e.findOrCreate(from)
-		l.lk.Lock()
-
-		// Record how many bytes were received in the ledger
-		for _, blk := range blks {
-			log.Debugw("Bitswap engine <- block", "local", e.self, "from", from, "cid", blk.Cid(), "size", len(blk.RawData()))
-			l.ReceivedBytes(len(blk.RawData()))
-		}
-
-		l.lk.Unlock()
 	}
 
 	// Get the size of each block
