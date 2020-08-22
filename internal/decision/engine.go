@@ -200,16 +200,6 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, peerTagger PeerTagger,
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
 		peertaskqueue.TaskMerger(newTaskMerger()),
 		peertaskqueue.IgnoreFreezing(true))
-	if scoreLedger == nil {
-		e.scoreLedger = NewDefaultScoreLedger()
-	}
-	e.scoreLedger.Init(func(p peer.ID, score int) {
-		if score == 0 {
-			e.peerTagger.UntagPeer(p, e.tagUseful)
-		} else {
-			e.peerTagger.TagPeer(p, e.tagUseful, score)
-		}
-	})
 	return e
 }
 
@@ -223,8 +213,30 @@ func (e *Engine) SetSendDontHaves(send bool) {
 	e.sendDontHaves = send
 }
 
+// Sets the scoreLedger to the given implementation. Should be called
+// before StartWorkers().
+func (e *Engine) UseScoreLedger(scoreLedger ScoreLedger) {
+	e.scoreLedger = scoreLedger
+}
+
+// Checks and, if it is unset, initializes the scoreLedger with the default
+// implementation.
+func (e *Engine) initScoreLedger() {
+	if e.scoreLedger == nil {
+		e.scoreLedger = NewDefaultScoreLedger()
+	}
+	e.scoreLedger.Init(func(p peer.ID, score int) {
+		if score == 0 {
+			e.peerTagger.UntagPeer(p, e.tagUseful)
+		} else {
+			e.peerTagger.TagPeer(p, e.tagUseful, score)
+		}
+	})
+}
+
 // Start up workers to handle requests from other nodes for the data on this node
 func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	e.initScoreLedger()
 	// Start up blockstore manager
 	e.bsm.start(px)
 	e.scoreLedger.Start()
