@@ -268,15 +268,15 @@ func (dsl *DefaultScoreLedger) GetReceipt(p peer.ID) *Receipt {
 	l := dsl.find(p)
 	if l != nil {
 		return l.Receipt()
-	} else {
-		// Return a blank receipt.
-		return &Receipt{
-			Peer:      p.String(),
-			Value:     0,
-			Sent:      0,
-			Recv:      0,
-			Exchanged: 0,
-		}
+	}
+
+	// Return a blank receipt otherwise.
+	return &Receipt{
+		Peer:      p.String(),
+		Value:     0,
+		Sent:      0,
+		Recv:      0,
+		Exchanged: 0,
 	}
 }
 
