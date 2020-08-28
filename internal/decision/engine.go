@@ -105,8 +105,6 @@ type ScorePeerFunc func(peer.ID, int)
 
 // ScoreLedger is an external ledger dealing with peer scores.
 type ScoreLedger interface {
-	// Initializes the score ledger. Should be called before Start().
-	Init(scorePeer ScorePeerFunc)
 	// Returns aggregated data communication with a given peer.
 	GetReceipt(p peer.ID) *Receipt
 	// Increments the sent counter for the given peer.
@@ -120,7 +118,7 @@ type ScoreLedger interface {
 	// clean up the accounting.
 	PeerDisconnected(p peer.ID)
 	// Starts the ledger sampling process.
-	Start()
+	Start(scorePeer ScorePeerFunc)
 	// Closes (stops) the sampling process.
 	Close()
 }
@@ -219,31 +217,31 @@ func (e *Engine) UseScoreLedger(scoreLedger ScoreLedger) {
 	e.scoreLedger = scoreLedger
 }
 
-// Checks and, if it is unset, initializes the scoreLedger with the default
+// Starts the score ledger. Before start the function checks and,
+// if it is unset, initializes the scoreLedger with the default
 // implementation.
-func (e *Engine) initScoreLedger() {
+func (e *Engine) startScoreLedger(px process.Process) {
 	if e.scoreLedger == nil {
 		e.scoreLedger = NewDefaultScoreLedger()
 	}
-	e.scoreLedger.Init(func(p peer.ID, score int) {
+	e.scoreLedger.Start(func(p peer.ID, score int) {
 		if score == 0 {
 			e.peerTagger.UntagPeer(p, e.tagUseful)
 		} else {
 			e.peerTagger.TagPeer(p, e.tagUseful, score)
 		}
 	})
-}
-
-// Start up workers to handle requests from other nodes for the data on this node
-func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
-	e.initScoreLedger()
-	// Start up blockstore manager
-	e.bsm.start(px)
-	e.scoreLedger.Start()
 	px.Go(func(ppx process.Process) {
 		<-ppx.Closing()
 		e.scoreLedger.Close()
 	})
+}
+
+// Start up workers to handle requests from other nodes for the data on this node
+func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
+	// Start up blockstore manager
+	e.bsm.start(px)
+	e.startScoreLedger(px)
 
 	for i := 0; i < e.taskWorkerCount; i++ {
 		px.Go(func(px process.Process) {

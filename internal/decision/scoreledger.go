@@ -281,7 +281,8 @@ func (dsl *DefaultScoreLedger) GetReceipt(p peer.ID) *Receipt {
 }
 
 // Starts the default ledger sampling process.
-func (dsl *DefaultScoreLedger) Start() {
+func (dsl *DefaultScoreLedger) Start(scorePeer ScorePeerFunc) {
+	dsl.init(scorePeer)
 	go dsl.scoreWorker()
 }
 
@@ -291,7 +292,7 @@ func (dsl *DefaultScoreLedger) Close() {
 }
 
 // Initializes the score ledger.
-func (dsl *DefaultScoreLedger) Init(scorePeer ScorePeerFunc) {
+func (dsl *DefaultScoreLedger) init(scorePeer ScorePeerFunc) {
 	dsl.lock.Lock()
 	defer dsl.lock.Unlock()
 	dsl.ledgerMap = make(map[peer.ID]*scoreledger)

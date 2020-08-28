@@ -806,22 +806,19 @@ func TestBitswapLedgerTwoWay(t *testing.T) {
 }
 
 type testingScoreLedger struct {
-	initialized bool
-	started     chan struct{}
-	closed      chan struct{}
+	scorePeer deciface.ScorePeerFunc
+	started   chan struct{}
+	closed    chan struct{}
 }
 
 func newTestingScoreLedger() *testingScoreLedger {
 	return &testingScoreLedger{
-		false,
+		nil,
 		make(chan struct{}),
 		make(chan struct{}),
 	}
 }
 
-func (tsl *testingScoreLedger) Init(scorePeer deciface.ScorePeerFunc) {
-	tsl.initialized = true
-}
 func (tsl *testingScoreLedger) GetReceipt(p peer.ID) *deciface.Receipt {
 	return nil
 }
@@ -829,7 +826,8 @@ func (tsl *testingScoreLedger) AddToSentBytes(p peer.ID, n int)     {}
 func (tsl *testingScoreLedger) AddToReceivedBytes(p peer.ID, n int) {}
 func (tsl *testingScoreLedger) PeerConnected(p peer.ID)             {}
 func (tsl *testingScoreLedger) PeerDisconnected(p peer.ID)          {}
-func (tsl *testingScoreLedger) Start() {
+func (tsl *testingScoreLedger) Start(scorePeer deciface.ScorePeerFunc) {
+	tsl.scorePeer = scorePeer
 	close(tsl.started)
 }
 func (tsl *testingScoreLedger) Close() {
@@ -848,8 +846,8 @@ func TestWithScoreLedger(t *testing.T) {
 
 	select {
 	case <-tsl.started:
-		if !tsl.initialized {
-			t.Fatal("Expected the score ledger to be initialized")
+		if tsl.scorePeer == nil {
+			t.Fatal("Expected the score function to be initialized")
 		}
 	case <-time.After(time.Second * 5):
 		t.Fatal("Expected the score ledger to be started within 5s")
