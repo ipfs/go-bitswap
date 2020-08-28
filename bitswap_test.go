@@ -830,7 +830,7 @@ func (tsl *testingScoreLedger) Start(scorePeer deciface.ScorePeerFunc) {
 	tsl.scorePeer = scorePeer
 	close(tsl.started)
 }
-func (tsl *testingScoreLedger) Close() {
+func (tsl *testingScoreLedger) Stop() {
 	close(tsl.closed)
 }
 

@@ -119,8 +119,8 @@ type ScoreLedger interface {
 	PeerDisconnected(p peer.ID)
 	// Starts the ledger sampling process.
 	Start(scorePeer ScorePeerFunc)
-	// Closes (stops) the sampling process.
-	Close()
+	// Stops the sampling process.
+	Stop()
 }
 
 // Engine manages sending requested blocks to peers.
@@ -233,7 +233,7 @@ func (e *Engine) startScoreLedger(px process.Process) {
 	})
 	px.Go(func(ppx process.Process) {
 		<-ppx.Closing()
-		e.scoreLedger.Close()
+		e.scoreLedger.Stop()
 	})
 }
 

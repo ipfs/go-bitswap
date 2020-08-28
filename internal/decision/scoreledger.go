@@ -286,8 +286,8 @@ func (dsl *DefaultScoreLedger) Start(scorePeer ScorePeerFunc) {
 	go dsl.scoreWorker()
 }
 
-// Closes (stops) the sampling process.
-func (dsl *DefaultScoreLedger) Close() {
+// Stops the sampling process.
+func (dsl *DefaultScoreLedger) Stop() {
 	close(dsl.closing)
 }
 
