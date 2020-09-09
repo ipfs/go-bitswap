@@ -468,3 +468,96 @@ func TestSupportsHave(t *testing.T) {
 		}
 	}
 }
+
+func testNetworkCounters(t *testing.T, n1 int, n2 int) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p1 := tnet.RandIdentityOrFatal(t)
+	r1 := newReceiver()
+	p2 := tnet.RandIdentityOrFatal(t)
+	r2 := newReceiver()
+
+	_, bsnet1, _, bsnet2, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
+
+	for n := 0; n < n1; n++ {
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		err := bsnet1.SendMessage(ctx, p2.ID(), msg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("p2 did not receive message sent")
+		case <-r2.messageReceived:
+			for j := 0; j < 2; j++ {
+				err := bsnet2.SendMessage(ctx, p1.ID(), msg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("p1 did not receive message sent")
+				case <-r1.messageReceived:
+				}
+			}
+		}
+		cancel()
+	}
+
+	if n2 > 0 {
+		ms, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for n := 0; n < n2; n++ {
+			ctx, cancel := context.WithTimeout(ctx, time.Second)
+			err = ms.SendMsg(ctx, msg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal("p2 did not receive message sent")
+			case <-r2.messageReceived:
+				for j := 0; j < 2; j++ {
+					err := bsnet2.SendMessage(ctx, p1.ID(), msg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal("p1 did not receive message sent")
+					case <-r1.messageReceived:
+					}
+				}
+			}
+			cancel()
+		}
+	}
+
+	// Wait a little for MessagesRecvd counters to be updated
+	// after receiver.ReceiveMessage() returns. FIXME: Can we
+	// use some network event instead of a timer?
+	ctxwait, cancelwait := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancelwait()
+	<-ctxwait.Done()
+
+	if bsnet1.Stats().MessagesSent != uint64(n1+n2) {
+		t.Fatal(fmt.Errorf("expected %d sent messages, got %d", n1+n2, bsnet1.Stats().MessagesSent))
+	}
+
+	if bsnet2.Stats().MessagesRecvd != uint64(n1+n2) {
+		t.Fatal(fmt.Errorf("expected %d received messages, got %d", n1+n2, bsnet2.Stats().MessagesRecvd))
+	}
+
+	if bsnet1.Stats().MessagesRecvd != 2*uint64(n1+n2) {
+		t.Fatal(fmt.Errorf("expected %d received reply messages, got %d", 2*(n1+n2), bsnet1.Stats().MessagesRecvd))
+	}
+}
+
+func TestNetworkCounters(t *testing.T) {
+	for n := 0; n < 11; n++ {
+		testNetworkCounters(t, 10-n, n)
+	}
+}
