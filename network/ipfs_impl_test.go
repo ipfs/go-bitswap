@@ -254,14 +254,10 @@ func TestMessageSendAndReceive(t *testing.T) {
 	}
 }
 
-func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *receiver, p2 tnet.Identity, r2 *receiver) (*ErrHost, bsnet.BitSwapNetwork, bsmsg.BitSwapMessage) {
+func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *receiver, p2 tnet.Identity, r2 *receiver) (*ErrHost, bsnet.BitSwapNetwork, *ErrHost, bsnet.BitSwapNetwork, bsmsg.BitSwapMessage) {
 	// create network
 	mn := mocknet.New(ctx)
 	mr := mockrouting.NewServer()
-	streamNet, err := tn.StreamNet(ctx, mn, mr)
-	if err != nil {
-		t.Fatal("Unable to setup network")
-	}
 
 	h1, err := mn.AddPeer(p1.PrivateKey(), p1.Address())
 	if err != nil {
@@ -269,12 +265,20 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	}
 
 	// Create a special host that we can force to start returning errors
-	eh := &ErrHost{Host: h1}
-	routing := mr.ClientWithDatastore(context.TODO(), p1, ds.NewMapDatastore())
-	bsnet1 := bsnet.NewFromIpfsHost(eh, routing)
-
-	bsnet2 := streamNet.Adapter(p2)
+	eh1 := &ErrHost{Host: h1}
+	routing1 := mr.ClientWithDatastore(context.TODO(), p1, ds.NewMapDatastore())
+	bsnet1 := bsnet.NewFromIpfsHost(eh1, routing1)
 	bsnet1.SetDelegate(r1)
+
+	h2, err := mn.AddPeer(p2.PrivateKey(), p2.Address())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a special host that we can force to start returning errors
+	eh2 := &ErrHost{Host: h2}
+	routing2 := mr.ClientWithDatastore(context.TODO(), p2, ds.NewMapDatastore())
+	bsnet2 := bsnet.NewFromIpfsHost(eh2, routing2)
 	bsnet2.SetDelegate(r2)
 
 	err = mn.LinkAll()
@@ -300,7 +304,7 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	msg := bsmsg.New(false)
 	msg.AddEntry(block1.Cid(), 1, pb.Message_Wantlist_Block, true)
 
-	return eh, bsnet1, msg
+	return eh1, bsnet1, eh2, bsnet2, msg
 }
 
 func TestMessageResendAfterError(t *testing.T) {
@@ -312,7 +316,7 @@ func TestMessageResendAfterError(t *testing.T) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
-	eh, bsnet1, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
+	eh, bsnet1, _, _, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	testSendErrorBackoff := 100 * time.Millisecond
 	ms, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{
@@ -357,7 +361,7 @@ func TestMessageSendTimeout(t *testing.T) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
-	eh, bsnet1, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
+	eh, bsnet1, _, _, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	ms, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{
 		MaxRetries:       3,
@@ -397,7 +401,7 @@ func TestMessageSendNotSupportedResponse(t *testing.T) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
-	eh, bsnet1, _ := prepareNetwork(t, ctx, p1, r1, p2, r2)
+	eh, bsnet1, _, _, _ := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	eh.setError(multistream.ErrNotSupported)
 	_, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{
