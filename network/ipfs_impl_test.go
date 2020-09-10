@@ -333,6 +333,7 @@ func TestMessageResendAfterError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer ms.Close()
 
 	// Return an error from the networking layer the next time we try to send
 	// a message
@@ -377,6 +378,7 @@ func TestMessageSendTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer ms.Close()
 
 	// Return a DeadlineExceeded error from the networking layer the next time we try to
 	// send a message
@@ -410,12 +412,13 @@ func TestMessageSendNotSupportedResponse(t *testing.T) {
 	eh, bsnet1, _, _, _ := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	eh.setError(multistream.ErrNotSupported)
-	_, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{
+	ms, err := bsnet1.NewMessageSender(ctx, p2.ID(), &bsnet.MessageSenderOpts{
 		MaxRetries:       3,
 		SendTimeout:      100 * time.Millisecond,
 		SendErrorBackoff: 100 * time.Millisecond,
 	})
 	if err == nil {
+		ms.Close()
 		t.Fatal("Expected ErrNotSupported")
 	}
 
@@ -468,6 +471,7 @@ func TestSupportsHave(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer senderCurrent.Close()
 
 		if senderCurrent.SupportsHave() != tc.expSupportsHave {
 			t.Fatal("Expected sender HAVE message support", tc.proto, tc.expSupportsHave)
