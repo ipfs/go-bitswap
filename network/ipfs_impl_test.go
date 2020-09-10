@@ -533,6 +533,7 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer ms.Close()
 		for n := 0; n < n2; n++ {
 			ctx, cancel := context.WithTimeout(ctx, time.Second)
 			err = ms.SendMsg(ctx, msg)
@@ -557,6 +558,7 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 			}
 			cancel()
 		}
+		ms.Close()
 	}
 
 	// Wait until all streams are closed and MessagesRecvd counters
