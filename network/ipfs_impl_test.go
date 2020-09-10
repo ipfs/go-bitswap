@@ -31,6 +31,7 @@ type receiver struct {
 	connectionEvent chan bool
 	lastMessage     bsmsg.BitSwapMessage
 	lastSender      peer.ID
+	listener        network.Notifiee
 }
 
 func newReceiver() *receiver {
@@ -259,28 +260,33 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	mn := mocknet.New(ctx)
 	mr := mockrouting.NewServer()
 
+	// Host 1
 	h1, err := mn.AddPeer(p1.PrivateKey(), p1.Address())
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Create a special host that we can force to start returning errors
 	eh1 := &ErrHost{Host: h1}
 	routing1 := mr.ClientWithDatastore(context.TODO(), p1, ds.NewMapDatastore())
 	bsnet1 := bsnet.NewFromIpfsHost(eh1, routing1)
 	bsnet1.SetDelegate(r1)
+	if r1.listener != nil {
+		eh1.Network().Notify(r1.listener)
+	}
 
+	// Host 2
 	h2, err := mn.AddPeer(p2.PrivateKey(), p2.Address())
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Create a special host that we can force to start returning errors
 	eh2 := &ErrHost{Host: h2}
 	routing2 := mr.ClientWithDatastore(context.TODO(), p2, ds.NewMapDatastore())
 	bsnet2 := bsnet.NewFromIpfsHost(eh2, routing2)
 	bsnet2.SetDelegate(r2)
+	if r2.listener != nil {
+		eh2.Network().Notify(r2.listener)
+	}
 
+	// Networking
 	err = mn.LinkAll()
 	if err != nil {
 		t.Fatal(err)
