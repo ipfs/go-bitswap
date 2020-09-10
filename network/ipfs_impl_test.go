@@ -484,6 +484,23 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
+	var wg1, wg2 sync.WaitGroup
+	r1.listener = &network.NotifyBundle{
+		OpenedStreamF: func(n network.Network, s network.Stream) {
+			wg1.Add(1)
+		},
+		ClosedStreamF: func(n network.Network, s network.Stream) {
+			wg1.Done()
+		},
+	}
+	r2.listener = &network.NotifyBundle{
+		OpenedStreamF: func(n network.Network, s network.Stream) {
+			wg2.Add(1)
+		},
+		ClosedStreamF: func(n network.Network, s network.Stream) {
+			wg2.Done()
+		},
+	}
 	_, bsnet1, _, bsnet2, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	for n := 0; n < n1; n++ {
@@ -542,12 +559,22 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 		}
 	}
 
-	// Wait a little for MessagesRecvd counters to be updated
-	// after receiver.ReceiveMessage() returns. FIXME: Can we
-	// use some network event instead of a timer?
-	ctxwait, cancelwait := context.WithTimeout(ctx, 100*time.Millisecond)
+	// Wait until all streams are closed and MessagesRecvd counters
+	// updated.
+	ctxto, cancelto := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelto()
+	ctxwait, cancelwait := context.WithCancel(ctx)
 	defer cancelwait()
-	<-ctxwait.Done()
+	go func() {
+		wg1.Wait()
+		wg2.Wait()
+		cancelwait()
+	}()
+	select {
+	case <-ctxto.Done():
+		t.Fatal("network streams closing timed out")
+	case <-ctxwait.Done():
+	}
 
 	if bsnet1.Stats().MessagesSent != uint64(n1+n2) {
 		t.Fatal(fmt.Errorf("expected %d sent messages, got %d", n1+n2, bsnet1.Stats().MessagesSent))
