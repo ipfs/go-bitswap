@@ -508,13 +508,13 @@ func TestDoubleGet(t *testing.T) {
 	t.Log("Test a one node trying to get one block from another")
 
 	instances := ig.Instances(2)
-	blocks := bg.Blocks(1)
+	blk := bg.Blocks(1)[0]
 
 	// NOTE: A race condition can happen here where these GetBlocks requests go
 	// through before the peers even get connected. This is okay, bitswap
 	// *should* be able to handle this.
 	ctx1, cancel1 := context.WithCancel(context.Background())
-	blkch1, err := instances[1].Exchange.GetBlocks(ctx1, []cid.Cid{blocks[0].Cid()})
+	blkch1, err := instances[1].Exchange.GetBlocks(ctx1, []cid.Cid{blk.Cid()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +522,7 @@ func TestDoubleGet(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 
-	blkch2, err := instances[1].Exchange.GetBlocks(ctx2, []cid.Cid{blocks[0].Cid()})
+	blkch2, err := instances[1].Exchange.GetBlocks(ctx2, []cid.Cid{blk.Cid()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +536,7 @@ func TestDoubleGet(t *testing.T) {
 		t.Fatal("expected channel to be closed")
 	}
 
-	err = instances[0].Exchange.HasBlock(blocks[0])
+	err = instances[0].Exchange.HasBlock(blk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,8 +551,8 @@ func TestDoubleGet(t *testing.T) {
 		p1wl := instances[0].Exchange.WantlistForPeer(instances[1].Peer)
 		if len(p1wl) != 1 {
 			t.Logf("wantlist view didnt have 1 item (had %d)", len(p1wl))
-		} else if !p1wl[0].Equals(blocks[0].Cid()) {
-			t.Logf("had 1 item, it was wrong: %s %s", blocks[0].Cid(), p1wl[0])
+		} else if !p1wl[0].Equals(blk.Cid()) {
+			t.Logf("had 1 item, it was wrong: %s %s", blk.Cid(), p1wl[0])
 		} else {
 			t.Log("had correct wantlist, somehow")
 		}
@@ -594,7 +594,7 @@ func TestWantlistCleanup(t *testing.T) {
 	time.Sleep(time.Millisecond * 50)
 
 	if len(bswap.GetWantHaves()) > 0 {
-		t.Fatal("should not have anyting in wantlist")
+		t.Fatal("should not have anything in wantlist")
 	}
 
 	// Once context times out, keys should be removed from wantlist

@@ -7,6 +7,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-metrics-interface"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -41,6 +42,7 @@ type PeerManager struct {
 
 	createPeerQueue PeerQueueFactory
 	ctx             context.Context
+	bpm             *bsbpm.BlockPresenceManager
 
 	psLk         sync.RWMutex
 	sessions     map[uint64]Session
@@ -50,7 +52,7 @@ type PeerManager struct {
 }
 
 // New creates a new PeerManager, given a context and a peerQueueFactory.
-func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *PeerManager {
+func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID, bpm *bsbpm.BlockPresenceManager) *PeerManager {
 	wantGauge := metrics.NewCtx(ctx, "wantlist_total", "Number of items in wantlist.").Gauge()
 	wantBlockGauge := metrics.NewCtx(ctx, "want_blocks_total", "Number of want-blocks in wantlist.").Gauge()
 	return &PeerManager{
@@ -59,6 +61,7 @@ func New(ctx context.Context, createPeerQueue PeerQueueFactory, self peer.ID) *P
 		createPeerQueue: createPeerQueue,
 		ctx:             ctx,
 		self:            self,
+		bpm:             bpm,
 
 		sessions:     make(map[uint64]Session),
 		peerSessions: make(map[peer.ID]map[uint64]struct{}),
@@ -134,32 +137,41 @@ func (pm *PeerManager) ResponseReceived(p peer.ID, ks []cid.Cid) {
 // to discover seeds).
 // For each peer it filters out want-haves that have previously been sent to
 // the peer.
-func (pm *PeerManager) BroadcastWantHaves(ctx context.Context, wantHaves []cid.Cid) {
+func (pm *PeerManager) BroadcastWantHaves(sid uint64, wantHaves []cid.Cid) {
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
-	pm.pwm.broadcastWantHaves(wantHaves)
+	pm.pwm.broadcastWantHaves(sid, wantHaves)
 }
 
 // SendWants sends the given want-blocks and want-haves to the given peer.
 // It filters out wants that have previously been sent to the peer.
-func (pm *PeerManager) SendWants(ctx context.Context, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
+func (pm *PeerManager) SendWants(sid uint64, p peer.ID, wantBlocks []cid.Cid, wantHaves []cid.Cid) {
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
 	if _, ok := pm.peerQueues[p]; ok {
-		pm.pwm.sendWants(p, wantBlocks, wantHaves)
+		pm.pwm.sendWants(sid, p, wantBlocks, wantHaves)
 	}
 }
 
 // SendCancels sends cancels for the given keys to all peers who had previously
 // received a want for those keys.
-func (pm *PeerManager) SendCancels(ctx context.Context, cancelKs []cid.Cid) {
+func (pm *PeerManager) SendCancels(sid uint64, cancelKs []cid.Cid) {
+	if len(cancelKs) == 0 {
+		return
+	}
+
 	pm.pqLk.Lock()
 	defer pm.pqLk.Unlock()
 
 	// Send a CANCEL to each peer that has been sent a want-block or want-have
-	pm.pwm.sendCancels(cancelKs)
+	pm.pwm.sendCancels(sid, cancelKs)
+
+	// Free up block presence tracking for keys that no session is interested
+	// in anymore
+	unwanted := pm.pwm.unwanted(cancelKs)
+	pm.bpm.RemoveKeys(unwanted)
 }
 
 // CurrentWants returns the list of pending wants (both want-haves and want-blocks).

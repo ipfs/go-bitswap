@@ -30,12 +30,6 @@ const (
 	BPHave
 )
 
-// SessionWantsCanceller provides a method to cancel wants
-type SessionWantsCanceller interface {
-	// Cancel wants for this session
-	CancelSessionWants(sid uint64, wants []cid.Cid)
-}
-
 // update encapsulates a message received by the session
 type update struct {
 	// Which peer sent the update
@@ -102,8 +96,6 @@ type sessionWantSender struct {
 	pm PeerManager
 	// Keeps track of peers in the session
 	spm SessionPeerManager
-	// Cancels wants
-	canceller SessionWantsCanceller
 	// Keeps track of which peer has / doesn't have a block
 	bpm *bsbpm.BlockPresenceManager
 	// Called when wants are sent
@@ -112,7 +104,7 @@ type sessionWantSender struct {
 	onPeersExhausted onPeersExhaustedFn
 }
 
-func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager, canceller SessionWantsCanceller,
+func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager,
 	bpm *bsbpm.BlockPresenceManager, onSend onSendFn, onPeersExhausted onPeersExhaustedFn) sessionWantSender {
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -129,7 +121,6 @@ func newSessionWantSender(sid uint64, pm PeerManager, spm SessionPeerManager, ca
 
 		pm:               pm,
 		spm:              spm,
-		canceller:        canceller,
 		bpm:              bpm,
 		onSend:           onSend,
 		onPeersExhausted: onPeersExhausted,
@@ -190,10 +181,37 @@ func (sws *sessionWantSender) Run() {
 			// Unregister the session with the PeerManager
 			sws.pm.UnregisterSession(sws.sessionID)
 
+			// Drain queue of outstanding cancels
+			cancels := sws.drainCancels()
+			if len(cancels) > 0 {
+				sws.pm.SendCancels(sws.sessionID, cancels)
+			}
+
+			// Shut down the session peer manager
+			sws.spm.Shutdown()
+
 			// Close the 'closed' channel to signal to Shutdown() that the run
 			// loop has exited
 			close(sws.closed)
 			return
+		}
+	}
+}
+
+// Drain queue of outstanding cancels
+func (sws *sessionWantSender) drainCancels() []cid.Cid {
+	cancels := make([]cid.Cid, 0, len(sws.changes))
+	for {
+		select {
+		case chng := <-sws.changes:
+			// Add cancels because of a request being cancelled
+			cancels = append(cancels, chng.cancel...)
+			// Add cancels for each received block
+			if chng.update.from != "" {
+				cancels = append(cancels, chng.update.ks...)
+			}
+		default:
+			return cancels
 		}
 	}
 }
@@ -262,7 +280,7 @@ func (sws *sessionWantSender) onChange(changes []change) {
 
 		// Remove cancelled wants
 		for _, c := range chng.cancel {
-			sws.untrackWant(c)
+			sws.removeWant(c)
 			cancels = append(cancels, c)
 		}
 
@@ -289,15 +307,16 @@ func (sws *sessionWantSender) onChange(changes []change) {
 	newlyAvailable, newlyUnavailable := sws.processAvailability(availability)
 
 	// Update wants
-	dontHaves := sws.processUpdates(updates)
+	rcvd, dontHaves := sws.processUpdates(updates)
 
 	// Check if there are any wants for which all peers have indicated they
 	// don't have the want
 	sws.checkForExhaustedWants(dontHaves, newlyUnavailable)
 
 	// If there are any cancels, send them
+	cancels = append(cancels, rcvd...)
 	if len(cancels) > 0 {
-		sws.canceller.CancelSessionWants(sws.sessionID, cancels)
+		sws.pm.SendCancels(sws.sessionID, cancels)
 	}
 
 	// If there are some connected peers, send any pending wants
@@ -359,14 +378,19 @@ func (sws *sessionWantSender) trackWant(c cid.Cid) {
 	}
 }
 
-// untrackWant removes an entry from the map of CID -> want info
-func (sws *sessionWantSender) untrackWant(c cid.Cid) {
-	delete(sws.wants, c)
+// removeWant is called when the corresponding block is received or the request
+// for the want is cancelled
+func (sws *sessionWantSender) removeWant(c cid.Cid) *wantInfo {
+	if wi, ok := sws.wants[c]; ok {
+		delete(sws.wants, c)
+		return wi
+	}
+	return nil
 }
 
 // processUpdates processes incoming blocks and HAVE / DONT_HAVEs.
-// It returns all DONT_HAVEs.
-func (sws *sessionWantSender) processUpdates(updates []update) []cid.Cid {
+// It returns blocks that were received for the first time and DONT_HAVEs.
+func (sws *sessionWantSender) processUpdates(updates []update) ([]cid.Cid, []cid.Cid) {
 	// Process received blocks keys
 	blkCids := cid.NewSet()
 	for _, upd := range updates {
@@ -461,7 +485,7 @@ func (sws *sessionWantSender) processUpdates(updates []update) []cid.Cid {
 		}()
 	}
 
-	return dontHaves.Keys()
+	return blkCids.Keys(), dontHaves.Keys()
 }
 
 // checkForExhaustedWants checks if there are any wants for which all peers
@@ -585,7 +609,7 @@ func (sws *sessionWantSender) sendWants(sends allWants) {
 		// precedence over want-haves.
 		wblks := snd.wantBlocks.Keys()
 		whaves := snd.wantHaves.Keys()
-		sws.pm.SendWants(sws.ctx, p, wblks, whaves)
+		sws.pm.SendWants(sws.sessionID, p, wblks, whaves)
 
 		// Inform the session that we've sent the wants
 		sws.onSend(p, wblks, whaves)
@@ -622,15 +646,6 @@ func (sws *sessionWantSender) newlyExhausted(ks []cid.Cid) []cid.Cid {
 		}
 	}
 	return res
-}
-
-// removeWant is called when the corresponding block is received
-func (sws *sessionWantSender) removeWant(c cid.Cid) *wantInfo {
-	if wi, ok := sws.wants[c]; ok {
-		delete(sws.wants, c)
-		return wi
-	}
-	return nil
 }
 
 // updateWantsPeerAvailability is called when the availability changes for a

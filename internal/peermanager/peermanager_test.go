@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
 
+	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -83,7 +84,7 @@ func TestAddingAndRemovingPeers(t *testing.T) {
 
 	tp := testutil.GeneratePeers(6)
 	self, peer1, peer2, peer3, peer4, peer5 := tp[0], tp[1], tp[2], tp[3], tp[4], tp[5]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	peerManager.Connected(peer1)
 	peerManager.Connected(peer2)
@@ -122,14 +123,15 @@ func TestAddingAndRemovingPeers(t *testing.T) {
 func TestBroadcastOnConnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	sid := uint64(1)
 	msgs := make(chan msg, 16)
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(2)
 	self, peer1 := tp[0], tp[1]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	cids := testutil.GenerateCids(2)
-	peerManager.BroadcastWantHaves(ctx, cids)
+	peerManager.BroadcastWantHaves(sid, cids)
 
 	// Connect with two broadcast wants for first peer
 	peerManager.Connected(peer1)
@@ -143,16 +145,17 @@ func TestBroadcastOnConnect(t *testing.T) {
 func TestBroadcastWantHaves(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	sid := uint64(1)
 	msgs := make(chan msg, 16)
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(3)
 	self, peer1, peer2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	cids := testutil.GenerateCids(3)
 
 	// Broadcast the first two.
-	peerManager.BroadcastWantHaves(ctx, cids[:2])
+	peerManager.BroadcastWantHaves(sid, cids[:2])
 
 	// First peer should get them.
 	peerManager.Connected(peer1)
@@ -167,7 +170,7 @@ func TestBroadcastWantHaves(t *testing.T) {
 
 	// Send a broadcast to all peers, including cid that was already sent to
 	// first peer
-	peerManager.BroadcastWantHaves(ctx, []cid.Cid{cids[0], cids[2]})
+	peerManager.BroadcastWantHaves(sid, []cid.Cid{cids[0], cids[2]})
 	collected = collectMessages(msgs, 2*time.Millisecond)
 
 	// One of the want-haves was already sent to peer1
@@ -184,15 +187,16 @@ func TestBroadcastWantHaves(t *testing.T) {
 func TestSendWants(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	sid := uint64(1)
 	msgs := make(chan msg, 16)
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(2)
 	self, peer1 := tp[0], tp[1]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 	cids := testutil.GenerateCids(4)
 
 	peerManager.Connected(peer1)
-	peerManager.SendWants(ctx, peer1, []cid.Cid{cids[0]}, []cid.Cid{cids[2]})
+	peerManager.SendWants(sid, peer1, []cid.Cid{cids[0]}, []cid.Cid{cids[2]})
 	collected := collectMessages(msgs, 2*time.Millisecond)
 
 	if len(collected[peer1].wantHaves) != 1 {
@@ -202,7 +206,7 @@ func TestSendWants(t *testing.T) {
 		t.Fatal("Expected want-block to be sent to peer")
 	}
 
-	peerManager.SendWants(ctx, peer1, []cid.Cid{cids[0], cids[1]}, []cid.Cid{cids[2], cids[3]})
+	peerManager.SendWants(sid, peer1, []cid.Cid{cids[0], cids[1]}, []cid.Cid{cids[2], cids[3]})
 	collected = collectMessages(msgs, 2*time.Millisecond)
 
 	// First want-have and want-block should be filtered (because they were
@@ -218,11 +222,12 @@ func TestSendWants(t *testing.T) {
 func TestSendCancels(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	sid := uint64(1)
 	msgs := make(chan msg, 16)
 	peerQueueFactory := makePeerQueueFactory(msgs)
 	tp := testutil.GeneratePeers(3)
 	self, peer1, peer2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 	cids := testutil.GenerateCids(4)
 
 	// Connect to peer1 and peer2
@@ -230,13 +235,13 @@ func TestSendCancels(t *testing.T) {
 	peerManager.Connected(peer2)
 
 	// Send 2 want-blocks and 1 want-have to peer1
-	peerManager.SendWants(ctx, peer1, []cid.Cid{cids[0], cids[1]}, []cid.Cid{cids[2]})
+	peerManager.SendWants(sid, peer1, []cid.Cid{cids[0], cids[1]}, []cid.Cid{cids[2]})
 
 	// Clear messages
 	collectMessages(msgs, 2*time.Millisecond)
 
 	// Send cancels for 1 want-block and 1 want-have
-	peerManager.SendCancels(ctx, []cid.Cid{cids[0], cids[2]})
+	peerManager.SendCancels(sid, []cid.Cid{cids[0], cids[2]})
 	collected := collectMessages(msgs, 2*time.Millisecond)
 
 	if _, ok := collected[peer2]; ok {
@@ -247,7 +252,7 @@ func TestSendCancels(t *testing.T) {
 	}
 
 	// Send cancels for all cids
-	peerManager.SendCancels(ctx, cids)
+	peerManager.SendCancels(sid, cids)
 	collected = collectMessages(msgs, 2*time.Millisecond)
 
 	if _, ok := collected[peer2]; ok {
@@ -255,6 +260,49 @@ func TestSendCancels(t *testing.T) {
 	}
 	if len(collected[peer1].cancels) != 1 {
 		t.Fatal("Expected cancel to be sent for remaining want-block")
+	}
+}
+
+func TestRemoveKeysFromBPMOnCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	sid1 := uint64(1)
+	sid2 := uint64(2)
+	msgs := make(chan msg, 16)
+	peerQueueFactory := makePeerQueueFactory(msgs)
+	peers := testutil.GeneratePeers(2)
+	self, p := peers[0], peers[1]
+	bpm := bsbpm.New()
+	peerManager := New(ctx, peerQueueFactory, self, bpm)
+
+	// Connect to peer
+	peerManager.Connected(p)
+
+	// Send want-block and want-have to peer from session1 and session2
+	cids := testutil.GenerateCids(2)
+	peerManager.SendWants(sid1, p, cids[:1], cids[1:])
+	peerManager.SendWants(sid2, p, cids[:1], cids[1:])
+
+	// Simulate Bitswap informing BlockPresenceManager of received
+	// HAVEs for cids
+	bpm.ReceiveFrom(p, cids, nil)
+
+	if !bpm.PeerHasBlock(p, cids[0]) || !bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("BlockPresenceManager should record that peer has blocks")
+	}
+
+	// Send cancel for want-block and want-have from session1
+	peerManager.SendCancels(sid1, []cid.Cid{cids[0], cids[1]})
+
+	if !bpm.PeerHasBlock(p, cids[0]) || !bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("BlockPresenceManager should record that peer has blocks")
+	}
+
+	// Send cancel for want-block and want-have from session2
+	peerManager.SendCancels(sid2, []cid.Cid{cids[0], cids[1]})
+
+	if bpm.PeerHasBlock(p, cids[0]) || bpm.PeerHasBlock(p, cids[1]) {
+		t.Fatal("wants should have been removed from BlockPresenceManager")
 	}
 }
 
@@ -282,7 +330,7 @@ func TestSessionRegistration(t *testing.T) {
 
 	tp := testutil.GeneratePeers(3)
 	self, p1, p2 := tp[0], tp[1], tp[2]
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	id := uint64(1)
 	s := newSess(id)
@@ -336,6 +384,7 @@ func BenchmarkPeerManager(b *testing.B) {
 	b.StopTimer()
 
 	ctx := context.Background()
+	sid := uint64(1)
 
 	peerQueueFactory := func(ctx context.Context, p peer.ID) PeerQueue {
 		return &benchPeerQueue{}
@@ -343,7 +392,7 @@ func BenchmarkPeerManager(b *testing.B) {
 
 	self := testutil.GeneratePeers(1)[0]
 	peers := testutil.GeneratePeers(500)
-	peerManager := New(ctx, peerQueueFactory, self)
+	peerManager := New(ctx, peerQueueFactory, self, bsbpm.New())
 
 	// Create a bunch of connections
 	connected := 0
@@ -363,17 +412,17 @@ func BenchmarkPeerManager(b *testing.B) {
 		r := rand.Intn(8)
 		if r == 0 {
 			wants := testutil.GenerateCids(10)
-			peerManager.SendWants(ctx, peers[i], wants[:2], wants[2:])
+			peerManager.SendWants(sid, peers[i], wants[:2], wants[2:])
 			wanted = append(wanted, wants...)
 		} else if r == 1 {
 			wants := testutil.GenerateCids(30)
-			peerManager.BroadcastWantHaves(ctx, wants)
+			peerManager.BroadcastWantHaves(sid, wants)
 			wanted = append(wanted, wants...)
 		} else {
 			limit := len(wanted) / 10
 			cancel := wanted[:limit]
 			wanted = wanted[limit:]
-			peerManager.SendCancels(ctx, cancel)
+			peerManager.SendCancels(sid, cancel)
 		}
 	}
 }
