@@ -38,10 +38,11 @@ func NewFromIpfsHost(host host.Host, r routing.ContentRouting, opts ...NetOpt) B
 		host:    host,
 		routing: r,
 
-		protocolBitswapNoVers:  s.ProtocolPrefix + ProtocolBitswapNoVers,
-		protocolBitswapOneZero: s.ProtocolPrefix + ProtocolBitswapOneZero,
-		protocolBitswapOneOne:  s.ProtocolPrefix + ProtocolBitswapOneOne,
-		protocolBitswap:        s.ProtocolPrefix + ProtocolBitswap,
+		protocolBitswapNoVers:     s.ProtocolPrefix + ProtocolBitswapNoVers,
+		protocolBitswapOneZero:    s.ProtocolPrefix + ProtocolBitswapOneZero,
+		protocolBitswapOneOne:     s.ProtocolPrefix + ProtocolBitswapOneOne,
+		protocolBitswap:           s.ProtocolPrefix + ProtocolBitswap,
+		protocolBitswapCompressed: s.ProtocolPrefix + ProtocolBitswapCompressed,
 
 		supportedProtocols: s.SupportedProtocols,
 	}
@@ -52,6 +53,7 @@ func NewFromIpfsHost(host host.Host, r routing.ContentRouting, opts ...NetOpt) B
 func processSettings(opts ...NetOpt) Settings {
 	s := Settings{
 		SupportedProtocols: []protocol.ID{
+			ProtocolBitswapCompressed,
 			ProtocolBitswap,
 			ProtocolBitswapOneOne,
 			ProtocolBitswapOneZero,
@@ -78,10 +80,11 @@ type impl struct {
 	routing       routing.ContentRouting
 	connectEvtMgr *connectEventManager
 
-	protocolBitswapNoVers  protocol.ID
-	protocolBitswapOneZero protocol.ID
-	protocolBitswapOneOne  protocol.ID
-	protocolBitswap        protocol.ID
+	protocolBitswapNoVers     protocol.ID
+	protocolBitswapOneZero    protocol.ID
+	protocolBitswapOneOne     protocol.ID
+	protocolBitswap           protocol.ID
+	protocolBitswapCompressed protocol.ID
 
 	supportedProtocols []protocol.ID
 
@@ -251,7 +254,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	// to convert the message to the appropriate format depending on the remote
 	// peer's Bitswap version.
 	switch s.Protocol() {
-	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap:
+	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap, bsnet.protocolBitswapCompressed:
 		if err := msg.ToNetV1(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
@@ -330,7 +333,14 @@ func (bsnet *impl) SendMessage(
 }
 
 func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stream, error) {
-	return bsnet.host.NewStream(ctx, p, bsnet.supportedProtocols...)
+	s, err := bsnet.host.NewStream(ctx, p, bsnet.supportedProtocols...)
+	// TODO: Instead of _always_ compressing, we should probably compress
+	// iff we're sending blocks on this stream. To do that, we'd to pipe a
+	// "compress" flag down to this level.
+	if isCompressed(s.Protocol()) && err == nil {
+		s = compressStream(s)
+	}
+	return s, err
 }
 
 func (bsnet *impl) SetDelegate(r Receiver) {
@@ -378,14 +388,22 @@ func (bsnet *impl) Provide(ctx context.Context, k cid.Cid) error {
 	return bsnet.routing.Provide(ctx, k, true)
 }
 
+func isCompressed(proto protocol.ID) bool {
+	return proto == ProtocolBitswapCompressed
+}
+
 // handleNewStream receives a new stream from the network.
 func (bsnet *impl) handleNewStream(s network.Stream) {
-	defer s.Close()
-
 	if bsnet.receiver == nil {
 		_ = s.Reset()
 		return
 	}
+
+	if isCompressed(s.Protocol()) {
+		s = compressStream(s)
+	}
+
+	defer s.Close()
 
 	reader := msgio.NewVarintReaderSize(s, network.MessageSizeMax)
 	for {

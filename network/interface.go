@@ -23,6 +23,8 @@ var (
 	ProtocolBitswapOneOne protocol.ID = "/ipfs/bitswap/1.1.0"
 	// ProtocolBitswap is the current version of the bitswap protocol: 1.2.0
 	ProtocolBitswap protocol.ID = "/ipfs/bitswap/1.2.0"
+	// ProtocolBitswapCompressed is the bitswap protocol with compression enabled.
+	ProtocolBitswapCompressed protocol.ID = "/ipfs/bitswap/1.2.0/compressed"
 )
 
 // BitSwapNetwork provides network connectivity for BitSwap sessions.

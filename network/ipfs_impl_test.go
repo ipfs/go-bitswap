@@ -37,7 +37,7 @@ type receiver struct {
 func newReceiver() *receiver {
 	return &receiver{
 		peers:           make(map[peer.ID]struct{}),
-		messageReceived: make(chan struct{}),
+		messageReceived: make(chan struct{}, 1),
 		connectionEvent: make(chan bool, 1),
 	}
 }
@@ -447,6 +447,7 @@ func TestSupportsHave(t *testing.T) {
 	}
 
 	testCases := []testCase{
+		testCase{bsnet.ProtocolBitswapCompressed, true},
 		testCase{bsnet.ProtocolBitswap, true},
 		testCase{bsnet.ProtocolBitswapOneOne, false},
 		testCase{bsnet.ProtocolBitswapOneZero, false},

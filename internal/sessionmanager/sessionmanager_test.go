@@ -118,7 +118,7 @@ func TestReceiveFrom(t *testing.T) {
 	pm := &fakePeerManager{}
 	sm := New(ctx, sessionFactory, sim, peerManagerFactory, bpm, pm, notif, "")
 
-	p := peer.ID(123)
+	p := peer.ID("123")
 	block := blocks.NewBlock([]byte("block"))
 
 	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
@@ -165,7 +165,7 @@ func TestReceiveBlocksWhenManagerShutdown(t *testing.T) {
 	pm := &fakePeerManager{}
 	sm := New(ctx, sessionFactory, sim, peerManagerFactory, bpm, pm, notif, "")
 
-	p := peer.ID(123)
+	p := peer.ID("123")
 	block := blocks.NewBlock([]byte("block"))
 
 	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
@@ -199,7 +199,7 @@ func TestReceiveBlocksWhenSessionContextCancelled(t *testing.T) {
 	pm := &fakePeerManager{}
 	sm := New(ctx, sessionFactory, sim, peerManagerFactory, bpm, pm, notif, "")
 
-	p := peer.ID(123)
+	p := peer.ID("123")
 	block := blocks.NewBlock([]byte("block"))
 
 	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
@@ -235,7 +235,7 @@ func TestShutdown(t *testing.T) {
 	pm := &fakePeerManager{}
 	sm := New(ctx, sessionFactory, sim, peerManagerFactory, bpm, pm, notif, "")
 
-	p := peer.ID(123)
+	p := peer.ID("123")
 	block := blocks.NewBlock([]byte("block"))
 	cids := []cid.Cid{block.Cid()}
 	firstSession := sm.NewSession(ctx, time.Second, delay.Fixed(time.Minute)).(*fakeSession)
