@@ -326,6 +326,21 @@ func (bsnet *impl) SendMessage(
 }
 
 func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (network.Stream, error) {
+	// poll till we have a direct connection to the peer
+	now := time.Now()
+LOOP:
+	for {
+		for _, c := range bsnet.host.Network().ConnsToPeer(p) {
+			if _, err := c.RemoteMultiaddr().ValueForProtocol(ma.P_CIRCUIT); err != nil {
+				break LOOP
+			}
+			if time.Since(now) >= 30*time.Second {
+				return nil, fmt.Errorf("unable to hole punch with %s", p.Pretty())
+			}
+			time.Sleep(2 * time.Second)
+		}
+	}
+
 	return bsnet.host.NewStream(ctx, p, bsnet.supportedProtocols...)
 }
 
@@ -337,7 +352,6 @@ func (bsnet *impl) SetDelegate(r Receiver) {
 	}
 	bsnet.host.Network().Notify((*netNotifiee)(bsnet))
 	// TODO: StopNotify.
-
 }
 
 func (bsnet *impl) ConnectTo(ctx context.Context, p peer.ID) error {
