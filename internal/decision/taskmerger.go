@@ -14,6 +14,8 @@ type taskData struct {
 	BlockSize int
 	// Whether the block was found
 	HaveBlock bool
+	// Whether to send a manifest
+	SendManifest bool
 }
 
 type taskMerger struct{}

@@ -38,9 +38,28 @@ message Message {
     BlockPresenceType type = 2;
   }
 
+  message BlockManifest {
+    message BlockManifestEntry {
+      message ChunkedBlockManifestEntry {
+        bytes cid = 1 [(gogoproto.customtype) = "Cid", (gogoproto.nullable) = false];
+        int32 blockStartIndex = 2;
+        int32 blockEndIndex = 3;
+      }
+      bytes proof = 1;
+      int64 fullBlockStartIndex = 2;
+      int64 fullBlockEndIndex = 3;
+      repeated ChunkedBlockManifestEntry chunkedBlocks = 4;
+    }
+
+    bytes cid = 1 [(gogoproto.customtype) = "Cid", (gogoproto.nullable) = false];
+    int64 blockSize = 2;
+    repeated BlockManifestEntry manifest = 3;
+  }
+
   Wantlist wantlist = 1 [(gogoproto.nullable) = false];
   repeated bytes blocks = 2;		// used to send Blocks in bitswap 1.0.0
   repeated Block payload = 3 [(gogoproto.nullable) = false];		// used to send Blocks in bitswap 1.1.0
   repeated BlockPresence blockPresences = 4 [(gogoproto.nullable) = false];
   int32 pendingBytes = 5;
+  repeated BlockManifest manifests = 6;
 }

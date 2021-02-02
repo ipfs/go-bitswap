@@ -4,6 +4,7 @@ package decision
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/go-bitswap/blocksplitter"
 	"sync"
 	"time"
 
@@ -76,6 +77,10 @@ const (
 
 	// Number of concurrent workers that pull tasks off the request queue
 	taskWorkerCount = 8
+
+	// maxBlockSize is the maximum size a block can be before it is
+	// considered large and must be split up
+	maxBlockSize = 1 << 20 // 1 MiB
 )
 
 // Envelope contains a message for a Peer.
@@ -163,7 +168,7 @@ type Engine struct {
 
 	sendDontHaves bool
 
-	self                  peer.ID
+	self peer.ID
 }
 
 // NewEngine creates a new block sending engine for the given block store
@@ -367,6 +372,13 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 				if t.SendDontHave {
 					msg.AddDontHave(c)
 				}
+			} else if t.SendManifest {
+				manifest, err := blocksplitter.GetManifest(blk)
+				if err != nil {
+					log.Errorf("large block error: %v", err)
+					continue
+				}
+				msg.AddLargeBlockManifest(manifest)
 			} else {
 				// Add the block to the message
 				// log.Debugf("  make evlp %s->%s block: %s (%d bytes)", e.self, p, c, len(blk.RawData()))
@@ -505,6 +517,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 						HaveBlock:    false,
 						IsWantBlock:  isWantBlock,
 						SendDontHave: entry.SendDontHave,
+						SendManifest: false,
 					},
 				})
 			}
@@ -518,11 +531,17 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 
 			// entrySize is the amount of space the entry takes up in the
 			// message we send to the recipient. If we're sending a block, the
-			// entrySize is the size of the block. Otherwise it's the size of
-			// a block presence entry.
+			// entrySize is the size of the block. If we would send a block,
+			// but it's too big it's the maximum manifest size. Otherwise,
+			// it's the size of a block presence entry.
 			entrySize := blockSize
+			sendManifest := false
 			if !isWantBlock {
 				entrySize = bsmsg.BlockPresenceSize(c)
+			} else if blockSize > maxBlockSize {
+				// TODO: Make this the manifest size, or figure out if leaving it too large is ok
+				entrySize = maxBlockSize
+				sendManifest = true
 			}
 			activeEntries = append(activeEntries, peertask.Task{
 				Topic:    c,
@@ -533,6 +552,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 					HaveBlock:    true,
 					IsWantBlock:  isWantBlock,
 					SendDontHave: entry.SendDontHave,
+					SendManifest: sendManifest,
 				},
 			})
 		}
@@ -604,8 +624,12 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 				isWantBlock := e.sendAsBlock(entry.WantType, blockSize)
 
 				entrySize := blockSize
+				sendManifest := false
 				if !isWantBlock {
 					entrySize = bsmsg.BlockPresenceSize(k)
+				} else if blockSize > maxBlockSize {
+					entrySize = maxBlockSize
+					sendManifest = true
 				}
 
 				e.peerRequestQueue.PushTasks(l.Partner, peertask.Task{
@@ -617,6 +641,7 @@ func (e *Engine) ReceiveFrom(from peer.ID, blks []blocks.Block, haves []cid.Cid)
 						HaveBlock:    true,
 						IsWantBlock:  isWantBlock,
 						SendDontHave: false,
+						SendManifest: sendManifest,
 					},
 				})
 			}

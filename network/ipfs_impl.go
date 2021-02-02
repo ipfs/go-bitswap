@@ -40,6 +40,7 @@ func NewFromIpfsHost(host host.Host, r routing.ContentRouting, opts ...NetOpt) B
 		protocolBitswapNoVers:  s.ProtocolPrefix + ProtocolBitswapNoVers,
 		protocolBitswapOneZero: s.ProtocolPrefix + ProtocolBitswapOneZero,
 		protocolBitswapOneOne:  s.ProtocolPrefix + ProtocolBitswapOneOne,
+		protocolBitswapOneTwo:  s.ProtocolPrefix + ProtocolBitswapOneTwo,
 		protocolBitswap:        s.ProtocolPrefix + ProtocolBitswap,
 
 		supportedProtocols: s.SupportedProtocols,
@@ -52,6 +53,7 @@ func processSettings(opts ...NetOpt) Settings {
 	s := Settings{
 		SupportedProtocols: []protocol.ID{
 			ProtocolBitswap,
+			ProtocolBitswapOneTwo,
 			ProtocolBitswapOneOne,
 			ProtocolBitswapOneZero,
 			ProtocolBitswapNoVers,
@@ -80,6 +82,7 @@ type impl struct {
 	protocolBitswapNoVers  protocol.ID
 	protocolBitswapOneZero protocol.ID
 	protocolBitswapOneOne  protocol.ID
+	protocolBitswapOneTwo  protocol.ID
 	protocolBitswap        protocol.ID
 
 	supportedProtocols []protocol.ID
@@ -250,7 +253,12 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	// to convert the message to the appropriate format depending on the remote
 	// peer's Bitswap version.
 	switch s.Protocol() {
-	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap:
+	case bsnet.protocolBitswap:
+		if err := msg.ToNetV1(s); err != nil {
+			log.Debugf("error: %s", err)
+			return err
+		}
+	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswapOneTwo:
 		if err := msg.ToNetV1(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err

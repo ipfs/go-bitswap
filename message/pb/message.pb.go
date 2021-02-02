@@ -74,11 +74,12 @@ func (Message_Wantlist_WantType) EnumDescriptor() ([]byte, []int) {
 }
 
 type Message struct {
-	Wantlist       Message_Wantlist        `protobuf:"bytes,1,opt,name=wantlist,proto3" json:"wantlist"`
-	Blocks         [][]byte                `protobuf:"bytes,2,rep,name=blocks,proto3" json:"blocks,omitempty"`
-	Payload        []Message_Block         `protobuf:"bytes,3,rep,name=payload,proto3" json:"payload"`
-	BlockPresences []Message_BlockPresence `protobuf:"bytes,4,rep,name=blockPresences,proto3" json:"blockPresences"`
-	PendingBytes   int32                   `protobuf:"varint,5,opt,name=pendingBytes,proto3" json:"pendingBytes,omitempty"`
+	Wantlist       Message_Wantlist         `protobuf:"bytes,1,opt,name=wantlist,proto3" json:"wantlist"`
+	Blocks         [][]byte                 `protobuf:"bytes,2,rep,name=blocks,proto3" json:"blocks,omitempty"`
+	Payload        []Message_Block          `protobuf:"bytes,3,rep,name=payload,proto3" json:"payload"`
+	BlockPresences []Message_BlockPresence  `protobuf:"bytes,4,rep,name=blockPresences,proto3" json:"blockPresences"`
+	PendingBytes   int32                    `protobuf:"varint,5,opt,name=pendingBytes,proto3" json:"pendingBytes,omitempty"`
+	Manifests      []*Message_BlockManifest `protobuf:"bytes,6,rep,name=manifests,proto3" json:"manifests,omitempty"`
 }
 
 func (m *Message) Reset()         { *m = Message{} }
@@ -147,6 +148,13 @@ func (m *Message) GetPendingBytes() int32 {
 		return m.PendingBytes
 	}
 	return 0
+}
+
+func (m *Message) GetManifests() []*Message_BlockManifest {
+	if m != nil {
+		return m.Manifests
+	}
+	return nil
 }
 
 type Message_Wantlist struct {
@@ -367,6 +375,186 @@ func (m *Message_BlockPresence) GetType() Message_BlockPresenceType {
 	return Message_Have
 }
 
+type Message_BlockManifest struct {
+	Cid       Cid                                         `protobuf:"bytes,1,opt,name=cid,proto3,customtype=Cid" json:"cid"`
+	BlockSize int64                                       `protobuf:"varint,2,opt,name=blockSize,proto3" json:"blockSize,omitempty"`
+	Manifest  []*Message_BlockManifest_BlockManifestEntry `protobuf:"bytes,3,rep,name=manifest,proto3" json:"manifest,omitempty"`
+}
+
+func (m *Message_BlockManifest) Reset()         { *m = Message_BlockManifest{} }
+func (m *Message_BlockManifest) String() string { return proto.CompactTextString(m) }
+func (*Message_BlockManifest) ProtoMessage()    {}
+func (*Message_BlockManifest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_33c57e4bae7b9afd, []int{0, 3}
+}
+func (m *Message_BlockManifest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Message_BlockManifest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Message_BlockManifest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Message_BlockManifest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Message_BlockManifest.Merge(m, src)
+}
+func (m *Message_BlockManifest) XXX_Size() int {
+	return m.Size()
+}
+func (m *Message_BlockManifest) XXX_DiscardUnknown() {
+	xxx_messageInfo_Message_BlockManifest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Message_BlockManifest proto.InternalMessageInfo
+
+func (m *Message_BlockManifest) GetBlockSize() int64 {
+	if m != nil {
+		return m.BlockSize
+	}
+	return 0
+}
+
+func (m *Message_BlockManifest) GetManifest() []*Message_BlockManifest_BlockManifestEntry {
+	if m != nil {
+		return m.Manifest
+	}
+	return nil
+}
+
+type Message_BlockManifest_BlockManifestEntry struct {
+	Proof               []byte                                                                `protobuf:"bytes,1,opt,name=proof,proto3" json:"proof,omitempty"`
+	FullBlockStartIndex int64                                                                 `protobuf:"varint,2,opt,name=fullBlockStartIndex,proto3" json:"fullBlockStartIndex,omitempty"`
+	FullBlockEndIndex   int64                                                                 `protobuf:"varint,3,opt,name=fullBlockEndIndex,proto3" json:"fullBlockEndIndex,omitempty"`
+	ChunkedBlocks       []*Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry `protobuf:"bytes,4,rep,name=chunkedBlocks,proto3" json:"chunkedBlocks,omitempty"`
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) Reset() {
+	*m = Message_BlockManifest_BlockManifestEntry{}
+}
+func (m *Message_BlockManifest_BlockManifestEntry) String() string { return proto.CompactTextString(m) }
+func (*Message_BlockManifest_BlockManifestEntry) ProtoMessage()    {}
+func (*Message_BlockManifest_BlockManifestEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_33c57e4bae7b9afd, []int{0, 3, 0}
+}
+func (m *Message_BlockManifest_BlockManifestEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Message_BlockManifest_BlockManifestEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Message_BlockManifest_BlockManifestEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Message_BlockManifest_BlockManifestEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Message_BlockManifest_BlockManifestEntry.Merge(m, src)
+}
+func (m *Message_BlockManifest_BlockManifestEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *Message_BlockManifest_BlockManifestEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_Message_BlockManifest_BlockManifestEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Message_BlockManifest_BlockManifestEntry proto.InternalMessageInfo
+
+func (m *Message_BlockManifest_BlockManifestEntry) GetProof() []byte {
+	if m != nil {
+		return m.Proof
+	}
+	return nil
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) GetFullBlockStartIndex() int64 {
+	if m != nil {
+		return m.FullBlockStartIndex
+	}
+	return 0
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) GetFullBlockEndIndex() int64 {
+	if m != nil {
+		return m.FullBlockEndIndex
+	}
+	return 0
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) GetChunkedBlocks() []*Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry {
+	if m != nil {
+		return m.ChunkedBlocks
+	}
+	return nil
+}
+
+type Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry struct {
+	Cid             Cid   `protobuf:"bytes,1,opt,name=cid,proto3,customtype=Cid" json:"cid"`
+	BlockStartIndex int32 `protobuf:"varint,2,opt,name=blockStartIndex,proto3" json:"blockStartIndex,omitempty"`
+	BlockEndIndex   int32 `protobuf:"varint,3,opt,name=blockEndIndex,proto3" json:"blockEndIndex,omitempty"`
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) Reset() {
+	*m = Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{}
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) String() string {
+	return proto.CompactTextString(m)
+}
+func (*Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) ProtoMessage() {}
+func (*Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_33c57e4bae7b9afd, []int{0, 3, 0, 0}
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry.Merge(m, src)
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry proto.InternalMessageInfo
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) GetBlockStartIndex() int32 {
+	if m != nil {
+		return m.BlockStartIndex
+	}
+	return 0
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) GetBlockEndIndex() int32 {
+	if m != nil {
+		return m.BlockEndIndex
+	}
+	return 0
+}
+
 func init() {
 	proto.RegisterEnum("bitswap.message.pb.Message_BlockPresenceType", Message_BlockPresenceType_name, Message_BlockPresenceType_value)
 	proto.RegisterEnum("bitswap.message.pb.Message_Wantlist_WantType", Message_Wantlist_WantType_name, Message_Wantlist_WantType_value)
@@ -375,44 +563,58 @@ func init() {
 	proto.RegisterType((*Message_Wantlist_Entry)(nil), "bitswap.message.pb.Message.Wantlist.Entry")
 	proto.RegisterType((*Message_Block)(nil), "bitswap.message.pb.Message.Block")
 	proto.RegisterType((*Message_BlockPresence)(nil), "bitswap.message.pb.Message.BlockPresence")
+	proto.RegisterType((*Message_BlockManifest)(nil), "bitswap.message.pb.Message.BlockManifest")
+	proto.RegisterType((*Message_BlockManifest_BlockManifestEntry)(nil), "bitswap.message.pb.Message.BlockManifest.BlockManifestEntry")
+	proto.RegisterType((*Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry)(nil), "bitswap.message.pb.Message.BlockManifest.BlockManifestEntry.ChunkedBlockManifestEntry")
 }
 
 func init() { proto.RegisterFile("message.proto", fileDescriptor_33c57e4bae7b9afd) }
 
 var fileDescriptor_33c57e4bae7b9afd = []byte{
-	// 497 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0xdf, 0x8a, 0xd3, 0x40,
-	0x14, 0xc6, 0x33, 0x4d, 0xd2, 0xc6, 0xd3, 0xee, 0x52, 0xe7, 0x42, 0x42, 0xc0, 0x34, 0x5b, 0xbc,
-	0x88, 0xca, 0x66, 0xa1, 0xfb, 0x04, 0x5b, 0xff, 0xa0, 0x82, 0x20, 0x83, 0xd0, 0xeb, 0xfc, 0x99,
-	0xd6, 0xc1, 0x6c, 0x12, 0x33, 0x53, 0xd7, 0xbe, 0x85, 0x8f, 0xb5, 0x37, 0xc2, 0x5e, 0x8a, 0xca,
-	0x22, 0xed, 0x8b, 0x48, 0x4e, 0xa6, 0x85, 0xba, 0xe2, 0xee, 0xdd, 0x9c, 0x33, 0xe7, 0xfb, 0x65,
-	0xbe, 0xef, 0x10, 0x38, 0x38, 0xe7, 0x52, 0xc6, 0x0b, 0x1e, 0x55, 0x75, 0xa9, 0x4a, 0x4a, 0x13,
-	0xa1, 0xe4, 0x45, 0x5c, 0x45, 0xbb, 0x76, 0xe2, 0x1d, 0x2f, 0x84, 0xfa, 0xb0, 0x4c, 0xa2, 0xb4,
-	0x3c, 0x3f, 0x59, 0x94, 0x8b, 0xf2, 0x04, 0x47, 0x93, 0xe5, 0x1c, 0x2b, 0x2c, 0xf0, 0xd4, 0x22,
-	0xc6, 0xbf, 0xba, 0xd0, 0x7b, 0xdb, 0xaa, 0xe9, 0x4b, 0x70, 0x2e, 0xe2, 0x42, 0xe5, 0x42, 0x2a,
-	0x97, 0x04, 0x24, 0xec, 0x4f, 0x1e, 0x45, 0x37, 0xbf, 0x10, 0xe9, 0xf1, 0x68, 0xa6, 0x67, 0xa7,
-	0xd6, 0xe5, 0xf5, 0xc8, 0x60, 0x3b, 0x2d, 0x7d, 0x00, 0xdd, 0x24, 0x2f, 0xd3, 0x8f, 0xd2, 0xed,
-	0x04, 0x66, 0x38, 0x60, 0xba, 0xa2, 0x67, 0xd0, 0xab, 0xe2, 0x55, 0x5e, 0xc6, 0x99, 0x6b, 0x06,
-	0x66, 0xd8, 0x9f, 0x1c, 0xfd, 0x0f, 0x3f, 0x6d, 0x44, 0x9a, 0xbd, 0xd5, 0xd1, 0x19, 0x1c, 0x22,
-	0xec, 0x5d, 0xcd, 0x25, 0x2f, 0x52, 0x2e, 0x5d, 0x0b, 0x49, 0x8f, 0x6f, 0x25, 0x6d, 0x15, 0x9a,
-	0xf8, 0x17, 0x86, 0x8e, 0x61, 0x50, 0xf1, 0x22, 0x13, 0xc5, 0x62, 0xba, 0x52, 0x5c, 0xba, 0x76,
-	0x40, 0x42, 0x9b, 0xed, 0xf5, 0xbc, 0x9f, 0x1d, 0x70, 0xb6, 0xa6, 0xe9, 0x1b, 0xe8, 0xf1, 0x42,
-	0xd5, 0x82, 0x4b, 0x97, 0xe0, 0x13, 0x9e, 0xdc, 0x25, 0xab, 0xe8, 0x45, 0xa1, 0xea, 0xd5, 0xd6,
-	0x95, 0x06, 0x50, 0x0a, 0xd6, 0x7c, 0x99, 0xe7, 0x6e, 0x27, 0x20, 0xa1, 0xc3, 0xf0, 0xec, 0x7d,
-	0x23, 0x60, 0xe3, 0x30, 0x3d, 0x02, 0x1b, 0x1f, 0x8b, 0x3b, 0x19, 0x4c, 0xfb, 0x8d, 0xf6, 0xc7,
-	0xf5, 0xc8, 0x7c, 0x26, 0x32, 0xd6, 0xde, 0x50, 0x0f, 0x9c, 0xaa, 0x16, 0x65, 0x2d, 0xd4, 0x0a,
-	0x21, 0x36, 0xdb, 0xd5, 0xcd, 0x36, 0xd2, 0xb8, 0x48, 0x79, 0xee, 0x9a, 0x88, 0xd7, 0x15, 0x7d,
-	0xdd, 0x6e, 0xfb, 0xfd, 0xaa, 0xe2, 0xae, 0x15, 0x90, 0xf0, 0x70, 0x72, 0x7c, 0x27, 0x07, 0x33,
-	0x2d, 0x62, 0x3b, 0x79, 0x13, 0x9e, 0xe4, 0x45, 0xf6, 0xbc, 0x2c, 0xd4, 0xab, 0xf8, 0x33, 0xc7,
-	0xf0, 0x1c, 0xb6, 0xd7, 0x1b, 0x8f, 0xda, 0xec, 0x70, 0xfe, 0x1e, 0xd8, 0xb8, 0x93, 0xa1, 0x41,
-	0x1d, 0xb0, 0x9a, 0xeb, 0x21, 0xf1, 0x4e, 0x75, 0xb3, 0x79, 0x70, 0x55, 0xf3, 0xb9, 0xf8, 0xd2,
-	0x1a, 0x66, 0xba, 0x6a, 0x52, 0xca, 0x62, 0x15, 0xa3, 0xc1, 0x01, 0xc3, 0xb3, 0xf7, 0x09, 0x0e,
-	0xf6, 0xb6, 0x4b, 0x1f, 0x82, 0x99, 0x8a, 0xec, 0x5f, 0x51, 0x35, 0x7d, 0x7a, 0x06, 0x96, 0x6a,
-	0x0c, 0x77, 0x6e, 0x37, 0xbc, 0xc7, 0x45, 0xc3, 0x28, 0x1d, 0x3f, 0x85, 0xfb, 0x37, 0xae, 0x76,
-	0x36, 0x0c, 0x3a, 0x00, 0x67, 0xeb, 0x79, 0x48, 0xa6, 0xee, 0xe5, 0xda, 0x27, 0x57, 0x6b, 0x9f,
-	0xfc, 0x5e, 0xfb, 0xe4, 0xeb, 0xc6, 0x37, 0xae, 0x36, 0xbe, 0xf1, 0x7d, 0xe3, 0x1b, 0x49, 0x17,
-	0xff, 0xbf, 0xd3, 0x3f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x8a, 0x8a, 0xaf, 0x83, 0xd3, 0x03, 0x00,
-	0x00,
+	// 675 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x55, 0x4f, 0x6f, 0xd3, 0x4e,
+	0x10, 0xcd, 0xc6, 0x76, 0xeb, 0x4e, 0x92, 0xfe, 0xda, 0xfd, 0x21, 0x64, 0x2c, 0x48, 0xd3, 0xa8,
+	0x07, 0xf3, 0xa7, 0x2e, 0x6a, 0xaf, 0x5c, 0x9a, 0x52, 0xa0, 0x48, 0x95, 0xd0, 0x16, 0x51, 0xae,
+	0xfe, 0xb3, 0x49, 0xad, 0xa6, 0x6b, 0x63, 0x6f, 0x68, 0x83, 0xf8, 0x04, 0x9c, 0xb8, 0xf0, 0x75,
+	0x38, 0xf7, 0x82, 0xd4, 0x23, 0x02, 0xa9, 0x42, 0xad, 0xc4, 0xe7, 0x40, 0x5e, 0xaf, 0x5d, 0xdc,
+	0x04, 0x12, 0x89, 0xdb, 0xce, 0xec, 0x7b, 0x6f, 0x32, 0x6f, 0x66, 0x1d, 0x68, 0x1c, 0xd1, 0x24,
+	0x71, 0x7a, 0xd4, 0x8e, 0xe2, 0x90, 0x87, 0x18, 0xbb, 0x01, 0x4f, 0x8e, 0x9d, 0xc8, 0x2e, 0xd2,
+	0xae, 0xb9, 0xda, 0x0b, 0xf8, 0xc1, 0xc0, 0xb5, 0xbd, 0xf0, 0x68, 0xad, 0x17, 0xf6, 0xc2, 0x35,
+	0x01, 0x75, 0x07, 0x5d, 0x11, 0x89, 0x40, 0x9c, 0x32, 0x89, 0xf6, 0xcf, 0x1a, 0xcc, 0xee, 0x66,
+	0x6c, 0xfc, 0x04, 0xf4, 0x63, 0x87, 0xf1, 0x7e, 0x90, 0x70, 0x03, 0xb5, 0x90, 0x55, 0x5b, 0x5f,
+	0xb1, 0x47, 0x2b, 0xd8, 0x12, 0x6e, 0xef, 0x4b, 0x6c, 0x47, 0x3d, 0x3d, 0x5f, 0xaa, 0x90, 0x82,
+	0x8b, 0x6f, 0xc2, 0x8c, 0xdb, 0x0f, 0xbd, 0xc3, 0xc4, 0xa8, 0xb6, 0x14, 0xab, 0x4e, 0x64, 0x84,
+	0x37, 0x61, 0x36, 0x72, 0x86, 0xfd, 0xd0, 0xf1, 0x0d, 0xa5, 0xa5, 0x58, 0xb5, 0xf5, 0xe5, 0xbf,
+	0xc9, 0x77, 0x52, 0x92, 0xd4, 0xce, 0x79, 0x78, 0x1f, 0xe6, 0x85, 0xd8, 0x8b, 0x98, 0x26, 0x94,
+	0x79, 0x34, 0x31, 0x54, 0xa1, 0x74, 0x77, 0xa2, 0x52, 0xce, 0x90, 0x8a, 0xd7, 0x64, 0x70, 0x1b,
+	0xea, 0x11, 0x65, 0x7e, 0xc0, 0x7a, 0x9d, 0x21, 0xa7, 0x89, 0xa1, 0xb5, 0x90, 0xa5, 0x91, 0x52,
+	0x0e, 0x3f, 0x85, 0xb9, 0x23, 0x87, 0x05, 0x5d, 0x9a, 0xf0, 0xc4, 0x98, 0x99, 0xb2, 0xee, 0xae,
+	0x64, 0x90, 0x2b, 0xae, 0xf9, 0xbd, 0x0a, 0x7a, 0xee, 0x1e, 0x7e, 0x0e, 0xb3, 0x94, 0xf1, 0x38,
+	0xa0, 0x89, 0x81, 0x84, 0xe6, 0xbd, 0x69, 0x4c, 0xb7, 0xb7, 0x19, 0x8f, 0x87, 0xb9, 0x3d, 0x52,
+	0x00, 0x63, 0x50, 0xbb, 0x83, 0x7e, 0xdf, 0xa8, 0xb6, 0x90, 0xa5, 0x13, 0x71, 0x36, 0xbf, 0x20,
+	0xd0, 0x04, 0x18, 0x2f, 0x83, 0x26, 0xba, 0x16, 0xc3, 0xad, 0x77, 0x6a, 0x29, 0xf7, 0xdb, 0xf9,
+	0x92, 0xb2, 0x15, 0xf8, 0x24, 0xbb, 0xc1, 0x26, 0xe8, 0x51, 0x1c, 0x84, 0x71, 0xc0, 0x87, 0x42,
+	0x44, 0x23, 0x45, 0x9c, 0x8e, 0xd5, 0x73, 0x98, 0x47, 0xfb, 0x86, 0x22, 0xe4, 0x65, 0x84, 0x77,
+	0xb2, 0xb5, 0x79, 0x39, 0x8c, 0xa8, 0xa1, 0xb6, 0x90, 0x35, 0xbf, 0xbe, 0x3a, 0x55, 0x07, 0xfb,
+	0x92, 0x44, 0x0a, 0x7a, 0x3a, 0x85, 0x84, 0x32, 0xff, 0x71, 0xc8, 0xf8, 0x33, 0xe7, 0x2d, 0x15,
+	0x53, 0xd0, 0x49, 0x29, 0xd7, 0x5e, 0xca, 0xbc, 0x13, 0xf8, 0x39, 0xd0, 0x84, 0xc9, 0x0b, 0x15,
+	0xac, 0x83, 0x9a, 0x5e, 0x2f, 0x20, 0x73, 0x43, 0x26, 0xd3, 0x1f, 0x1c, 0xc5, 0xb4, 0x1b, 0x9c,
+	0x64, 0x0d, 0x13, 0x19, 0xa5, 0x2e, 0xf9, 0x0e, 0x77, 0x44, 0x83, 0x75, 0x22, 0xce, 0xe6, 0x1b,
+	0x68, 0x94, 0xd6, 0x04, 0xdf, 0x01, 0xc5, 0x0b, 0xfc, 0x71, 0x56, 0xa5, 0x79, 0xbc, 0x09, 0x2a,
+	0x4f, 0x1b, 0xae, 0x4e, 0x6e, 0xb8, 0xa4, 0x2b, 0x1a, 0x16, 0x54, 0xf3, 0xb3, 0x2a, 0x6b, 0xe6,
+	0x2b, 0x32, 0xa9, 0xe6, 0x6d, 0x98, 0x13, 0x53, 0xda, 0x0b, 0xde, 0x65, 0x85, 0x15, 0x72, 0x95,
+	0xc0, 0xaf, 0x41, 0xcf, 0x37, 0x4c, 0x3e, 0xaf, 0x47, 0x53, 0x2f, 0x67, 0x39, 0x12, 0xdb, 0x42,
+	0x0a, 0x35, 0xf3, 0x93, 0x02, 0x78, 0x14, 0x80, 0x6f, 0x80, 0x16, 0xc5, 0x61, 0xd8, 0x95, 0xee,
+	0x66, 0x01, 0x7e, 0x08, 0xff, 0xa7, 0x6b, 0x27, 0xf0, 0x7b, 0xdc, 0x89, 0xf9, 0x0e, 0xf3, 0xe9,
+	0x89, 0xfc, 0xb9, 0xe3, 0xae, 0xf0, 0x03, 0x58, 0x2c, 0xd2, 0xdb, 0xcc, 0xcf, 0xf0, 0x8a, 0xc0,
+	0x8f, 0x5e, 0xe0, 0xf7, 0xd0, 0xf0, 0x0e, 0x06, 0xec, 0x90, 0xfa, 0x9d, 0xec, 0x1b, 0x93, 0x7d,
+	0x00, 0x5e, 0xfd, 0x4b, 0xaf, 0xf6, 0xd6, 0x6f, 0x8a, 0x65, 0x17, 0xca, 0xc5, 0xcc, 0x0f, 0x08,
+	0x6e, 0xfd, 0x11, 0x3c, 0x69, 0x7e, 0x16, 0xfc, 0xe7, 0x8e, 0xb1, 0x45, 0x23, 0xd7, 0xd3, 0x78,
+	0x05, 0x1a, 0xee, 0x88, 0x1d, 0x1a, 0x29, 0x27, 0xdb, 0xf7, 0x61, 0x71, 0x64, 0xb7, 0x8a, 0x77,
+	0x50, 0xc1, 0x75, 0xd0, 0xf3, 0x47, 0xb3, 0x80, 0x3a, 0xc6, 0xe9, 0x45, 0x13, 0x9d, 0x5d, 0x34,
+	0xd1, 0x8f, 0x8b, 0x26, 0xfa, 0x78, 0xd9, 0xac, 0x9c, 0x5d, 0x36, 0x2b, 0x5f, 0x2f, 0x9b, 0x15,
+	0x77, 0x46, 0xfc, 0x13, 0x6c, 0xfc, 0x0a, 0x00, 0x00, 0xff, 0xff, 0xf6, 0x10, 0x45, 0xf4, 0x5d,
+	0x06, 0x00, 0x00,
 }
 
 func (m *Message) Marshal() (dAtA []byte, err error) {
@@ -435,6 +637,20 @@ func (m *Message) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Manifests) > 0 {
+		for iNdEx := len(m.Manifests) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Manifests[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintMessage(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x32
+		}
+	}
 	if m.PendingBytes != 0 {
 		i = encodeVarintMessage(dAtA, i, uint64(m.PendingBytes))
 		i--
@@ -675,6 +891,155 @@ func (m *Message_BlockPresence) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *Message_BlockManifest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Message_BlockManifest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Message_BlockManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Manifest) > 0 {
+		for iNdEx := len(m.Manifest) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Manifest[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintMessage(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if m.BlockSize != 0 {
+		i = encodeVarintMessage(dAtA, i, uint64(m.BlockSize))
+		i--
+		dAtA[i] = 0x10
+	}
+	{
+		size := m.Cid.Size()
+		i -= size
+		if _, err := m.Cid.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintMessage(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ChunkedBlocks) > 0 {
+		for iNdEx := len(m.ChunkedBlocks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.ChunkedBlocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintMessage(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x22
+		}
+	}
+	if m.FullBlockEndIndex != 0 {
+		i = encodeVarintMessage(dAtA, i, uint64(m.FullBlockEndIndex))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.FullBlockStartIndex != 0 {
+		i = encodeVarintMessage(dAtA, i, uint64(m.FullBlockStartIndex))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Proof) > 0 {
+		i -= len(m.Proof)
+		copy(dAtA[i:], m.Proof)
+		i = encodeVarintMessage(dAtA, i, uint64(len(m.Proof)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.BlockEndIndex != 0 {
+		i = encodeVarintMessage(dAtA, i, uint64(m.BlockEndIndex))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.BlockStartIndex != 0 {
+		i = encodeVarintMessage(dAtA, i, uint64(m.BlockStartIndex))
+		i--
+		dAtA[i] = 0x10
+	}
+	{
+		size := m.Cid.Size()
+		i -= size
+		if _, err := m.Cid.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintMessage(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintMessage(dAtA []byte, offset int, v uint64) int {
 	offset -= sovMessage(v)
 	base := offset
@@ -714,6 +1079,12 @@ func (m *Message) Size() (n int) {
 	}
 	if m.PendingBytes != 0 {
 		n += 1 + sovMessage(uint64(m.PendingBytes))
+	}
+	if len(m.Manifests) > 0 {
+		for _, e := range m.Manifests {
+			l = e.Size()
+			n += 1 + l + sovMessage(uint64(l))
+		}
 	}
 	return n
 }
@@ -786,6 +1157,68 @@ func (m *Message_BlockPresence) Size() (n int) {
 	n += 1 + l + sovMessage(uint64(l))
 	if m.Type != 0 {
 		n += 1 + sovMessage(uint64(m.Type))
+	}
+	return n
+}
+
+func (m *Message_BlockManifest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = m.Cid.Size()
+	n += 1 + l + sovMessage(uint64(l))
+	if m.BlockSize != 0 {
+		n += 1 + sovMessage(uint64(m.BlockSize))
+	}
+	if len(m.Manifest) > 0 {
+		for _, e := range m.Manifest {
+			l = e.Size()
+			n += 1 + l + sovMessage(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Proof)
+	if l > 0 {
+		n += 1 + l + sovMessage(uint64(l))
+	}
+	if m.FullBlockStartIndex != 0 {
+		n += 1 + sovMessage(uint64(m.FullBlockStartIndex))
+	}
+	if m.FullBlockEndIndex != 0 {
+		n += 1 + sovMessage(uint64(m.FullBlockEndIndex))
+	}
+	if len(m.ChunkedBlocks) > 0 {
+		for _, e := range m.ChunkedBlocks {
+			l = e.Size()
+			n += 1 + l + sovMessage(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = m.Cid.Size()
+	n += 1 + l + sovMessage(uint64(l))
+	if m.BlockStartIndex != 0 {
+		n += 1 + sovMessage(uint64(m.BlockStartIndex))
+	}
+	if m.BlockEndIndex != 0 {
+		n += 1 + sovMessage(uint64(m.BlockEndIndex))
 	}
 	return n
 }
@@ -977,16 +1410,47 @@ func (m *Message) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Manifests", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Manifests = append(m.Manifests, &Message_BlockManifest{})
+			if err := m.Manifests[len(m.Manifests)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMessage(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMessage
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
 			if (iNdEx + skippy) > l {
@@ -1090,10 +1554,7 @@ func (m *Message_Wantlist) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMessage
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
 			if (iNdEx + skippy) > l {
@@ -1254,10 +1715,7 @@ func (m *Message_Wantlist_Entry) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMessage
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
 			if (iNdEx + skippy) > l {
@@ -1375,10 +1833,7 @@ func (m *Message_Block) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMessage
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
 			if (iNdEx + skippy) > l {
@@ -1480,10 +1935,420 @@ func (m *Message_BlockPresence) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
-			if (iNdEx + skippy) < 0 {
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Message_BlockManifest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMessage
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BlockManifest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BlockManifest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Cid", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Cid.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockSize", wireType)
+			}
+			m.BlockSize = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BlockSize |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Manifest", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Manifest = append(m.Manifest, &Message_BlockManifest_BlockManifestEntry{})
+			if err := m.Manifest[len(m.Manifest)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMessage(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Message_BlockManifest_BlockManifestEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMessage
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BlockManifestEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BlockManifestEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Proof", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Proof = append(m.Proof[:0], dAtA[iNdEx:postIndex]...)
+			if m.Proof == nil {
+				m.Proof = []byte{}
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FullBlockStartIndex", wireType)
+			}
+			m.FullBlockStartIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FullBlockStartIndex |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FullBlockEndIndex", wireType)
+			}
+			m.FullBlockEndIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FullBlockEndIndex |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ChunkedBlocks", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ChunkedBlocks = append(m.ChunkedBlocks, &Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{})
+			if err := m.ChunkedBlocks[len(m.ChunkedBlocks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMessage(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMessage
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ChunkedBlockManifestEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ChunkedBlockManifestEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Cid", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMessage
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMessage
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Cid.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockStartIndex", wireType)
+			}
+			m.BlockStartIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BlockStartIndex |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockEndIndex", wireType)
+			}
+			m.BlockEndIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMessage
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.BlockEndIndex |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMessage(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMessage
 			}
 			if (iNdEx + skippy) > l {

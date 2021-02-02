@@ -60,6 +60,8 @@ type BitSwapMessage interface {
 	AddBlock(blocks.Block)
 	// AddBlockPresence adds a HAVE / DONT_HAVE for the given Cid to the message
 	AddBlockPresence(cid.Cid, pb.Message_BlockPresenceType)
+	// AddLargeBlockManifest adds a large block manifest to the message
+	AddLargeBlockManifest(*pb.Message_BlockManifest)
 	// AddHave adds a HAVE for the given Cid to the message
 	AddHave(cid.Cid)
 	// AddDontHave adds a DONT_HAVE for the given Cid to the message
@@ -86,8 +88,10 @@ type Exportable interface {
 	// version of the protocol the remote peer supports.
 	ToProtoV0() *pb.Message
 	ToProtoV1() *pb.Message
+	ToProtoV2() *pb.Message
 	ToNetV0(w io.Writer) error
 	ToNetV1(w io.Writer) error
+	ToNetV2(w io.Writer) error
 }
 
 // BlockPresence represents a HAVE / DONT_HAVE for a given Cid
@@ -145,6 +149,7 @@ type impl struct {
 	full           bool
 	wantlist       map[cid.Cid]*Entry
 	blocks         map[cid.Cid]blocks.Block
+	largeBlocks    map[cid.Cid]*pb.Message_BlockManifest
 	blockPresences map[cid.Cid]pb.Message_BlockPresenceType
 	pendingBytes   int32
 }
@@ -159,6 +164,7 @@ func newMsg(full bool) *impl {
 		full:           full,
 		wantlist:       make(map[cid.Cid]*Entry),
 		blocks:         make(map[cid.Cid]blocks.Block),
+		largeBlocks:    make(map[cid.Cid]*pb.Message_BlockManifest),
 		blockPresences: make(map[cid.Cid]pb.Message_BlockPresenceType),
 	}
 }
@@ -175,6 +181,10 @@ func (m *impl) Clone() BitSwapMessage {
 	for k := range m.blockPresences {
 		msg.blockPresences[k] = m.blockPresences[k]
 	}
+
+	for k := range m.largeBlocks {
+		msg.largeBlocks[k] = m.largeBlocks[k]
+	}
 	msg.pendingBytes = m.pendingBytes
 	return msg
 }
@@ -190,6 +200,9 @@ func (m *impl) Reset(full bool) {
 	}
 	for k := range m.blockPresences {
 		delete(m.blockPresences, k)
+	}
+	for k := range m.largeBlocks {
+		delete(m.largeBlocks, k)
 	}
 	m.pendingBytes = 0
 }
@@ -249,7 +262,7 @@ func (m *impl) Full() bool {
 }
 
 func (m *impl) Empty() bool {
-	return len(m.blocks) == 0 && len(m.wantlist) == 0 && len(m.blockPresences) == 0
+	return len(m.blocks) == 0 && len(m.wantlist) == 0 && len(m.blockPresences) == 0 && len(m.largeBlocks) == 0
 }
 
 func (m *impl) Wantlist() []Entry {
@@ -363,6 +376,11 @@ func (m *impl) AddBlockPresence(c cid.Cid, t pb.Message_BlockPresenceType) {
 	m.blockPresences[c] = t
 }
 
+func (m *impl) AddLargeBlockManifest(bm *pb.Message_BlockManifest) {
+	delete(m.blockPresences, bm.Cid.Cid)
+	m.largeBlocks[bm.Cid.Cid] = bm
+}
+
 func (m *impl) AddHave(c cid.Cid) {
 	m.AddBlockPresence(c, pb.Message_Have)
 }
@@ -462,12 +480,51 @@ func (m *impl) ToProtoV1() *pb.Message {
 	return pbm
 }
 
+func (m *impl) ToProtoV2() *pb.Message {
+	pbm := new(pb.Message)
+	pbm.Wantlist.Entries = make([]pb.Message_Wantlist_Entry, 0, len(m.wantlist))
+	for _, e := range m.wantlist {
+		pbm.Wantlist.Entries = append(pbm.Wantlist.Entries, e.ToPB())
+	}
+	pbm.Wantlist.Full = m.full
+
+	blocks := m.Blocks()
+	pbm.Payload = make([]pb.Message_Block, 0, len(blocks))
+	for _, b := range blocks {
+		pbm.Payload = append(pbm.Payload, pb.Message_Block{
+			Data:   b.RawData(),
+			Prefix: b.Cid().Prefix().Bytes(),
+		})
+	}
+
+	pbm.BlockPresences = make([]pb.Message_BlockPresence, 0, len(m.blockPresences))
+	for c, t := range m.blockPresences {
+		pbm.BlockPresences = append(pbm.BlockPresences, pb.Message_BlockPresence{
+			Cid:  pb.Cid{Cid: c},
+			Type: t,
+		})
+	}
+	
+	pbm.Manifests = make([]*pb.Message_BlockManifest, 0, len(m.largeBlocks))
+	for _, m := range m.largeBlocks {
+		pbm.Manifests = append(pbm.Manifests, m)
+	}
+	
+	pbm.PendingBytes = m.PendingBytes()
+
+	return pbm
+}
+
 func (m *impl) ToNetV0(w io.Writer) error {
 	return write(w, m.ToProtoV0())
 }
 
 func (m *impl) ToNetV1(w io.Writer) error {
 	return write(w, m.ToProtoV1())
+}
+
+func (m *impl) ToNetV2(w io.Writer) error {
+	return write(w, m.ToProtoV2())
 }
 
 func write(w io.Writer, m *pb.Message) error {
@@ -493,8 +550,15 @@ func (m *impl) Loggable() map[string]interface{} {
 	for _, v := range m.blocks {
 		blocks = append(blocks, v.Cid().String())
 	}
+
+	largeBlocks := make([]string, 0, len(m.largeBlocks))
+	for _, v := range m.largeBlocks {
+		largeBlocks = append(largeBlocks, v.Cid.Cid.String())
+	}
+
 	return map[string]interface{}{
-		"blocks": blocks,
-		"wants":  m.Wantlist(),
+		"blocks":      blocks,
+		"largeBlocks": largeBlocks,
+		"wants":       m.Wantlist(),
 	}
 }
