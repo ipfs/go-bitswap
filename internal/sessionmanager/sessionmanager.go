@@ -2,6 +2,7 @@ package sessionmanager
 
 import (
 	"context"
+	"github.com/ipfs/go-bitswap/message"
 	"sync"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 type Session interface {
 	exchange.Fetcher
 	ID() uint64
-	ReceiveFrom(peer.ID, []cid.Cid, []cid.Cid, []cid.Cid)
+	ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, largeBlockManifests []message.LargeBlockManifest)
 	Shutdown()
 }
 
@@ -145,12 +146,17 @@ func (sm *SessionManager) GetNextSessionID() uint64 {
 }
 
 // ReceiveFrom is called when a new message is received
-func (sm *SessionManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
+func (sm *SessionManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, largeBlockManifests []message.LargeBlockManifest) {
 	// Record block presence for HAVE / DONT_HAVE
 	sm.blockPresenceManager.ReceiveFrom(p, haves, dontHaves)
 
+	lbmCids := make([]cid.Cid, 0, len(largeBlockManifests))
+	for _, lbm := range largeBlockManifests {
+		lbmCids = append(lbmCids, lbm.BlockManifest.Cid.Cid)
+	}
+
 	// Notify each session that is interested in the blocks / HAVEs / DONT_HAVEs
-	for _, id := range sm.sessionInterestManager.InterestedSessions(blks, haves, dontHaves) {
+	for _, id := range sm.sessionInterestManager.InterestedSessions(blks, haves, dontHaves, lbmCids) {
 		sm.sessLk.RLock()
 		if sm.sessions == nil { // check if SessionManager was shutdown
 			sm.sessLk.RUnlock()
@@ -160,7 +166,7 @@ func (sm *SessionManager) ReceiveFrom(ctx context.Context, p peer.ID, blks []cid
 		sm.sessLk.RUnlock()
 
 		if ok {
-			sess.ReceiveFrom(p, blks, haves, dontHaves)
+			sess.ReceiveFrom(p, blks, haves, dontHaves, largeBlockManifests)
 		}
 	}
 

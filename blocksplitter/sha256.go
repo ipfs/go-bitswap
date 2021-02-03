@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding"
+	"encoding/binary"
 	"fmt"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multihash"
 	"math/rand"
 )
@@ -43,21 +45,181 @@ func (s *fixedSha256Splitter) GetManifest(block blocks.Block) (*pb.Message_Block
 
 	n := createTree(block.RawData(), s.chunkSize)
 	msg := new(pb.Message_BlockManifest)
-	msg.Cid = pb.Cid{Cid:block.Cid()}
+	msg.Cid = pb.Cid{Cid: block.Cid()}
 	msg.BlockSize = int64(len(block.RawData()))
-	endIndex := len(block.RawData())-1
+	endIndex := len(block.RawData()) - 1
+
+	// TODO: Should this be here, or should size be passed in specially?
+	sz := make([]byte, 8)
+	_ = binary.PutUvarint(sz, uint64(msg.BlockSize))
+	szMH, err := multihash.Sum(sz, multihash.IDENTITY, -1)
+	if err != nil {
+		return nil, err
+	}
+	sizeEntry := &pb.Message_BlockManifest_BlockManifestEntry{
+		Proof:               n.DataHashPrefix,
+		FullBlockStartIndex: 0,
+		FullBlockEndIndex:   0,
+		ChunkedBlocks: []*pb.Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{
+			{
+				Cid:             pb.Cid{Cid: cid.NewCidV1(cid.Raw, szMH)},
+				BlockStartIndex: 0,
+				BlockEndIndex:   int32(len(n.Data)),
+			},
+		},
+	}
+	msg.Manifest = append(msg.Manifest, sizeEntry)
+
 	for n != nil {
+		entryHash, err := multihash.Sum(n.Data, multihash.SHA2_256, -1)
+		if err != nil {
+			return nil, err
+		}
 		entry := &pb.Message_BlockManifest_BlockManifestEntry{
 			Proof:               n.DataHashPrefix,
 			FullBlockStartIndex: int64(endIndex - len(n.Data)),
 			FullBlockEndIndex:   int64(endIndex),
-			ChunkedBlocks:       nil,
+			ChunkedBlocks: []*pb.Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{
+				{
+					Cid:             pb.Cid{Cid: cid.NewCidV1(cid.Raw, entryHash)},
+					BlockStartIndex: 0,
+					BlockEndIndex:   int32(len(n.Data)),
+				},
+			},
 		}
 		msg.Manifest = append(msg.Manifest, entry)
+		n = n.FilePrevNode
 	}
 
-
 	return msg, nil
+}
+
+func (s *fixedSha256Splitter) NewManifestVerifier(mh multihash.Multihash) (ManifestVerifier, error) {
+	dec, err := multihash.Decode(mh)
+	if err != nil {
+		return nil, err
+	}
+	if dec.Code != multihash.SHA2_256 {
+		return nil, fmt.Errorf("unsupported hash code: only SHA2_256 is supported instead received code %d with name %s", dec.Code, dec.Name)
+	}
+
+	return &fixedSha256SplitterVerifier{
+		chunkSize: s.chunkSize,
+		sid:       dec.Digest,
+		latestIV:  dec.Digest,
+	}, nil
+}
+
+type fixedSha256SplitterVerifier struct {
+	chunkSize     int
+	sid           []byte
+	latestIV      []byte
+	latestIVIndex int64
+
+	queuedBlocks []*VerifierEntry
+}
+
+type VerifierEntry struct {
+	Data                 []byte
+	Proof                []byte
+	StartIndex, EndIndex int64
+}
+
+// AddBytes takes in some data from a byte stream along with where it lives in the byte stream and a proof it belongs
+// returns
+func (v *fixedSha256SplitterVerifier) AddBytes(entry *VerifierEntry) ([]*VerifierEntry, []bool, error) {
+	valid, unknown, err := v.internalAddBytes(entry)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if unknown {
+		v.queuedBlocks = append(v.queuedBlocks, entry)
+	}
+
+	if !unknown && !valid {
+		return []*VerifierEntry{entry}, []bool{false}, nil
+	}
+
+	// entry was valid
+	entries := []*VerifierEntry{entry}
+	validities := []bool{true}
+
+	repeat := true
+	for repeat {
+		repeat = false
+		for i, e := range v.queuedBlocks {
+			valid, unknown, err = v.internalAddBytes(e)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if !unknown {
+				// remove the element from the queue
+				v.queuedBlocks[i] = v.queuedBlocks[len(v.queuedBlocks)-1]
+				v.queuedBlocks = v.queuedBlocks[:len(v.queuedBlocks)-1]
+
+				// we have information about a new entry to return
+				entries = append(entries, e)
+			}
+
+			if valid {
+				// mark entry as valid
+				validities = append(validities, true)
+
+				// see if we can process anything else now
+				repeat = true
+				break
+			}
+
+			// mark entry as invalid
+			validities = append(validities, false)
+		}
+	}
+
+	return entries, validities, nil
+}
+
+func (v *fixedSha256SplitterVerifier) internalAddBytes(entry *VerifierEntry) (valid bool, unknown bool, err error) {
+	data := entry.Data
+	proof := entry.Proof
+	endIndex := entry.EndIndex
+
+	// If it's the size byte
+	if endIndex == -1 {
+		_, sizeFromProof := consumeUint64(proof[len(proof)-8:])
+		dataSz, _ := binary.Uvarint(data)
+		if dataSz != sizeFromProof {
+			return false, false, nil
+		}
+		end := ShaPFinalize(proof)
+		if bytes.Compare(v.latestIV, end) != 0 {
+			return false, false, nil
+		}
+		v.latestIV = proof
+		v.latestIVIndex = int64(dataSz) - 1
+		return true, false, nil
+	}
+
+	// if it's the next verifiable piece of data
+	if endIndex == v.latestIVIndex {
+		calculated := ShaPCont(proof, data)
+		if bytes.Compare(v.latestIV, calculated) != 0 {
+			return false, false, nil
+		}
+		v.latestIV = proof
+		v.latestIVIndex -= int64(len(data))
+		return true, false, nil
+	}
+
+	// if we've already verified this data
+	// Note: assumes the caller of AddBytes only passes the same data in once/handles duplicates
+	if endIndex > v.latestIVIndex {
+		return false, false, nil
+	}
+
+	// if it's too early for us to verify the data
+	return false, true, nil
 }
 
 func main() {
@@ -179,4 +341,11 @@ func ShaPFinalize(partial ShaPBytes) []byte {
 	}
 
 	return h.Sum(nil)
+}
+
+func consumeUint64(b []byte) ([]byte, uint64) {
+	_ = b[7]
+	x := uint64(b[7]) | uint64(b[6])<<8 | uint64(b[5])<<16 | uint64(b[4])<<24 |
+		uint64(b[3])<<32 | uint64(b[2])<<40 | uint64(b[1])<<48 | uint64(b[0])<<56
+	return b[8:], x
 }

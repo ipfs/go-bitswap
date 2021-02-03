@@ -151,7 +151,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	var sm *bssm.SessionManager
 	onDontHaveTimeout := func(p peer.ID, dontHaves []cid.Cid) {
 		// Simulate a message arriving with DONT_HAVEs
-		sm.ReceiveFrom(ctx, p, nil, nil, dontHaves)
+		sm.ReceiveFrom(ctx, p, nil, nil, dontHaves, nil)
 	}
 	peerQueueFactory := func(ctx context.Context, p peer.ID) bspm.PeerQueue {
 		return bsmq.New(ctx, p, network, onDontHaveTimeout)
@@ -342,14 +342,14 @@ func (bs *Bitswap) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks
 // HasBlock announces the existence of a block to this bitswap service. The
 // service will potentially notify its peers.
 func (bs *Bitswap) HasBlock(blk blocks.Block) error {
-	return bs.receiveBlocksFrom(context.Background(), "", []blocks.Block{blk}, nil, nil)
+	return bs.receiveBlocksFrom(context.Background(), "", []blocks.Block{blk}, nil, nil, nil)
 }
 
 // TODO: Some of this stuff really only needs to be done when adding a block
 // from the user, not when receiving it from the network.
 // In case you run `git blame` on this comment, I'll save you some time: ask
 // @whyrusleeping, I don't know the answers you seek.
-func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []blocks.Block, haves []cid.Cid, dontHaves []cid.Cid) error {
+func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []blocks.Block, haves []cid.Cid, dontHaves []cid.Cid, largeBlockManifests []bsmsg.LargeBlockManifest) error {
 	select {
 	case <-bs.process.Closing():
 		return errors.New("bitswap is closed")
@@ -399,7 +399,7 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 
 	// Send all block keys (including duplicates) to any sessions that want them.
 	// (The duplicates are needed by sessions for accounting purposes)
-	bs.sm.ReceiveFrom(ctx, from, allKs, haves, dontHaves)
+	bs.sm.ReceiveFrom(ctx, from, allKs, haves, dontHaves, largeBlockManifests)
 
 	// Send wanted blocks to decision engine
 	bs.engine.ReceiveFrom(from, wanted, haves)
@@ -460,9 +460,10 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 
 	haves := incoming.Haves()
 	dontHaves := incoming.DontHaves()
-	if len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0 {
+	lbms := incoming.LargeBlocks()
+	if len(iblocks) > 0 || len(haves) > 0 || len(dontHaves) > 0 || len(lbms) > 0 {
 		// Process blocks
-		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves)
+		err := bs.receiveBlocksFrom(ctx, p, iblocks, haves, dontHaves, lbms)
 		if err != nil {
 			log.Warnf("ReceiveMessage recvBlockFrom error: %s", err)
 			return

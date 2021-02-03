@@ -11,6 +11,11 @@ import (
 
 type BlockSplitter interface {
 	GetManifest(block blocks.Block) (*pb.Message_BlockManifest, error)
+	NewManifestVerifier(mh multihash.Multihash) (ManifestVerifier, error)
+}
+
+type ManifestVerifier interface {
+	AddBytes(entry *VerifierEntry) ([]*VerifierEntry, []bool, error)
 }
 
 type splitterRegister struct {
@@ -24,7 +29,7 @@ func init() {
 	splitterRegistration = &splitterRegister{
 		m: make(map[uint64]BlockSplitter),
 	}
-	if err := Register(multihash.SHA2_256, Sha256Splitter(1 << 20)); err != nil {
+	if err := Register(multihash.SHA2_256, Sha256Splitter(1<<20)); err != nil {
 		panic(err)
 	}
 }

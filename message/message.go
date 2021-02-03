@@ -32,6 +32,8 @@ type BitSwapMessage interface {
 	Haves() []cid.Cid
 	// DontHaves returns the Cids for each DONT_HAVE
 	DontHaves() []cid.Cid
+	// LargeBlocks returns the manifestst of large blocks
+	LargeBlocks() []LargeBlockManifest
 	// PendingBytes returns the number of outstanding bytes of data that the
 	// engine has yet to send to the client (because they didn't fit in this
 	// message)
@@ -98,6 +100,11 @@ type Exportable interface {
 type BlockPresence struct {
 	Cid  cid.Cid
 	Type pb.Message_BlockPresenceType
+}
+
+// LargeBlockManifest represents block manifest for a large block
+type LargeBlockManifest struct {
+	BlockManifest *pb.Message_BlockManifest
 }
 
 // Entry is a wantlist entry in a Bitswap message, with flags indicating
@@ -254,6 +261,13 @@ func newMessageFromProto(pbm pb.Message) (BitSwapMessage, error) {
 
 	m.pendingBytes = pbm.PendingBytes
 
+	for _, manifest := range pbm.GetManifests() {
+		if !manifest.Cid.Cid.Defined() {
+			return nil, errCidMissing
+		}
+		m.AddLargeBlockManifest(manifest)
+	}
+
 	return m, nil
 }
 
@@ -305,6 +319,14 @@ func (m *impl) getBlockPresenceByType(t pb.Message_BlockPresenceType) []cid.Cid 
 		}
 	}
 	return cids
+}
+
+func (m *impl) LargeBlocks() []LargeBlockManifest {
+	lbms := make([]LargeBlockManifest, 0, len(m.largeBlocks))
+	for _, lb := range m.largeBlocks {
+		lbms = append(lbms, LargeBlockManifest{lb})
+	}
+	return lbms
 }
 
 func (m *impl) PendingBytes() int32 {
@@ -504,12 +526,12 @@ func (m *impl) ToProtoV2() *pb.Message {
 			Type: t,
 		})
 	}
-	
+
 	pbm.Manifests = make([]*pb.Message_BlockManifest, 0, len(m.largeBlocks))
 	for _, m := range m.largeBlocks {
 		pbm.Manifests = append(pbm.Manifests, m)
 	}
-	
+
 	pbm.PendingBytes = m.PendingBytes()
 
 	return pbm

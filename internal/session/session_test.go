@@ -190,7 +190,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	peers := testutil.GeneratePeers(5)
 	for i, p := range peers {
 		blk := blks[testutil.IndexOf(blks, receivedWantReq.cids[i])]
-		session.ReceiveFrom(p, []cid.Cid{}, []cid.Cid{blk.Cid()}, []cid.Cid{})
+		session.ReceiveFrom(p, []cid.Cid{}, []cid.Cid{blk.Cid()}, []cid.Cid{}, nil)
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -207,7 +207,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	}
 
 	// Simulate receiving DONT_HAVE for a CID
-	session.ReceiveFrom(peers[0], []cid.Cid{}, []cid.Cid{}, []cid.Cid{blks[0].Cid()})
+	session.ReceiveFrom(peers[0], []cid.Cid{}, []cid.Cid{}, []cid.Cid{blks[0].Cid()}, nil)
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -218,7 +218,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	}
 
 	// Simulate receiving block for a CID
-	session.ReceiveFrom(peers[1], []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{})
+	session.ReceiveFrom(peers[1], []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{}, nil)
 
 	time.Sleep(10 * time.Millisecond)
 
@@ -281,7 +281,7 @@ func TestSessionFindMorePeers(t *testing.T) {
 	p := testutil.GeneratePeers(1)[0]
 
 	blk := blks[0]
-	session.ReceiveFrom(p, []cid.Cid{blk.Cid()}, []cid.Cid{}, []cid.Cid{})
+	session.ReceiveFrom(p, []cid.Cid{blk.Cid()}, []cid.Cid{}, []cid.Cid{}, nil)
 
 	// The session should now time out waiting for a response and broadcast
 	// want-haves again
@@ -584,7 +584,7 @@ func TestSessionReceiveMessageAfterCtxCancel(t *testing.T) {
 
 	// Simulate receiving block for a CID
 	peer := testutil.GeneratePeers(1)[0]
-	session.ReceiveFrom(peer, []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{})
+	session.ReceiveFrom(peer, []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{}, nil)
 
 	time.Sleep(5 * time.Millisecond)
 
