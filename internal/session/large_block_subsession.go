@@ -23,6 +23,10 @@ type LargeBlockSubSession struct {
 
 	mcid cid.Cid
 
+	// TODO: datastore usage
+	verifiedChunks []*blocksplitter.VerifierEntry
+	resultBlock    blocks.Block
+
 	// TODO: multiple manifests
 	mainManifest message.LargeBlockManifest
 	latestEntry  int
@@ -42,10 +46,11 @@ func NewLargeBlockSubSession(mcid cid.Cid) (*LargeBlockSubSession, error) {
 		return nil, err
 	}
 	return &LargeBlockSubSession{
-		manifests:   make(map[peer.ID]message.LargeBlockManifest),
-		verifier:    verifier,
-		latestEntry: -1,
-		mcid:        mcid,
+		manifests:      make(map[peer.ID]message.LargeBlockManifest),
+		verifier:       verifier,
+		latestEntry:    -1,
+		mcid:           mcid,
+		verifiedChunks: make([]*blocksplitter.VerifierEntry, 0),
 	}, nil
 }
 
@@ -66,6 +71,10 @@ func (s *LargeBlockSubSession) Next() []cid.Cid {
 	s.sessMx.Lock()
 	defer s.sessMx.Unlock()
 
+	if s.done {
+		return nil
+	}
+
 	// TODO: Only handling one chunk at a time
 
 	wantCids := make([]cid.Cid, 0)
@@ -78,6 +87,16 @@ func (s *LargeBlockSubSession) Next() []cid.Cid {
 		s.entryOngoing = true
 	} else {
 		s.done = true
+		var blockData []byte
+		for _, e := range s.verifiedChunks {
+			blockData = append(blockData, e.Data...)
+		}
+		var err error
+		s.resultBlock, err = blocks.NewBlockWithCid(blockData, s.mcid)
+		if err != nil {
+			lbslog.Errorf("unable to construct block %s : %v", s.mcid, err)
+			return nil
+		}
 	}
 
 	return wantCids
@@ -98,7 +117,7 @@ func (s *LargeBlockSubSession) AddBlock(block blocks.Block) {
 	e := s.mainManifest.BlockManifest.Manifest[s.latestEntry]
 
 	// TODO: Assuming one block per chunk
-	_, verified, err := s.verifier.AddBytes(&blocksplitter.VerifierEntry{
+	entries, verified, err := s.verifier.AddBytes(&blocksplitter.VerifierEntry{
 		Data:       block.RawData(),
 		Proof:      e.Proof,
 		StartIndex: e.FullBlockEndIndex,
@@ -109,9 +128,11 @@ func (s *LargeBlockSubSession) AddBlock(block blocks.Block) {
 	}
 
 	// TODO: This currently implies a bad manifest, since we're searching by CID so do something about it (e.g. change manifests)
-	for _, v := range verified {
+	for i, v := range verified {
 		if !v {
 			lbslog.Errorf("block was not valid")
+			continue
 		}
+		s.verifiedChunks = append(s.verifiedChunks, entries[i])
 	}
 }

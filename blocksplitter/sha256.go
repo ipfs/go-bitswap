@@ -47,28 +47,37 @@ func (s *fixedSha256Splitter) GetManifest(block blocks.Block) (*pb.Message_Block
 	msg := new(pb.Message_BlockManifest)
 	msg.Cid = pb.Cid{Cid: block.Cid()}
 	msg.BlockSize = int64(len(block.RawData()))
-	endIndex := len(block.RawData()) - 1
+	endIndex := int64(len(block.RawData()) - 1)
 
-	// TODO: Should this be here, or should size be passed in specially?
-	sz := make([]byte, 8)
-	_ = binary.PutUvarint(sz, uint64(msg.BlockSize))
-	szMH, err := multihash.Sum(sz, multihash.IDENTITY, -1)
+	dec, err = multihash.Decode(block.Cid().Hash())
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	sizeEntry := &pb.Message_BlockManifest_BlockManifestEntry{
-		Proof:               n.DataHashPrefix,
-		FullBlockStartIndex: 0,
-		FullBlockEndIndex:   0,
-		ChunkedBlocks: []*pb.Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{
-			{
-				Cid:             pb.Cid{Cid: cid.NewCidV1(cid.Raw, szMH)},
-				BlockStartIndex: 0,
-				BlockEndIndex:   int32(len(n.Data)),
-			},
-		},
+	if !bytes.Equal(ShaPFinalize(ShaPCont(n.DataHashPrefix, n.Data)), dec.Digest) {
+		panic("noo")
 	}
-	msg.Manifest = append(msg.Manifest, sizeEntry)
+	//// TODO: Should this be here, or should size be passed in specially?
+	//sz := make([]byte, 8)
+	//_ = binary.PutUvarint(sz, uint64(msg.BlockSize))
+	//szMH, err := multihash.Sum(sz, multihash.IDENTITY, -1)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//sizeEntry := &pb.Message_BlockManifest_BlockManifestEntry{
+	//	Proof:               n.DataHashPrefix,
+	//	FullBlockStartIndex: 0,
+	//	FullBlockEndIndex:   -1,
+	//	ChunkedBlocks: []*pb.Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{
+	//		{
+	//			Cid:             pb.Cid{Cid: cid.NewCidV1(cid.Raw, szMH)},
+	//			BlockStartIndex: 0,
+	//			BlockEndIndex:   int32(len(n.Data)),
+	//		},
+	//	},
+	//}
+	//msg.Manifest = append(msg.Manifest, sizeEntry)
+
+	first := true
 
 	for n != nil {
 		entryHash, err := multihash.Sum(n.Data, multihash.SHA2_256, -1)
@@ -77,8 +86,8 @@ func (s *fixedSha256Splitter) GetManifest(block blocks.Block) (*pb.Message_Block
 		}
 		entry := &pb.Message_BlockManifest_BlockManifestEntry{
 			Proof:               n.DataHashPrefix,
-			FullBlockStartIndex: int64(endIndex - len(n.Data)),
-			FullBlockEndIndex:   int64(endIndex),
+			FullBlockStartIndex: endIndex - int64(len(n.Data)),
+			FullBlockEndIndex:   endIndex,
 			ChunkedBlocks: []*pb.Message_BlockManifest_BlockManifestEntry_ChunkedBlockManifestEntry{
 				{
 					Cid:             pb.Cid{Cid: cid.NewCidV1(cid.Raw, entryHash)},
@@ -87,6 +96,14 @@ func (s *fixedSha256Splitter) GetManifest(block blocks.Block) (*pb.Message_Block
 				},
 			},
 		}
+
+		endIndex = entry.FullBlockStartIndex
+
+		if first {
+			entry.FullBlockEndIndex = -1
+			first = false
+		}
+
 		msg.Manifest = append(msg.Manifest, entry)
 		n = n.FilePrevNode
 	}
@@ -190,14 +207,14 @@ func (v *fixedSha256SplitterVerifier) internalAddBytes(entry *VerifierEntry) (va
 		_, sizeFromProof := consumeUint64(proof[len(proof)-8:])
 		dataSz, _ := binary.Uvarint(data)
 		if dataSz != sizeFromProof {
-			return false, false, nil
+			//return false, false, nil
 		}
-		end := ShaPFinalize(proof)
+		end := ShaPFinalize(ShaPCont(proof, data))
 		if bytes.Compare(v.latestIV, end) != 0 {
 			return false, false, nil
 		}
 		v.latestIV = proof
-		v.latestIVIndex = int64(dataSz) - 1
+		v.latestIVIndex = int64(sizeFromProof) - 1
 		return true, false, nil
 	}
 

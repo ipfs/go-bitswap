@@ -3,6 +3,9 @@ package bitswap_test
 import (
 	"context"
 	"fmt"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	"github.com/multiformats/go-multihash"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -50,6 +53,66 @@ func TestBasicSessions(t *testing.T) {
 	if !blkout.Cid().Equals(block.Cid()) {
 		t.Fatal("got wrong block")
 	}
+}
+
+func TestLargeBlockSessions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vnet := getVirtualNetwork()
+	ig := testinstance.NewTestInstanceGenerator(vnet, nil, nil)
+	defer ig.Close()
+
+	blockData := make([]byte, 2<<20)
+	rand.Read(blockData)
+
+	inst := ig.Instances(2)
+
+	a := inst[0]
+	b := inst[1]
+
+	block := addData(t, b.Blockstore(), blockData)
+	_ = addData(t, b.Blockstore(), blockData[0:1<<20])
+	_ = addData(t, b.Blockstore(), blockData[1<<20:])
+
+	// Add a block to Peer B
+	if err := b.Blockstore().Put(block); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a session on Peer A
+	sesa := a.Exchange.NewSession(ctx)
+
+	// Get the block
+	blkout, err := sesa.GetBlock(ctx, block.Cid())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !blkout.Cid().Equals(block.Cid()) {
+		t.Fatal("got wrong block")
+	}
+}
+
+func addData(t *testing.T, bstore blockstore.Blockstore, blockData []byte) blocks.Block {
+	blkHash, err := multihash.Sum(blockData, multihash.SHA2_256, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	block, err := blocks.NewBlockWithCid(blockData, cid.NewCidV1(cid.Raw, blkHash))
+	if err != nil {
+		panic(err)
+	}
+
+	// Add a block to Peer B
+	if err := bstore.Put(block); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(block.Cid().String())
+
+	return block
 }
 
 func assertBlockLists(got, exp []blocks.Block) error {

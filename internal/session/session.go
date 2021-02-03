@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	"github.com/multiformats/go-multihash"
 	"sync"
 	"time"
 
@@ -256,6 +257,44 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 func (s *Session) subSessWants(lbs *LargeBlockSubSession, subsessWants []cid.Cid) {
 	// TODO: not eat a goroutine
 	// TODO: handle data being in the blockstore already
+
+	// Hack: bc no blockstore handling deal with inline CIDs
+	var idWants []cid.Cid
+	subsessWantsMap := make(map[cid.Cid]struct{})
+	for _, s := range subsessWants {
+		dec, err := multihash.Decode(s.Hash())
+		if err != nil {
+			panic(err)
+		}
+		if dec.Code == multihash.IDENTITY {
+			idWants = append(idWants, s)
+		} else {
+			subsessWantsMap[s] = struct{}{}
+		}
+	}
+
+	subsessWants = []cid.Cid{}
+	for s := range subsessWantsMap {
+		subsessWants = append(subsessWants, s)
+	}
+
+	var idBlocks []blocks.Block
+	for _, c := range idWants {
+		dec, err := multihash.Decode(c.Hash())
+		if err != nil {
+			panic(err)
+		}
+		b, err := blocks.NewBlockWithCid(dec.Digest, c)
+		if err != nil {
+			panic(err)
+		}
+		idBlocks = append(idBlocks, b)
+	}
+
+	for _, b := range idBlocks {
+		lbs.AddBlock(b)
+	}
+
 	chblks, err := bsgetter.AsyncGetBlocks(s.ctx, s.ctx, subsessWants, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
@@ -290,6 +329,8 @@ func (s *Session) subSessWants(lbs *LargeBlockSubSession, subsessWants []cid.Cid
 		case s.incoming <- op{op: opReceive, keys: []cid.Cid{lbs.mcid}}:
 		case <-s.ctx.Done():
 		}
+
+		s.notif.Publish(lbs.resultBlock)
 
 		return
 	}
