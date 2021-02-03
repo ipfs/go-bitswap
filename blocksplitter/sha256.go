@@ -278,8 +278,9 @@ type Node struct {
 
 func createTree(b []byte, chunk int) *Node {
 	numChunks := len(b) / chunk
+	extraChunk := false
 	if numChunks*chunk != len(b) {
-		panic("invalid length")
+		extraChunk = true
 	}
 
 	// build the tree from furthest leaves up to the root
@@ -294,6 +295,16 @@ func createTree(b []byte, chunk int) *Node {
 		}
 		nextHash = ShaPCont(nextHash, chunkBytes)
 	}
+
+	if extraChunk {
+		chunkBytes := b[numChunks*chunk:]
+		next = &Node{
+			FilePrevNode:   next,
+			Data:           chunkBytes,
+			DataHashPrefix: nextHash,
+		}
+	}
+
 	return next
 }
 
