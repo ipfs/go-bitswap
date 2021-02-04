@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"github.com/ipfs/go-bitswap/blocksplitter"
 	"github.com/ipfs/go-bitswap/message"
 	blocks "github.com/ipfs/go-block-format"
@@ -87,10 +88,26 @@ func (s *LargeBlockSubSession) Next() []cid.Cid {
 		s.entryOngoing = true
 	} else {
 		s.done = true
-		var blockData []byte
+
+		sz := 0
 		for _, e := range s.verifiedChunks {
-			blockData = append(blockData, e.Data...)
+			sz += len(e.Data)
 		}
+
+		blockData := make([]byte, sz)
+		for _, e := range s.verifiedChunks {
+			copy(blockData[e.StartIndex:], e.Data)
+		}
+
+		hash, err2 := multihash.Sum(blockData, multihash.SHA2_256, -1)
+		if err2 != nil {
+			panic(err2)
+		}
+
+		if !bytes.Equal(hash, s.mcid.Hash()) {
+			lbslog.Errorf("hashes don't match")
+		}
+
 		var err error
 		s.resultBlock, err = blocks.NewBlockWithCid(blockData, s.mcid)
 		if err != nil {
@@ -120,7 +137,7 @@ func (s *LargeBlockSubSession) AddBlock(block blocks.Block) {
 	entries, verified, err := s.verifier.AddBytes(&blocksplitter.VerifierEntry{
 		Data:       block.RawData(),
 		Proof:      e.Proof,
-		StartIndex: e.FullBlockEndIndex,
+		StartIndex: e.FullBlockStartIndex,
 		EndIndex:   e.FullBlockEndIndex,
 	})
 	if err != nil {

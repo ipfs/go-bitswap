@@ -47,7 +47,7 @@ func (s *fixedSha256Splitter) GetManifest(block blocks.Block) (*pb.Message_Block
 	msg := new(pb.Message_BlockManifest)
 	msg.Cid = pb.Cid{Cid: block.Cid()}
 	msg.BlockSize = int64(len(block.RawData()))
-	endIndex := int64(len(block.RawData()) - 1)
+	endIndex := int64(len(block.RawData()))
 
 	dec, err = multihash.Decode(block.Cid().Hash())
 	if err != nil {
@@ -214,7 +214,7 @@ func (v *fixedSha256SplitterVerifier) internalAddBytes(entry *VerifierEntry) (va
 			return false, false, nil
 		}
 		v.latestIV = proof
-		v.latestIVIndex = int64(sizeFromProof) - 1
+		v.latestIVIndex = int64(sizeFromProof)
 		return true, false, nil
 	}
 
