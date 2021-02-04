@@ -254,7 +254,7 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 	// peer's Bitswap version.
 	switch s.Protocol() {
 	case bsnet.protocolBitswap:
-		if err := msg.ToNetV1(s); err != nil {
+		if err := msg.ToNetV2(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
 		}

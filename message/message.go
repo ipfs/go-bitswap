@@ -423,6 +423,10 @@ func (m *impl) Size() int {
 		size += e.Size()
 	}
 
+	for c := range m.largeBlocks {
+		size += LargeBlockManifestSize(m.largeBlocks[c])
+	}
+
 	return size
 }
 
@@ -431,6 +435,10 @@ func BlockPresenceSize(c cid.Cid) int {
 		Cid:  pb.Cid{Cid: c},
 		Type: pb.Message_Have,
 	}).Size()
+}
+
+func LargeBlockManifestSize(m *pb.Message_BlockManifest) int {
+	return m.Size()
 }
 
 // FromNet generates a new BitswapMessage from incoming data on an io.Reader.

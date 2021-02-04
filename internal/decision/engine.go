@@ -392,7 +392,8 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			continue
 		}
 
-		log.Debugw("Bitswap engine -> msg", "local", e.self, "to", p, "blockCount", len(msg.Blocks()), "presenceCount", len(msg.BlockPresences()), "size", msg.Size())
+		log.Debugw("Bitswap engine -> msg", "local", e.self, "to", p, "blockCount", len(msg.Blocks()),
+			"presenceCount", len(msg.BlockPresences()), "largeBlockManifests", len(msg.LargeBlocks()), "size", msg.Size())
 		return &Envelope{
 			Peer:    p,
 			Message: msg,
