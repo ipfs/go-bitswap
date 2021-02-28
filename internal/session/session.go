@@ -2,6 +2,9 @@ package session
 
 import (
 	"context"
+	bsmsg "github.com/ipfs/go-bitswap/message"
+	"github.com/multiformats/go-multihash"
+	"sync"
 	"time"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
@@ -130,6 +133,10 @@ type Session struct {
 	uuid  logging.Loggable
 	id    uint64
 
+	// large block subsessions
+	lbsessLk sync.RWMutex
+	lbsess   map[cid.Cid]*LargeBlockSubSession
+
 	self peer.ID
 }
 
@@ -168,6 +175,7 @@ func New(
 		id:                  id,
 		initialSearchDelay:  initialSearchDelay,
 		periodicSearchDelay: periodicSearchDelay,
+		lbsess:              make(map[cid.Cid]*LargeBlockSubSession),
 		self:                self,
 	}
 	s.sws = newSessionWantSender(id, pm, sprm, sm, bpm, s.onWantsSent, s.onPeersExhausted)
@@ -186,7 +194,7 @@ func (s *Session) Shutdown() {
 }
 
 // ReceiveFrom receives incoming blocks from the given peer.
-func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
+func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, largeBlockManifests []bsmsg.LargeBlockManifest) {
 	// The SessionManager tells each Session about all keys that it may be
 	// interested in. Here the Session filters the keys to the ones that this
 	// particular Session is interested in.
@@ -199,6 +207,42 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	// Inform the session want sender that a message has been received
 	s.sws.Update(from, ks, haves, dontHaves)
 
+	for _, lbm := range largeBlockManifests {
+		mcid := lbm.BlockManifest.Cid.Cid
+		s.lbsessLk.RLock()
+		lbs, ok := s.lbsess[mcid]
+		s.lbsessLk.RUnlock()
+		if !ok {
+			var err error
+			lbs, err = NewLargeBlockSubSession(mcid)
+			if err != nil {
+				lbslog.Debugf("could not create large block subsession for cid %s : %v", mcid, err)
+				continue
+			}
+			s.lbsessLk.Lock()
+			existing, ok := s.lbsess[mcid]
+			if !ok {
+				// no nested large blocks
+				for c := range s.lbsess {
+					if c.Equals(mcid) {
+						lbslog.Debugf("someone tried to send a nested large block for %v")
+					}
+				}
+
+				s.lbsess[mcid] = lbs
+			} else {
+				lbs = existing
+			}
+			s.lbsessLk.Unlock()
+		}
+
+		lbs.AddManifest(from, lbm)
+		subsessWants := lbs.Next()
+		if len(subsessWants) > 0 {
+			go s.subSessWants(lbs, subsessWants)
+		}
+	}
+
 	if len(ks) == 0 {
 		return
 	}
@@ -208,6 +252,90 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 	case s.incoming <- op{op: opReceive, keys: ks}:
 	case <-s.ctx.Done():
 	}
+}
+
+func (s *Session) subSessWants(lbs *LargeBlockSubSession, subsessWants []cid.Cid) {
+	// TODO: not eat a goroutine
+	// TODO: handle data being in the blockstore already
+
+	// Hack: bc no blockstore handling deal with inline CIDs
+	var idWants []cid.Cid
+	subsessWantsMap := make(map[cid.Cid]struct{})
+	for _, s := range subsessWants {
+		dec, err := multihash.Decode(s.Hash())
+		if err != nil {
+			panic(err)
+		}
+		if dec.Code == multihash.IDENTITY {
+			idWants = append(idWants, s)
+		} else {
+			subsessWantsMap[s] = struct{}{}
+		}
+	}
+
+	subsessWants = []cid.Cid{}
+	for s := range subsessWantsMap {
+		subsessWants = append(subsessWants, s)
+	}
+
+	var idBlocks []blocks.Block
+	for _, c := range idWants {
+		dec, err := multihash.Decode(c.Hash())
+		if err != nil {
+			panic(err)
+		}
+		b, err := blocks.NewBlockWithCid(dec.Digest, c)
+		if err != nil {
+			panic(err)
+		}
+		idBlocks = append(idBlocks, b)
+	}
+
+	for _, b := range idBlocks {
+		lbs.AddBlock(b)
+	}
+
+	chblks, err := bsgetter.AsyncGetBlocks(s.ctx, s.ctx, subsessWants, s.notif,
+		func(ctx context.Context, keys []cid.Cid) {
+			select {
+			case s.incoming <- op{op: opWant, keys: keys}:
+			case <-ctx.Done():
+			case <-s.ctx.Done():
+			}
+		},
+		func(keys []cid.Cid) {
+			select {
+			case s.incoming <- op{op: opCancel, keys: keys}:
+			case <-s.ctx.Done():
+			}
+		},
+	)
+	if err != nil {
+		lbslog.Error(err)
+	}
+	for b := range chblks {
+		lbs.AddBlock(b)
+	}
+
+	subsessWants = lbs.Next()
+
+	if len(subsessWants) == 0 && lbs.done {
+		s.lbsessLk.Lock()
+		delete(s.lbsess, lbs.mcid)
+		s.lbsessLk.Unlock()
+
+		// Inform the session that blocks have been received
+		select {
+		case s.incoming <- op{op: opReceive, keys: []cid.Cid{lbs.mcid}}:
+		case <-s.ctx.Done():
+		}
+
+		s.notif.Publish(lbs.resultBlock)
+
+		return
+	}
+
+	s.subSessWants(lbs, subsessWants)
 }
 
 func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {

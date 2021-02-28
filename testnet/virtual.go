@@ -93,6 +93,7 @@ func (n *network) Adapter(p tnet.Identity, opts ...bsnet.NetOpt) bsnet.BitSwapNe
 	s := bsnet.Settings{
 		SupportedProtocols: []protocol.ID{
 			bsnet.ProtocolBitswap,
+			bsnet.ProtocolBitswapOneTwo,
 			bsnet.ProtocolBitswapOneOne,
 			bsnet.ProtocolBitswapOneZero,
 			bsnet.ProtocolBitswapNoVers,

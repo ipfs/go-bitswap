@@ -16,7 +16,7 @@ func TestEmpty(t *testing.T) {
 	if len(res) != 1 || len(res[0]) > 0 {
 		t.Fatal("Expected no interest")
 	}
-	if len(sim.InterestedSessions(cids, []cid.Cid{}, []cid.Cid{})) > 0 {
+	if len(sim.InterestedSessions(cids, []cid.Cid{}, []cid.Cid{}, nil)) > 0 {
 		t.Fatal("Expected no interest")
 	}
 }
@@ -34,7 +34,7 @@ func TestBasic(t *testing.T) {
 	if len(res) != 1 || len(res[0]) != 2 {
 		t.Fatal("Expected 2 keys")
 	}
-	if len(sim.InterestedSessions(cids1, []cid.Cid{}, []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions(cids1, []cid.Cid{}, []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
 
@@ -48,10 +48,10 @@ func TestBasic(t *testing.T) {
 		t.Fatal("Expected 2 keys")
 	}
 
-	if len(sim.InterestedSessions(cids1[:1], []cid.Cid{}, []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions(cids1[:1], []cid.Cid{}, []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions(cids1[1:], []cid.Cid{}, []cid.Cid{})) != 2 {
+	if len(sim.InterestedSessions(cids1[1:], []cid.Cid{}, []cid.Cid{}, nil)) != 2 {
 		t.Fatal("Expected 2 sessions")
 	}
 }
@@ -63,22 +63,22 @@ func TestInterestedSessions(t *testing.T) {
 	cids := testutil.GenerateCids(3)
 	sim.RecordSessionInterest(ses, cids[0:2])
 
-	if len(sim.InterestedSessions(cids, []cid.Cid{}, []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions(cids, []cid.Cid{}, []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions(cids[0:1], []cid.Cid{}, []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions(cids[0:1], []cid.Cid{}, []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions([]cid.Cid{}, cids, []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions([]cid.Cid{}, cids, []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions([]cid.Cid{}, cids[0:1], []cid.Cid{})) != 1 {
+	if len(sim.InterestedSessions([]cid.Cid{}, cids[0:1], []cid.Cid{}, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions([]cid.Cid{}, []cid.Cid{}, cids)) != 1 {
+	if len(sim.InterestedSessions([]cid.Cid{}, []cid.Cid{}, cids, nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
-	if len(sim.InterestedSessions([]cid.Cid{}, []cid.Cid{}, cids[0:1])) != 1 {
+	if len(sim.InterestedSessions([]cid.Cid{}, []cid.Cid{}, cids[0:1], nil)) != 1 {
 		t.Fatal("Expected 1 session")
 	}
 }

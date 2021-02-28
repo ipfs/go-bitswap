@@ -19,9 +19,9 @@ import (
 
 	bitswap "github.com/ipfs/go-bitswap"
 	bssession "github.com/ipfs/go-bitswap/internal/session"
+	bsnet "github.com/ipfs/go-bitswap/network"
 	testinstance "github.com/ipfs/go-bitswap/testinstance"
 	tn "github.com/ipfs/go-bitswap/testnet"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"

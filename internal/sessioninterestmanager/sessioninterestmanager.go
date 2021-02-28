@@ -175,7 +175,7 @@ func (sim *SessionInterestManager) SplitWantedUnwanted(blks []blocks.Block) ([]b
 
 // When the SessionManager receives a message it calls InterestedSessions() to
 // find out which sessions are interested in the message.
-func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) []uint64 {
+func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid, lbms []cid.Cid) []uint64 {
 	sim.lk.RLock()
 	defer sim.lk.RUnlock()
 
@@ -183,6 +183,7 @@ func (sim *SessionInterestManager) InterestedSessions(blks []cid.Cid, haves []ci
 	ks = append(ks, blks...)
 	ks = append(ks, haves...)
 	ks = append(ks, dontHaves...)
+	ks = append(ks, lbms...)
 
 	// Create a set of sessions that are interested in the keys
 	sesSet := make(map[uint64]struct{})
