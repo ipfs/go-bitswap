@@ -1,6 +1,8 @@
 The MIT License (MIT)
 
-Copyright (c) 2014-2018 Juan Batiz-Benet
+Copyright for portions of this fork are held by [Juan Batiz-Benet, 2014-2018] as
+part of the original go-bitswap project. All other copyright for this fork are
+held by [DAOT Labs, 2021]. All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

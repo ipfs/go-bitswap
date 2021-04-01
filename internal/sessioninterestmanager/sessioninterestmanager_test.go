@@ -3,8 +3,9 @@ package sessioninterestmanager
 import (
 	"testing"
 
-	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
+
+	"github.com/daotl/go-bitswap/internal/testutil"
 )
 
 func TestEmpty(t *testing.T) {

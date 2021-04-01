@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/ipfs/go-bitswap/internal/testutil"
+	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 
-	cid "github.com/ipfs/go-cid"
+	"github.com/daotl/go-bitswap/internal/testutil"
 )
 
 const (

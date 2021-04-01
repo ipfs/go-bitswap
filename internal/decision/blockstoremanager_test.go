@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ipfs/go-bitswap/internal/testutil"
-	cid "github.com/ipfs/go-cid"
-
+	ds "github.com/daotl/go-datastore"
+	"github.com/daotl/go-datastore/delayed"
+	ds_sync "github.com/daotl/go-datastore/sync"
+	blockstore "github.com/daotl/go-ipfs-blockstore"
 	blocks "github.com/ipfs/go-block-format"
-	ds "github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/delayed"
-	ds_sync "github.com/ipfs/go-datastore/sync"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	process "github.com/jbenet/goprocess"
+
+	"github.com/daotl/go-bitswap/internal/testutil"
 )
 
 func TestBlockstoreManagerNotFoundKey(t *testing.T) {

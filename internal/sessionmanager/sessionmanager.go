@@ -7,13 +7,13 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
-
-	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
-	bssession "github.com/ipfs/go-bitswap/internal/session"
-	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+
+	bsbpm "github.com/daotl/go-bitswap/internal/blockpresencemanager"
+	notifications "github.com/daotl/go-bitswap/internal/notifications"
+	bssession "github.com/daotl/go-bitswap/internal/session"
+	bssim "github.com/daotl/go-bitswap/internal/sessioninterestmanager"
 )
 
 // Session is a session that is managed by the session manager

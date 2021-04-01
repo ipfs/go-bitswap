@@ -8,13 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	bsnet "github.com/ipfs/go-bitswap/network"
-
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
-
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	"github.com/libp2p/go-libp2p-core/peer"
 	protocol "github.com/libp2p/go-libp2p-core/protocol"
@@ -22,6 +18,9 @@ import (
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+
+	bsmsg "github.com/daotl/go-bitswap/message"
+	bsnet "github.com/daotl/go-bitswap/network"
 )
 
 // VirtualNetwork generates a new testnet instance - a fake network that

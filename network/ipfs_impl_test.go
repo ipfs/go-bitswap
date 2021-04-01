@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	bsnet "github.com/ipfs/go-bitswap/network"
-	tn "github.com/ipfs/go-bitswap/testnet"
-	ds "github.com/ipfs/go-datastore"
+	ds "github.com/daotl/go-datastore"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
-	"github.com/multiformats/go-multistream"
-
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/multiformats/go-multistream"
+
+	bsmsg "github.com/daotl/go-bitswap/message"
+	pb "github.com/daotl/go-bitswap/message/pb"
+	bsnet "github.com/daotl/go-bitswap/network"
+	tn "github.com/daotl/go-bitswap/testnet"
 )
 
 // Receiver is an interface for receiving messages from the GraphSyncNetwork.

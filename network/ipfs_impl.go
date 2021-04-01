@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	bsmsg "github.com/ipfs/go-bitswap/message"
-
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-core/connmgr"
@@ -23,6 +21,8 @@ import (
 	msgio "github.com/libp2p/go-msgio"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multistream"
+
+	bsmsg "github.com/daotl/go-bitswap/message"
 )
 
 var log = logging.Logger("bitswap_network")

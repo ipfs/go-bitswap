@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ipfs/go-bitswap/internal/testutil"
-	"github.com/ipfs/go-bitswap/message"
-	pb "github.com/ipfs/go-bitswap/message/pb"
 	cid "github.com/ipfs/go-cid"
-
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+
+	"github.com/daotl/go-bitswap/internal/testutil"
+	"github.com/daotl/go-bitswap/message"
+	bsmsg "github.com/daotl/go-bitswap/message"
+	pb "github.com/daotl/go-bitswap/message/pb"
+	bsnet "github.com/daotl/go-bitswap/network"
 )
 
 type fakeMessageNetwork struct {

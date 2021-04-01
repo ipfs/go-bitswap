@@ -3,8 +3,9 @@ package wantlist
 import (
 	"testing"
 
-	pb "github.com/ipfs/go-bitswap/message/pb"
 	cid "github.com/ipfs/go-cid"
+
+	pb "github.com/daotl/go-bitswap/message/pb"
 )
 
 var testcids []cid.Cid

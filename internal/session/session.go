@@ -4,11 +4,6 @@ import (
 	"context"
 	"time"
 
-	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
-	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
-	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -16,6 +11,12 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	loggables "github.com/libp2p/go-libp2p-loggables"
 	"go.uber.org/zap"
+
+	bsbpm "github.com/daotl/go-bitswap/internal/blockpresencemanager"
+	bsgetter "github.com/daotl/go-bitswap/internal/getter"
+	notifications "github.com/daotl/go-bitswap/internal/notifications"
+	bspm "github.com/daotl/go-bitswap/internal/peermanager"
+	bssim "github.com/daotl/go-bitswap/internal/sessioninterestmanager"
 )
 
 var log = logging.Logger("bs:sess")

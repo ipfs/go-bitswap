@@ -5,16 +5,15 @@ import (
 	"errors"
 	"io"
 
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	"github.com/ipfs/go-bitswap/wantlist"
-
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
+	u "github.com/ipfs/go-ipfs-util"
 	pool "github.com/libp2p/go-buffer-pool"
+	"github.com/libp2p/go-libp2p-core/network"
 	msgio "github.com/libp2p/go-msgio"
 
-	u "github.com/ipfs/go-ipfs-util"
-	"github.com/libp2p/go-libp2p-core/network"
+	pb "github.com/daotl/go-bitswap/message/pb"
+	"github.com/daotl/go-bitswap/wantlist"
 )
 
 // BitSwapMessage is the basic interface for interacting building, encoding,

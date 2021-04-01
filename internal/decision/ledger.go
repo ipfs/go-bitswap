@@ -3,11 +3,11 @@ package decision
 import (
 	"sync"
 
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	wl "github.com/ipfs/go-bitswap/wantlist"
-
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+
+	pb "github.com/daotl/go-bitswap/message/pb"
+	wl "github.com/daotl/go-bitswap/wantlist"
 )
 
 func newLedger(p peer.ID) *ledger {

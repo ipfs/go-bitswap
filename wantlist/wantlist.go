@@ -5,9 +5,9 @@ package wantlist
 import (
 	"sort"
 
-	pb "github.com/ipfs/go-bitswap/message/pb"
-
 	cid "github.com/ipfs/go-cid"
+
+	pb "github.com/daotl/go-bitswap/message/pb"
 )
 
 // Wantlist is a raw list of wanted blocks and their priorities

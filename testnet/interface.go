@@ -1,10 +1,10 @@
 package bitswap
 
 import (
-	bsnet "github.com/ipfs/go-bitswap/network"
-
 	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
+
+	bsnet "github.com/daotl/go-bitswap/network"
 )
 
 // Network is an interface for generating bitswap network interfaces

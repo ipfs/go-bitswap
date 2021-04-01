@@ -6,35 +6,34 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"sync"
 	"time"
 
-	delay "github.com/ipfs/go-ipfs-delay"
-
-	deciface "github.com/ipfs/go-bitswap/decision"
-	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
-	decision "github.com/ipfs/go-bitswap/internal/decision"
-	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
-	bsmq "github.com/ipfs/go-bitswap/internal/messagequeue"
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
-	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
-	bspqm "github.com/ipfs/go-bitswap/internal/providerquerymanager"
-	bssession "github.com/ipfs/go-bitswap/internal/session"
-	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
-	bssm "github.com/ipfs/go-bitswap/internal/sessionmanager"
-	bsspm "github.com/ipfs/go-bitswap/internal/sessionpeermanager"
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	bsnet "github.com/ipfs/go-bitswap/network"
+	blockstore "github.com/daotl/go-ipfs-blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	delay "github.com/ipfs/go-ipfs-delay"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	logging "github.com/ipfs/go-log"
 	metrics "github.com/ipfs/go-metrics-interface"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+
+	deciface "github.com/daotl/go-bitswap/decision"
+	bsbpm "github.com/daotl/go-bitswap/internal/blockpresencemanager"
+	decision "github.com/daotl/go-bitswap/internal/decision"
+	bsgetter "github.com/daotl/go-bitswap/internal/getter"
+	bsmq "github.com/daotl/go-bitswap/internal/messagequeue"
+	notifications "github.com/daotl/go-bitswap/internal/notifications"
+	bspm "github.com/daotl/go-bitswap/internal/peermanager"
+	bspqm "github.com/daotl/go-bitswap/internal/providerquerymanager"
+	bssession "github.com/daotl/go-bitswap/internal/session"
+	bssim "github.com/daotl/go-bitswap/internal/sessioninterestmanager"
+	bssm "github.com/daotl/go-bitswap/internal/sessionmanager"
+	bsspm "github.com/daotl/go-bitswap/internal/sessionpeermanager"
+	bsmsg "github.com/daotl/go-bitswap/message"
+	bsnet "github.com/daotl/go-bitswap/network"
 )
 
 var log = logging.Logger("bitswap")
@@ -183,13 +182,13 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sm = bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 
 	bs := &Bitswap{
-		blockstore:       bstore,
-		network:          network,
-		process:          px,
-		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
-		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
-		pm:               pm,
-		pqm:              pqm,
+		blockstore:              bstore,
+		network:                 network,
+		process:                 px,
+		newBlocks:               make(chan cid.Cid, HasBlockBufferSize),
+		provideKeys:             make(chan cid.Cid, provideKeysBufferSize),
+		pm:                      pm,
+		pqm:                     pqm,
 		sm:                      sm,
 		sim:                     sim,
 		notif:                   notif,

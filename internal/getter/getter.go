@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 
-	notifications "github.com/ipfs/go-bitswap/internal/notifications"
-	logging "github.com/ipfs/go-log"
-
+	blockstore "github.com/daotl/go-ipfs-blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	logging "github.com/ipfs/go-log"
+
+	notifications "github.com/daotl/go-bitswap/internal/notifications"
 )
 
 var log = logging.Logger("bitswap")

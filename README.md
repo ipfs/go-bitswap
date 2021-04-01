@@ -1,19 +1,18 @@
 go-bitswap
 ==================
 
-[![](https://img.shields.io/badge/made%20by-Protocol%20Labs-blue.svg?style=flat-square)](http://ipn.io)
-[![](https://img.shields.io/badge/project-IPFS-blue.svg?style=flat-square)](http://ipfs.io/)
-[![Matrix](https://img.shields.io/badge/matrix-%23ipfs%3Amatrix.org-blue.svg?style=flat-square)](https://matrix.to/#/#ipfs:matrix.org)
-[![IRC](https://img.shields.io/badge/freenode-%23ipfs-blue.svg?style=flat-square)](http://webchat.freenode.net/?channels=%23ipfs)
-[![Discord](https://img.shields.io/discord/475789330380488707?color=blueviolet&label=discord&style=flat-square)](https://discord.gg/24fmuwR)
-[![Coverage Status](https://codecov.io/gh/ipfs/go-bitswap/branch/master/graph/badge.svg)](https://codecov.io/gh/ipfs/go-bitswap/branch/master)
-[![Build Status](https://circleci.com/gh/ipfs/go-bitswap.svg?style=svg)](https://circleci.com/gh/ipfs/go-bitswap)
+DAOT Labs's fork of [ipfs/go-bitswap](https://github.com/ipfs/go-bitswap).
 
-> An implementation of the bitswap protocol in go!
+[![](https://img.shields.io/badge/made%20by-Protocol%20Labs-blue.svg?style=flat-square)](http://ipn.io)
+[![](https://img.shields.io/badge/project-DAOT%20Labs-red.svg?style=flat-square)](http://github.com/daotl)
+[![Coverage Status](https://codecov.io/gh/daotl/go-bitswap/branch/master/graph/badge.svg)](https://codecov.io/gh/daotl/go-bitswap/branch/master)
+[![Build Status](https://circleci.com/gh/daotl/go-bitswap.svg?style=svg)](https://circleci.com/gh/daotl/go-bitswap)
+
+> An implementation of the bitswap protocol in Go!
 
 ## Lead Maintainer
 
-[Dirk McCormick](https://github.com/dirkmc)
+[Nex](https://github.com/NexZhu)
 
 ## Table of Contents
 
@@ -23,7 +22,6 @@ go-bitswap
 - [Implementation](#implementation)
 - [Contribute](#contribute)
 - [License](#license)
-
 
 ## Background
 
@@ -58,9 +56,9 @@ wants those blocks.
 ```golang
 import (
   "context"
-  bitswap "github.com/ipfs/go-bitswap"
+  bitswap "github.com/daotl/go-bitswap"
   bsnet "github.com/ipfs/go-graphsync/network"
-  blockstore "github.com/ipfs/go-ipfs-blockstore"
+  blockstore "github.com/daotl/go-ipfs-blockstore"
   "github.com/libp2p/go-libp2p-core/routing"
 	"github.com/libp2p/go-libp2p-core/host"
 )
@@ -145,4 +143,8 @@ Small note: If editing the Readme, please conform to the [standard-readme](https
 
 ## License
 
-MIT © Juan Batiz-Benet
+MIT
+
+Copyright for portions of this fork are held by Juan Batiz-Benet. as part of the original
+[go-bitswap](https://github.com/ipfs/go-bitswap) project. All other copyright for this
+fork are held by DAOT Labs. All rights reserved.

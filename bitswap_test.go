@@ -8,19 +8,10 @@ import (
 	"testing"
 	"time"
 
-	bitswap "github.com/ipfs/go-bitswap"
-	deciface "github.com/ipfs/go-bitswap/decision"
-	decision "github.com/ipfs/go-bitswap/internal/decision"
-	bssession "github.com/ipfs/go-bitswap/internal/session"
-	"github.com/ipfs/go-bitswap/message"
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	testinstance "github.com/ipfs/go-bitswap/testinstance"
-	tn "github.com/ipfs/go-bitswap/testnet"
+	blockstore "github.com/daotl/go-ipfs-blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	detectrace "github.com/ipfs/go-detect-race"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
@@ -28,6 +19,16 @@ import (
 	p2ptestutil "github.com/libp2p/go-libp2p-netutil"
 	travis "github.com/libp2p/go-libp2p-testing/ci/travis"
 	tu "github.com/libp2p/go-libp2p-testing/etc"
+
+	bitswap "github.com/daotl/go-bitswap"
+	deciface "github.com/daotl/go-bitswap/decision"
+	decision "github.com/daotl/go-bitswap/internal/decision"
+	bssession "github.com/daotl/go-bitswap/internal/session"
+	"github.com/daotl/go-bitswap/message"
+	bsmsg "github.com/daotl/go-bitswap/message"
+	pb "github.com/daotl/go-bitswap/message/pb"
+	testinstance "github.com/daotl/go-bitswap/testinstance"
+	tn "github.com/daotl/go-bitswap/testnet"
 )
 
 // FIXME the tests are really sensitive to the network delay. fix them to work

@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	engine "github.com/ipfs/go-bitswap/internal/decision"
-	pb "github.com/ipfs/go-bitswap/message/pb"
 	cid "github.com/ipfs/go-cid"
 	process "github.com/jbenet/goprocess"
 	procctx "github.com/jbenet/goprocess/context"
 	"go.uber.org/zap"
+
+	engine "github.com/daotl/go-bitswap/internal/decision"
+	pb "github.com/daotl/go-bitswap/message/pb"
 )
 
 // TaskWorkerCount is the total number of simultaneous threads sending

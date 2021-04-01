@@ -6,16 +6,17 @@ import (
 	"sync"
 	"time"
 
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	pb "github.com/ipfs/go-bitswap/message/pb"
-	bsnet "github.com/ipfs/go-bitswap/network"
-	"github.com/ipfs/go-bitswap/wantlist"
-	bswl "github.com/ipfs/go-bitswap/wantlist"
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"go.uber.org/zap"
+
+	bsmsg "github.com/daotl/go-bitswap/message"
+	pb "github.com/daotl/go-bitswap/message/pb"
+	bsnet "github.com/daotl/go-bitswap/network"
+	"github.com/daotl/go-bitswap/wantlist"
+	bswl "github.com/daotl/go-bitswap/wantlist"
 )
 
 var log = logging.Logger("bitswap")
