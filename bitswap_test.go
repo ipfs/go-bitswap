@@ -9,12 +9,12 @@ import (
 	"time"
 
 	blockstore "github.com/daotl/go-ipfs-blockstore"
+	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	detectrace "github.com/ipfs/go-detect-race"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	p2ptestutil "github.com/libp2p/go-libp2p-netutil"
 	travis "github.com/libp2p/go-libp2p-testing/ci/travis"

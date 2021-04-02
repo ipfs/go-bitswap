@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	protocol "github.com/libp2p/go-libp2p-core/protocol"
 
 	bitswap "github.com/daotl/go-bitswap"

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	ds "github.com/daotl/go-datastore"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
+	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 	mockpeernet "github.com/libp2p/go-libp2p/p2p/net/mock"

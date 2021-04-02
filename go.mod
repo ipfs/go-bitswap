@@ -6,6 +6,7 @@ require (
 	github.com/cskr/pubsub v1.0.2
 	github.com/daotl/go-datastore v0.4.8
 	github.com/daotl/go-ipfs-blockstore v1.0.3
+	github.com/daotl/go-ipfs-routing v0.1.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.2.0
 	github.com/ipfs/go-block-format v0.0.3
@@ -14,7 +15,6 @@ require (
 	github.com/ipfs/go-ipfs-blocksutil v0.0.1
 	github.com/ipfs/go-ipfs-delay v0.0.1
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
-	github.com/ipfs/go-ipfs-routing v0.1.0
 	github.com/ipfs/go-ipfs-util v0.0.2
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-metrics-interface v0.0.1

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	ds "github.com/daotl/go-datastore"
+	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"

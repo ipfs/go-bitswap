@@ -5,9 +5,9 @@ import (
 	"sync"
 	"testing"
 
+	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	blocks "github.com/ipfs/go-block-format"
 	delay "github.com/ipfs/go-ipfs-delay"
-	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 
