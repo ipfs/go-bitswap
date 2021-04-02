@@ -4,6 +4,7 @@ import (
 	"context"
 
 	ds "github.com/daotl/go-datastore"
+	"github.com/daotl/go-datastore/key"
 	mockrouting "github.com/daotl/go-ipfs-routing/mock"
 	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
@@ -27,7 +28,11 @@ func (pn *peernet) Adapter(p tnet.Identity, opts ...bsnet.NetOpt) bsnet.BitSwapN
 	if err != nil {
 		panic(err.Error())
 	}
-	routing := pn.routingserver.ClientWithDatastore(context.TODO(), p, ds.NewMapDatastore())
+	st, err := ds.NewMapDatastore(key.KeyTypeBytes)
+	if err != nil {
+		panic(err.Error())
+	}
+	routing := pn.routingserver.ClientWithDatastore(context.TODO(), p, st)
 	return bsnet.NewFromIpfsHost(client, routing, opts...)
 }
 

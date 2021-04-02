@@ -6,6 +6,7 @@ import (
 
 	ds "github.com/daotl/go-datastore"
 	delayed "github.com/daotl/go-datastore/delayed"
+	"github.com/daotl/go-datastore/key"
 	ds_sync "github.com/daotl/go-datastore/sync"
 	blockstore "github.com/daotl/go-ipfs-blockstore"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -112,7 +113,11 @@ func NewInstance(ctx context.Context, net tn.Network, p tnet.Identity, netOption
 	bsdelay := delay.Fixed(0)
 
 	adapter := net.Adapter(p, netOptions...)
-	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
+	st, err := ds.NewMapDatastore(key.KeyTypeBytes)
+	if err != nil {
+		panic(err.Error())
+	}
+	dstore := ds_sync.MutexWrap(delayed.New(st, bsdelay))
 
 	bstore, err := blockstore.CachedBlockstore(ctx,
 		blockstore.NewBlockstore(ds_sync.MutexWrap(dstore)),
