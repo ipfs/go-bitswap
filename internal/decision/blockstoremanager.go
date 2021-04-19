@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"fmt"
+	mh "github.com/multiformats/go-multihash"
 	"sync"
 
 	blocks "github.com/ipfs/go-block-format"
@@ -75,6 +76,12 @@ func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) (
 			if err != bstore.ErrNotFound {
 				// Note: this isn't a fatal error. We shouldn't abort the request
 				log.Errorf("blockstore.GetSize(%s) error: %s", c, err)
+			} else {
+				if c.Prefix().MhType == mh.IDENTITY {
+					panic("failed to find IDENTITY CID")
+					// Just to validate internal hypothesis that these will always
+					// turn up.
+				}
 			}
 		} else {
 			lk.Lock()

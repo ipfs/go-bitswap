@@ -119,6 +119,7 @@ func (bs *Bitswap) sendBlocks(ctx context.Context, env *engine.Envelope) {
 			"peer", env.Peer,
 			"error", err,
 		)
+		engine.LogTargetPeer(env.Peer, "failed to send message")
 		return
 	}
 

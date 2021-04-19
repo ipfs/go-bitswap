@@ -22,6 +22,27 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
+// Log only for a specific peer we want to follow.
+func LogTargetPeer(p peer.ID, template string, args ...interface{}) {
+	//targetPeerString := os.Getenv("BITSWAP_LOG_PEER") // FIXME: Initialize and parse once.
+	//if targetPeerString == "" {
+	//	return
+	//}
+	// FIXME: Hardcoded from util/vole.go.
+	targetPeerString := "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
+
+	targetPeer, err := peer.Decode(targetPeerString)
+	if err != nil {
+		panic("invalid log target peer " + err.Error())
+	}
+
+	if p != targetPeer {
+		return
+	}
+
+	log.Infof("[TRACKING-BS-PEER] " + template, args)
+}
+
 // TODO consider taking responsibility for other types of requests. For
 // example, there could be a |cancelQueue| for all of the cancellation
 // messages that need to go out. There could also be a |wantlistQueue| for
@@ -323,6 +344,10 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 				p, nextTasks, pendingBytes = e.peerRequestQueue.PopTasks(targetMessageSize)
 			}
 		}
+		LogTargetPeer(p, "popped %d tasks from queue", len(nextTasks))
+		for _, task := range nextTasks {
+			LogTargetPeer(p, "popped task CID: %s", task.Topic.(cid.Cid).String())
+		}
 
 		// Create a new message
 		msg := bsmsg.New(false)
@@ -363,6 +388,8 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			blk := blks[c]
 			// If the block was not found (it has been removed)
 			if blk == nil {
+				LogTargetPeer(p, "block CID %s has been removed", blk.Cid().String())
+
 				// If the client requested DONT_HAVE, add DONT_HAVE to the message
 				if t.SendDontHave {
 					msg.AddDontHave(c)
@@ -376,6 +403,7 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 
 		// If there's nothing in the message, bail out
 		if msg.Empty() {
+			LogTargetPeer(p, "empty message after processing task (marking as done)")
 			e.peerRequestQueue.TasksDone(p, nextTasks...)
 			continue
 		}
@@ -385,6 +413,8 @@ func (e *Engine) nextEnvelope(ctx context.Context) (*Envelope, error) {
 			Peer:    p,
 			Message: msg,
 			Sent: func() {
+				LogTargetPeer(p, "message sent %s", msg.Loggable())
+
 				// Once the message has been sent, signal the request queue so
 				// it can be cleared from the queue
 				e.peerRequestQueue.TasksDone(p, nextTasks...)
@@ -520,6 +550,8 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 			// message we send to the recipient. If we're sending a block, the
 			// entrySize is the size of the block. Otherwise it's the size of
 			// a block presence entry.
+			// NOTE: We might think we are sending a block but end up sending just
+			// the presence (DONT-HAVE) in case the block was removed in the process.
 			entrySize := blockSize
 			if !isWantBlock {
 				entrySize = bsmsg.BlockPresenceSize(c)
@@ -540,6 +572,11 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 
 	// Push entries onto the request queue
 	if len(activeEntries) > 0 {
+		for _, entry := range activeEntries {
+			LogTargetPeer(p, "pushing task for CID %s",
+				entry.Topic.(cid.Cid).String())
+		}
+
 		e.peerRequestQueue.PushTasks(p, activeEntries...)
 	}
 }
