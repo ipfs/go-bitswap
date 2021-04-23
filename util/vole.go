@@ -5,6 +5,7 @@ package util
 
 import (
 	"math/rand"
+	"math"
 	"strconv"
 
 	"context"
@@ -39,10 +40,6 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-
-	// Number of CIDs requested: one group for valid and one for invalid (nonexistent).
-	CID_NUM := 2 //fixme: parameter
-	testCIDs = createCids(CID_NUM)
 }
 
 // FIXME: There is probably a much easier way to get unlimited zero bytes.
@@ -55,7 +52,16 @@ func (*zeroReader) Read(p []byte) (n int, err error) {
 }
 // FIXME: Rename.
 func CheckBitswapCID(ctx context.Context,
-	targetPeer peer.ID) (map[cid.Cid]bool, error) {
+	targetPeer peer.ID, cidNum int) (map[cid.Cid]bool, error) {
+	if cidNum == 0 {
+		panic("cidNum set to zero")
+	}
+	if len(testCIDs) != cidNum { // we create twice cidNum, existent and nonexistent ones
+		// The number of CIDs to request has been updated.
+		testCIDs = createCids(cidNum)
+		// FIXME: If `cidNum` is odd it will never match the size of `testCIDs`
+		//  which is constructed as an even division.
+	}
 
 	rcv := &bsReceiver{
 		target: targetPeer,
@@ -195,8 +201,8 @@ func connectToBitSwap(ctx context.Context, targetPeer peer.ID, rcv *bsReceiver) 
 	return bs, nil
 }
 
-func createCids(n int) map[cid.Cid]bool {
-	cids := make(map[cid.Cid]bool, 2*n)
+func createCids(cidNum int) map[cid.Cid]bool {
+	cids := make(map[cid.Cid]bool, cidNum)
 
 	// FIXME: ID hashes seem to be present by default,
 	//   good for testing purposes. (Also they will count
@@ -219,7 +225,8 @@ func createCids(n int) map[cid.Cid]bool {
 		MhLength: 20, // To guarantee nonexistence shorten the 32-byte SHA length.
 	}
 
-	for i := 0; i < n; i++ {
+	cidsPerGroup := int(math.Ceil(float64(cidNum) / 2))
+	for i := 0; i < cidsPerGroup; i++ {
 		c, err := v1RawIDPrefix.Sum([]byte(strconv.FormatUint(uint64(i), 10)))
 		if err != nil {
 			panic("error creating raw ID CID")
