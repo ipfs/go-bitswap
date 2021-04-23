@@ -81,6 +81,7 @@ func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) (
 					panic("failed to find IDENTITY CID")
 					// Just to validate internal hypothesis that these will always
 					// turn up.
+					// Confirmed in https://github.com/ipfs/go-ipfs-blockstore/blob/fb07d7bc5aece18c62603f36ac02db2e853cadfa/idstore.go#L82-L85.
 				}
 			}
 		} else {

@@ -2,6 +2,8 @@ package util
 
 // Fixed peer ID from where we make the requests to make it easier to track:
 //   `12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN`
+// (Libp2p doesn't do self connections so we create a different peer ID instead
+// of using the same target peer, localhost, on where we request the CIDs.)
 
 import (
 	"math/rand"
@@ -84,6 +86,7 @@ func CheckBitswapCID(ctx context.Context,
 // We will wait for the responses as long as the passed context dictates.
 // FIXME: We could also set another timeout here but centralize in caller
 //  for now for simplicity.
+// FIXME: We should definitely track discrepancies (cases where nodes report having but don't actually send back data).
 func trackResponses(ctx context.Context, rcv *bsReceiver, requestedCids map[cid.Cid]bool) (map[cid.Cid]bool, error) {
 	for c, _ := range requestedCids {
 		requestedCids[c] = false
@@ -141,7 +144,9 @@ loop:
 }
 
 func connectToBitSwap(ctx context.Context, targetPeer peer.ID, rcv *bsReceiver) (bsnet.BitSwapNetwork, error) {
-	// Connect randomly on either TCP or QUIC.
+	// Connect randomly on either TCP or QUIC. QUIC has been the known source
+	// of error so far but we still try both just in case.
+	// See https://github.com/ipfs/go-bitswap/pull/477 for QUIC stall fix.
 	localhost := ""
 	if rand.Intn(2) == 1 {
 		localhost = "/ip4/127.0.0.1/udp/4001/quic/p2p/" + targetPeer.String()
@@ -150,11 +155,6 @@ func connectToBitSwap(ctx context.Context, targetPeer peer.ID, rcv *bsReceiver) 
 		localhost = "/ip4/127.0.0.1/tcp/4001/p2p/" + targetPeer.String()
 		bsLog.Infof("connecting through TCP")
 	}
-	// FIXME: Any preference on either transport?
-	// FIXME: Do we want to make the transport an option to test separately
-	//  both TCP and QUIC (since the latter was suspected to be a culprit
-	//  here).
-	// FIXME: Check if the GW changes port number and where do we get it.
 
 	ma, err := multiaddr.NewMultiaddr(localhost)
 	if err != nil {
@@ -172,8 +172,6 @@ func connectToBitSwap(ctx context.Context, targetPeer peer.ID, rcv *bsReceiver) 
 		libp2p.Transport(quic.NewTransport),
 
 		libp2p.Identity(privKey), // ID: 12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN
-		// FIXME: Could we pass the node's key here? It would be the cleanest
-		//  but maybe BW is not prepared to handle a request from self.
 	)
 	if err != nil {
 		return nil, err
@@ -201,23 +199,24 @@ func connectToBitSwap(ctx context.Context, targetPeer peer.ID, rcv *bsReceiver) 
 	return bs, nil
 }
 
+// We create two types of CIDs.
+// * ID hashes present by default. (Also they will count as `Work` size in the
+//   task entry for the priority as the size of the CID/block.)
+// * Raw invalid (shortened) SHA-256 CIDs that guarantee nonexistence and helps
+//  to test the counterpart of the ID CIDs which will always be found.
+// FIXME: We should have different sizes of ID hashes.
+// FIXME: Potential issues:
+//  * Won't rule out datastore/blockstore issues.
+//  * Won't rule out issues where a node doesn't have a block then later gets a copy.
 func createCids(cidNum int) map[cid.Cid]bool {
 	cids := make(map[cid.Cid]bool, cidNum)
 
-	// FIXME: ID hashes seem to be present by default,
-	//   good for testing purposes. (Also they will count
-	//   as `Work` size in the task entry for the priority
-	//   as the size of the CID/block.)
-	//   We should have different sizes of these.
 	v1RawIDPrefix := cid.Prefix{
 		Version: 1,
 		Codec:   cid.Raw,
 		MhType:  mh.IDENTITY,
 	}
 
-	// FIXME: Does raw allow me to create invalid SHA-256 CIDs?
-	//  It seems so: this guarantees nonexistence and helps to test the
-	//  counterpart of the ID CIDs which will always be found.
 	v1RawSha256Prefix := cid.Prefix{
 		Version:  1,
 		Codec:    cid.Raw,
@@ -245,9 +244,7 @@ func createMsg(requestedCids map[cid.Cid]bool) bsmsg.BitSwapMessage {
 	msg := bsmsg.New(true)
 	// Creating a new full list to replace the previous one since each test
 	// is independent.
-	// FIXME: Check if the above make sense.
 	for c, _ := range requestedCids {
-		// FIXME: Do we have any preference of HAVE/BLOCK wants?
 		wantType := bsmsgpb.Message_Wantlist_Have
 		if rand.Intn(2) == 1 {
 			wantType = bsmsgpb.Message_Wantlist_Block
