@@ -22,21 +22,22 @@ import (
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
-// Log only for a specific peer we want to follow.
-func LogTargetPeer(p peer.ID, template string, args ...interface{}) {
-	//targetPeerString := os.Getenv("BITSWAP_LOG_PEER") // FIXME: Initialize and parse once.
-	//if targetPeerString == "" {
-	//	return
-	//}
+var logTargetPeer peer.ID
+func init() {
 	// FIXME: Hardcoded from util/vole.go.
 	targetPeerString := "12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
 
-	targetPeer, err := peer.Decode(targetPeerString)
+	var err error
+	logTargetPeer, err = peer.Decode(targetPeerString)
 	if err != nil {
 		panic("invalid log target peer " + err.Error())
 	}
+}
 
-	if p != targetPeer {
+// Log only for a specific peer we want to follow.
+func LogTargetPeer(p peer.ID, template string, args ...interface{}) {
+
+	if p != logTargetPeer {
 		return
 	}
 
