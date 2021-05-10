@@ -26,7 +26,7 @@ require (
 	github.com/libp2p/go-libp2p-testing v0.4.0
 	github.com/libp2p/go-msgio v0.0.6
 	github.com/multiformats/go-multiaddr v0.3.1
-	github.com/multiformats/go-multistream v0.2.0
+	github.com/multiformats/go-multistream v0.2.2
 	go.uber.org/zap v1.16.0
 )
 
