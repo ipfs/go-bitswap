@@ -6,6 +6,7 @@ import (
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
+	"github.com/ipfs/go-bitswap/internal/logutil"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
 	bssim "github.com/ipfs/go-bitswap/internal/sessioninterestmanager"
@@ -15,11 +16,9 @@ import (
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	loggables "github.com/libp2p/go-libp2p-loggables"
-	"go.uber.org/zap"
 )
 
-var log = logging.Logger("bs:sess")
-var sflog = log.Desugar()
+var log = logutil.CreateLogger("bs:sess")
 
 const (
 	broadcastLiveWantsLimit = 64
@@ -212,7 +211,7 @@ func (s *Session) ReceiveFrom(from peer.ID, ks []cid.Cid, haves []cid.Cid, dontH
 
 func (s *Session) logReceiveFrom(from peer.ID, interestedKs []cid.Cid, haves []cid.Cid, dontHaves []cid.Cid) {
 	// Save some CPU cycles if log level is higher than debug
-	if ce := sflog.Check(zap.DebugLevel, "Bitswap <- rcv message"); ce == nil {
+	if !log.IsDebug() {
 		return
 	}
 
@@ -463,7 +462,7 @@ func (s *Session) wantBlocks(ctx context.Context, newks []cid.Cid) {
 
 // Send want-haves to all connected peers
 func (s *Session) broadcastWantHaves(ctx context.Context, wants []cid.Cid) {
-	log.Debugw("broadcastWantHaves", "session", s.id, "cids", wants)
+	log.Debugw("broadcastWantHaves", "local", s.self, "session", s.id, "cids", wants)
 	s.pm.BroadcastWantHaves(ctx, wants)
 }
 
