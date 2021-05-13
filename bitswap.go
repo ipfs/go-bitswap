@@ -25,6 +25,7 @@ import (
 	bssm "github.com/ipfs/go-bitswap/internal/sessionmanager"
 	bsspm "github.com/ipfs/go-bitswap/internal/sessionpeermanager"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -183,13 +184,13 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sm = bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 
 	bs := &Bitswap{
-		blockstore:       bstore,
-		network:          network,
-		process:          px,
-		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
-		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
-		pm:               pm,
-		pqm:              pqm,
+		blockstore:              bstore,
+		network:                 network,
+		process:                 px,
+		newBlocks:               make(chan cid.Cid, HasBlockBufferSize),
+		provideKeys:             make(chan cid.Cid, provideKeysBufferSize),
+		pm:                      pm,
+		pqm:                     pqm,
 		sm:                      sm,
 		sim:                     sim,
 		notif:                   notif,
@@ -220,12 +221,11 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 
 	// bind the context and process.
 	// do it over here to avoid closing before all setup is done.
-	go func() {
+	go func(bs *Bitswap) {
 		<-px.Closing() // process closes first
-		sm.Shutdown()
 		cancelFunc()
 		notif.Shutdown()
-	}()
+	}(bs)
 	procctx.CloseAfterContext(px, ctx) // parent cancelled first
 
 	return bs
@@ -296,19 +296,31 @@ type Bitswap struct {
 }
 
 type counters struct {
-	blocksRecvd    uint64
-	dupBlocksRecvd uint64
-	dupDataRecvd   uint64
-	blocksSent     uint64
-	dataSent       uint64
-	dataRecvd      uint64
-	messagesRecvd  uint64
+	blocksRecvd     uint64
+	dupBlocksRecvd  uint64
+	dupDataRecvd    uint64
+	blockDataRecvd  uint64
+	blocksSent      uint64
+	dataSent        uint64
+	dataRecvd       uint64
+	messagesRecvd   uint64
+	wantsRecvd      uint64
+	wantHavesRecvd  uint64
+	wantBlocksRecvd uint64
 }
 
 // GetBlock attempts to retrieve a particular block from peers within the
 // deadline enforced by the context.
 func (bs *Bitswap) GetBlock(parent context.Context, k cid.Cid) (blocks.Block, error) {
 	return bsgetter.SyncGetBlock(parent, k, bs.GetBlocks)
+}
+
+// ResetStatCounters reset the stats of the bitswap node.
+func (bs *Bitswap) ResetStatCounters() {
+	fmt.Println("Resetting counters..")
+	bs.counterLk.Lock()
+	bs.counters = new(counters)
+	bs.counterLk.Unlock()
 }
 
 // WantlistForPeer returns the currently understood list of blocks requested by a
@@ -437,6 +449,8 @@ func (bs *Bitswap) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []b
 func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg.BitSwapMessage) {
 	bs.counterLk.Lock()
 	bs.counters.messagesRecvd++
+	// Track all the data receiveid (including control messages)
+	bs.counters.dataRecvd += uint64(incoming.Size())
 	bs.counterLk.Unlock()
 
 	// This call records changes to wantlists, blocks received,
@@ -448,6 +462,37 @@ func (bs *Bitswap) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg
 	if bs.wiretap != nil {
 		bs.wiretap.MessageReceived(p, incoming)
 	}
+	// Add to stats the number of want messages received.
+	wantlist := incoming.Wantlist()
+	bs.counterLk.Lock()
+	bs.counters.wantsRecvd += uint64(len(wantlist))
+	bs.counterLk.Unlock()
+	// Add to stats the number and type of want messages.
+	go func(bs *Bitswap) {
+		entries := incoming.Wantlist()
+		var (
+			wants      = 0
+			wanthaves  = 0
+			wantblocks = 0
+		)
+		// For each want message check the type. Do not account for cancels.
+		for _, et := range entries {
+			if !et.Cancel {
+				wants++
+				if et.WantType == pb.Message_Wantlist_Have {
+					wanthaves++
+				} else {
+					wantblocks++
+				}
+			}
+		}
+		// Update counters
+		bs.counterLk.Lock()
+		bs.counters.wantsRecvd += uint64(wants)
+		bs.counters.wantHavesRecvd += uint64(wanthaves)
+		bs.counters.wantBlocksRecvd += uint64(wantblocks)
+		bs.counterLk.Unlock()
+	}(bs)
 
 	iblocks := incoming.Blocks()
 
@@ -492,7 +537,7 @@ func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 		c := bs.counters
 
 		c.blocksRecvd++
-		c.dataRecvd += uint64(blkLen)
+		c.blockDataRecvd += uint64(blkLen)
 		if has {
 			c.dupBlocksRecvd++
 			c.dupDataRecvd += uint64(blkLen)

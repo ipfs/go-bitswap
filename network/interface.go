@@ -105,6 +105,7 @@ type Pinger interface {
 // the numbers inside are specific to bitswap, and not any other protocols
 // using the same underlying network.
 type Stats struct {
-	MessagesSent  uint64
-	MessagesRecvd uint64
+	MessagesSent   uint64
+	MessagesRecvd  uint64
+	StreamDataSent uint64
 }

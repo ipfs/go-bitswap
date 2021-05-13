@@ -86,8 +86,8 @@ type Exportable interface {
 	// version of the protocol the remote peer supports.
 	ToProtoV0() *pb.Message
 	ToProtoV1() *pb.Message
-	ToNetV0(w io.Writer) error
-	ToNetV1(w io.Writer) error
+	ToNetV0(w io.Writer) (int, error)
+	ToNetV1(w io.Writer) (int, error)
 }
 
 // BlockPresence represents a HAVE / DONT_HAVE for a given Cid
@@ -462,15 +462,15 @@ func (m *impl) ToProtoV1() *pb.Message {
 	return pbm
 }
 
-func (m *impl) ToNetV0(w io.Writer) error {
+func (m *impl) ToNetV0(w io.Writer) (int, error) {
 	return write(w, m.ToProtoV0())
 }
 
-func (m *impl) ToNetV1(w io.Writer) error {
+func (m *impl) ToNetV1(w io.Writer) (int, error) {
 	return write(w, m.ToProtoV1())
 }
 
-func write(w io.Writer, m *pb.Message) error {
+func write(w io.Writer, m *pb.Message) (int, error) {
 	size := m.Size()
 
 	buf := pool.Get(size + binary.MaxVarintLen64)
@@ -480,12 +480,12 @@ func write(w io.Writer, m *pb.Message) error {
 
 	written, err := m.MarshalTo(buf[n:])
 	if err != nil {
-		return err
+		return written, err
 	}
 	n += written
 
-	_, err = w.Write(buf[:n])
-	return err
+	written, err = w.Write(buf[:n])
+	return written, err
 }
 
 func (m *impl) Loggable() map[string]interface{} {

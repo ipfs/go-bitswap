@@ -247,20 +247,24 @@ func (bsnet *impl) msgToStream(ctx context.Context, s network.Stream, msg bsmsg.
 		log.Warnf("error setting deadline: %s", err)
 	}
 
+	var written int
+	var err error
 	// Older Bitswap versions use a slightly different wire format so we need
 	// to convert the message to the appropriate format depending on the remote
 	// peer's Bitswap version.
 	switch s.Protocol() {
 	case bsnet.protocolBitswapOneOne, bsnet.protocolBitswap:
-		if err := msg.ToNetV1(s); err != nil {
+		if written, err = msg.ToNetV1(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
 		}
+		atomic.AddUint64(&bsnet.stats.StreamDataSent, uint64(written))
 	case bsnet.protocolBitswapOneZero, bsnet.protocolBitswapNoVers:
-		if err := msg.ToNetV0(s); err != nil {
+		if written, err = msg.ToNetV0(s); err != nil {
 			log.Debugf("error: %s", err)
 			return err
 		}
+		atomic.AddUint64(&bsnet.stats.StreamDataSent, uint64(written))
 	default:
 		return fmt.Errorf("unrecognized protocol on remote: %s", s.Protocol())
 	}
@@ -414,8 +418,9 @@ func (bsnet *impl) ConnectionManager() connmgr.ConnManager {
 
 func (bsnet *impl) Stats() Stats {
 	return Stats{
-		MessagesRecvd: atomic.LoadUint64(&bsnet.stats.MessagesRecvd),
-		MessagesSent:  atomic.LoadUint64(&bsnet.stats.MessagesSent),
+		MessagesRecvd:  atomic.LoadUint64(&bsnet.stats.MessagesRecvd),
+		MessagesSent:   atomic.LoadUint64(&bsnet.stats.MessagesSent),
+		StreamDataSent: atomic.LoadUint64(&bsnet.stats.StreamDataSent),
 	}
 }
 
