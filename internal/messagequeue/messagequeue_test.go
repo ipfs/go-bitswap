@@ -390,7 +390,7 @@ func TestWantOverridesPendingCancels(t *testing.T) {
 	}
 }
 
-func TestWantlistRebroadcast(t *testing.T) {
+func TestWantlistRebroadcastBroadcastsAllWanthaves(t *testing.T) {
 	ctx := context.Background()
 	messagesSent := make(chan []bsmsg.Entry)
 	resetChan := make(chan struct{}, 1)
@@ -399,8 +399,8 @@ func TestWantlistRebroadcast(t *testing.T) {
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet, mockTimeoutCb)
 	bcstwh := testutil.GenerateCids(10)
-	wantHaves := testutil.GenerateCids(10)
-	wantBlocks := testutil.GenerateCids(10)
+	// wantHaves := testutil.GenerateCids(10)
+	// wantBlocks := testutil.GenerateCids(10)
 
 	// Add some broadcast want-haves
 	messageQueue.Startup()
@@ -415,73 +415,69 @@ func TestWantlistRebroadcast(t *testing.T) {
 	if len(firstMessage) != len(bcstwh) {
 		t.Fatal("wrong number of wants")
 	}
+}
 
-	// Tell message queue to rebroadcast after 5ms, then wait 8ms
-	messageQueue.SetRebroadcastInterval(5 * time.Millisecond)
-	messages = collectMessages(ctx, t, messagesSent, 8*time.Millisecond)
-	if len(messages) != 1 {
-		t.Fatal("wrong number of messages were rebroadcast")
-	}
+func TestWantlistRebroadcastBroadcastInterval(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan []bsmsg.Entry)
+	resetChan := make(chan struct{}, 1)
+	fakeSender := newFakeMessageSender(resetChan, messagesSent, true)
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	messageQueue := New(ctx, peerID, fakenet, mockTimeoutCb)
+	bcstwh := testutil.GenerateCids(10)
 
-	// All the want-haves should have been rebroadcast
-	firstMessage = messages[0]
-	if len(firstMessage) != len(bcstwh) {
-		t.Fatal("did not rebroadcast all wants")
-	}
-
-	// Tell message queue to rebroadcast after a long time (so it doesn't
-	// interfere with the next message collection), then send out some
-	// regular wants and collect them
-	messageQueue.SetRebroadcastInterval(1 * time.Second)
-	messageQueue.AddWants(wantBlocks, wantHaves)
-	messages = collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
-	if len(messages) != 1 {
-		t.Fatal("wrong number of messages were rebroadcast")
-	}
-
-	// All new wants should have been sent
-	firstMessage = messages[0]
-	if len(firstMessage) != len(wantHaves)+len(wantBlocks) {
-		t.Fatal("wrong number of wants")
-	}
-
-	// Tell message queue to rebroadcast after 10ms, then wait 15ms
+	// Add some broadcast want-haves
+	messageQueue.Startup()
+	// Tell message queue to rebroadcast
+	messageQueue.AddBroadcastWantHaves(bcstwh)
 	messageQueue.SetRebroadcastInterval(10 * time.Millisecond)
-	messages = collectMessages(ctx, t, messagesSent, 15*time.Millisecond)
-	firstMessage = messages[0]
-
-	// Both original and new wants should have been rebroadcast
-	totalWants := len(bcstwh) + len(wantHaves) + len(wantBlocks)
-	if len(firstMessage) != totalWants {
-		t.Fatal("did not rebroadcast all wants")
+	messages := collectMessages(ctx, t, messagesSent, 25*time.Millisecond)
+	// the initial message and the first two rebroadcasts
+	if len(messages) != 3 {
+		t.Fatal("wrong number of messages were rebroadcast", len(messages))
 	}
 
-	// Cancel some of the wants
-	messageQueue.SetRebroadcastInterval(1 * time.Second)
-	cancels := append([]cid.Cid{bcstwh[0]}, wantHaves[0], wantBlocks[0])
-	messageQueue.AddCancels(cancels)
-	messages = collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
-	if len(messages) != 1 {
-		t.Fatal("wrong number of messages were rebroadcast")
-	}
-
-	// Cancels for each want should have been sent
-	firstMessage = messages[0]
-	if len(firstMessage) != len(cancels) {
-		t.Fatal("wrong number of cancels")
-	}
-	for _, entry := range firstMessage {
-		if !entry.Cancel {
-			t.Fatal("expected cancels")
+	// all messages should be the same
+	for _, msg := range messages {
+		if len(msg) != len(bcstwh) {
+			t.Fatal("did not rebroadcast all wants")
 		}
 	}
+}
 
-	// Tell message queue to rebroadcast after 10ms, then wait 15ms
-	messageQueue.SetRebroadcastInterval(10 * time.Millisecond)
-	messages = collectMessages(ctx, t, messagesSent, 15*time.Millisecond)
-	firstMessage = messages[0]
-	if len(firstMessage) != totalWants-len(cancels) {
-		t.Fatal("did not rebroadcast all wants")
+func TestWantlistRebroadcastCancels(t *testing.T) {
+	ctx := context.Background()
+	messagesSent := make(chan []bsmsg.Entry)
+	resetChan := make(chan struct{}, 1)
+	fakeSender := newFakeMessageSender(resetChan, messagesSent, true)
+	fakenet := &fakeMessageNetwork{nil, nil, fakeSender}
+	peerID := testutil.GeneratePeers(1)[0]
+	messageQueue := New(ctx, peerID, fakenet, mockTimeoutCb)
+	bcstwh := testutil.GenerateCids(10)
+	wantHaves := testutil.GenerateCids(10)
+	wantBlocks := testutil.GenerateCids(10)
+
+	messageQueue.Startup()
+
+	// long rebroadcast interval, rebroadcast some messages.
+	messageQueue.SetRebroadcastInterval(1 * time.Second)
+	messageQueue.AddBroadcastWantHaves(bcstwh)
+	messageQueue.AddWants(wantBlocks, wantHaves)
+
+	// cancel some of the messages
+	cancels := []cid.Cid{bcstwh[0], wantBlocks[0], wantHaves[0]}
+	messageQueue.AddCancels(cancels)
+
+	messages := collectMessages(ctx, t, messagesSent, 10*time.Millisecond)
+	if len(messages) != 1 {
+		t.Fatal("wrong number of messages were rebroadcast")
+	}
+
+	// messages should not include those that have been canceled.
+	firstMessage := messages[0]
+	if len(firstMessage) != len(bcstwh)+len(wantHaves)+len(wantBlocks)-len(cancels) {
+		t.Fatal("wrong number of cancels")
 	}
 }
 
