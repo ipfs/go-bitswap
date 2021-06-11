@@ -399,8 +399,6 @@ func TestWantlistRebroadcastBroadcastsAllWanthaves(t *testing.T) {
 	peerID := testutil.GeneratePeers(1)[0]
 	messageQueue := New(ctx, peerID, fakenet, mockTimeoutCb)
 	bcstwh := testutil.GenerateCids(10)
-	// wantHaves := testutil.GenerateCids(10)
-	// wantBlocks := testutil.GenerateCids(10)
 
 	// Add some broadcast want-haves
 	messageQueue.Startup()
