@@ -1,6 +1,7 @@
 module github.com/ipfs/go-bitswap
 
 require (
+	github.com/benbjohnson/clock v1.1.0
 	github.com/cskr/pubsub v1.0.2
 	github.com/gogo/protobuf v1.3.1
 	github.com/google/uuid v1.1.2
