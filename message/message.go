@@ -496,5 +496,6 @@ func (m *impl) Loggable() map[string]interface{} {
 	return map[string]interface{}{
 		"blocks": blocks,
 		"wants":  m.Wantlist(),
+		"presences": m.BlockPresences(),
 	}
 }
