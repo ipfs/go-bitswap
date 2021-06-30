@@ -216,6 +216,10 @@ func (e *Engine) SetSendDontHaves(send bool) {
 	e.sendDontHaves = send
 }
 
+func (e *Engine) NumOutstandingJobs() int {
+	return len(e.bsm.jobs)
+}
+
 // Starts the score ledger. Before start the function checks and,
 // if it is unset, initializes the scoreLedger with the default
 // implementation.
