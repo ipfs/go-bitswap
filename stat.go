@@ -18,6 +18,7 @@ type Stat struct {
 	DupBlksReceived  uint64
 	DupDataReceived  uint64
 	MessagesReceived uint64
+	QueuedRequests   uint64
 }
 
 // Stat returns aggregated statistics about bitswap operations
@@ -43,6 +44,8 @@ func (bs *Bitswap) Stat() (*Stat, error) {
 		st.Peers = append(st.Peers, p.Pretty())
 	}
 	sort.Strings(st.Peers)
+
+	st.QueuedRequests = uint64(bs.engine.NumOutstandingJobs())
 
 	return st, nil
 }
