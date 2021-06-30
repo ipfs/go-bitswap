@@ -75,7 +75,7 @@ const (
 	maxBlockSizeReplaceHasWithBlock = 1024
 
 	// Number of concurrent workers that pull tasks off the request queue
-	taskWorkerCount = 8
+	taskWorkerCount = 100
 )
 
 // Envelope contains a message for a Peer.
