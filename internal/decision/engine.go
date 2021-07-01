@@ -170,12 +170,12 @@ type Engine struct {
 }
 
 // NewEngine creates a new block sending engine for the given block store
-func NewEngine(bs bstore.Blockstore, bstoreWorkerCount int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
-	return newEngine(bs, bstoreWorkerCount, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
+func NewEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
+	return newEngine(bs, bstoreWorkerCount, engineTaskWorkerCount, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
 }
 
 // This constructor is used by the tests
-func newEngine(bs bstore.Blockstore, bstoreWorkerCount int, peerTagger PeerTagger, self peer.ID,
+func newEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount int, peerTagger PeerTagger, self peer.ID,
 	maxReplaceSize int, scoreLedger ScoreLedger) *Engine {
 
 	if scoreLedger == nil {
@@ -191,7 +191,7 @@ func newEngine(bs bstore.Blockstore, bstoreWorkerCount int, peerTagger PeerTagge
 		workSignal:                      make(chan struct{}, 1),
 		ticker:                          time.NewTicker(time.Millisecond * 100),
 		maxBlockSizeReplaceHasWithBlock: maxReplaceSize,
-		taskWorkerCount:                 taskWorkerCount,
+		taskWorkerCount:                 engineTaskWorkerCount,
 		sendDontHaves:                   true,
 		self:                            self,
 		peerLedger:                      newPeerLedger(),
