@@ -12,14 +12,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// TaskWorkerCount is the total number of simultaneous threads sending
-// outgoing messages
-var TaskWorkerCount = 100
-
 func (bs *Bitswap) startWorkers(ctx context.Context, px process.Process) {
 
 	// Start up workers to handle requests from other nodes for the data on this node
-	for i := 0; i < TaskWorkerCount; i++ {
+	for i := 0; i < bs.taskWorkerCount; i++ {
 		i := i
 		px.Go(func(px process.Process) {
 			bs.taskWorker(ctx, i)

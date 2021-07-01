@@ -100,6 +100,25 @@ func EngineBlockstoreWorkerCount(count int) Option {
 	}
 }
 
+// EngineTaskWorkerCount sets the number of worker threads used inside the engine
+func EngineTaskWorkerCount(count int) Option {
+	if count <= 0 {
+		panic(fmt.Sprintf("Engine task worker count is %d but must be > 0", count))
+	}
+	return func(bs *Bitswap) {
+		bs.engineTaskWorkerCount = count
+	}
+}
+
+func TaskWorkerCount(count int) Option {
+	if count <= 0 {
+		panic(fmt.Sprintf("task worker count is %d but must be > 0", count))
+	}
+	return func(bs *Bitswap) {
+		bs.taskWorkerCount = count
+	}
+}
+
 // SetSendDontHaves indicates what to do when the engine receives a want-block
 // for a block that is not in the blockstore. Either
 // - Send a DONT_HAVE message
@@ -183,13 +202,13 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sm = bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 
 	bs := &Bitswap{
-		blockstore:       bstore,
-		network:          network,
-		process:          px,
-		newBlocks:        make(chan cid.Cid, HasBlockBufferSize),
-		provideKeys:      make(chan cid.Cid, provideKeysBufferSize),
-		pm:               pm,
-		pqm:              pqm,
+		blockstore:              bstore,
+		network:                 network,
+		process:                 px,
+		newBlocks:               make(chan cid.Cid, HasBlockBufferSize),
+		provideKeys:             make(chan cid.Cid, provideKeysBufferSize),
+		pm:                      pm,
+		pqm:                     pqm,
 		sm:                      sm,
 		sim:                     sim,
 		notif:                   notif,
@@ -209,7 +228,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	// Set up decision engine
-	bs.engine = decision.NewEngine(bstore, bs.engineBstoreWorkerCount, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
+	bs.engine = decision.NewEngine(bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
 
 	bs.pqm.Startup()
 	network.SetDelegate(bs)
@@ -290,6 +309,12 @@ type Bitswap struct {
 
 	// how many worker threads to start for decision engine blockstore worker
 	engineBstoreWorkerCount int
+
+	// how many worker threads to start for decision engine task worker
+	engineTaskWorkerCount int
+
+	// the total number of simultaneous threads sending outgoing messages
+	taskWorkerCount int
 
 	// the score ledger used by the decision engine
 	engineScoreLedger deciface.ScoreLedger
