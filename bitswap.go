@@ -62,6 +62,8 @@ var (
 
 	// the 1<<18+15 is to observe old file chunks that are 1<<18 + 14 in size
 	metricsBuckets = []float64{1 << 6, 1 << 10, 1 << 14, 1 << 18, 1<<18 + 15, 1 << 22}
+
+	timeMetricsBuckets = []float64{1, 10, 30, 60, 90, 120, 600}
 )
 
 // Option defines the functional option type that can be used to configure
@@ -177,6 +179,9 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sentHistogram := metrics.NewCtx(ctx, "sent_all_blocks_bytes", "Histogram of blocks sent by"+
 		" this bitswap").Histogram(metricsBuckets)
 
+	sendTimeHistogram := metrics.NewCtx(ctx, "send_times", "Histogram of how long it takes to send messages"+
+		" in this bitswap").Histogram(timeMetricsBuckets)
+
 	px := process.WithTeardown(func() error {
 		return nil
 	})
@@ -236,6 +241,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		dupMetric:                  dupHist,
 		allMetric:                  allHist,
 		sentHistogram:              sentHistogram,
+		sendTimeHistogram:          sendTimeHistogram,
 		provideEnabled:             true,
 		provSearchDelay:            defaultProvSearchDelay,
 		rebroadcastDelay:           delay.Fixed(time.Minute),
@@ -307,9 +313,10 @@ type Bitswap struct {
 	counters  *counters
 
 	// Metrics interface metrics
-	dupMetric     metrics.Histogram
-	allMetric     metrics.Histogram
-	sentHistogram metrics.Histogram
+	dupMetric         metrics.Histogram
+	allMetric         metrics.Histogram
+	sentHistogram     metrics.Histogram
+	sendTimeHistogram metrics.Histogram
 
 	// External statistics interface
 	wiretap WireTap
