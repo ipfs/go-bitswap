@@ -3,6 +3,7 @@ package bitswap
 import (
 	"context"
 	"fmt"
+	"time"
 
 	engine "github.com/ipfs/go-bitswap/internal/decision"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -48,6 +49,8 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					continue
 				}
 
+				start := time.Now()
+
 				// TODO: Only record message as sent if there was no error?
 				// Ideally, yes. But we'd need some way to trigger a retry and/or drop
 				// the peer.
@@ -56,6 +59,10 @@ func (bs *Bitswap) taskWorker(ctx context.Context, id int) {
 					bs.wiretap.MessageSent(envelope.Peer, envelope.Message)
 				}
 				bs.sendBlocks(ctx, envelope)
+
+				dur := time.Since(start)
+				bs.sendTimeHistogram.Observe(dur.Seconds())
+
 			case <-ctx.Done():
 				return
 			}
