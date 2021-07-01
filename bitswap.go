@@ -119,6 +119,17 @@ func TaskWorkerCount(count int) Option {
 	}
 }
 
+// MaxOutstandingBytesPerPeer describes approximately how much work we are will to have outstanding to a peer at any
+// given time. Setting it to 0 will disable any limiting.
+func MaxOutstandingBytesPerPeer(count int) Option {
+	if count < 0 {
+		panic(fmt.Sprintf("max outstanding bytes per peer is %d but must be >= 0", count))
+	}
+	return func(bs *Bitswap) {
+		bs.engineMaxOutstandingBytesPerPeer = count
+	}
+}
+
 // SetSendDontHaves indicates what to do when the engine receives a want-block
 // for a block that is not in the blockstore. Either
 // - Send a DONT_HAVE message
@@ -239,7 +250,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	// Set up decision engine
-	bs.engine = decision.NewEngine(bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
+	bs.engine = decision.NewEngine(bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, bs.engineMaxOutstandingBytesPerPeer, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
 	bs.engine.SetSendDontHaves(bs.engineSetSendDontHaves)
 
 	bs.pqm.Startup()
@@ -327,6 +338,9 @@ type Bitswap struct {
 
 	// the total number of simultaneous threads sending outgoing messages
 	taskWorkerCount int
+
+	// the total amount of bytes that a peer should have outstanding, it is utilized by the decision engine
+	engineMaxOutstandingBytesPerPeer int
 
 	// the score ledger used by the decision engine
 	engineScoreLedger deciface.ScoreLedger

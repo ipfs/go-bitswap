@@ -127,6 +127,10 @@ type Engine struct {
 	// outbox.
 	peerRequestQueue *peertaskqueue.PeerTaskQueue
 
+	// maxOutstandingBytesPerPeer hints to the peer task queue not to give a peer more tasks if it has some maximum
+	// work already outstanding
+	maxOutstandingBytesPerPeer int
+
 	// FIXME it's a bit odd for the client and the worker to both share memory
 	// (both modify the peerRequestQueue) and also to communicate over the
 	// workSignal channel. consider sending requests over the channel and
@@ -170,12 +174,12 @@ type Engine struct {
 }
 
 // NewEngine creates a new block sending engine for the given block store
-func NewEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
-	return newEngine(bs, bstoreWorkerCount, engineTaskWorkerCount, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
+func NewEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
+	return newEngine(bs, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
 }
 
 // This constructor is used by the tests
-func newEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount int, peerTagger PeerTagger, self peer.ID,
+func newEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer int, peerTagger PeerTagger, self peer.ID,
 	maxReplaceSize int, scoreLedger ScoreLedger) *Engine {
 
 	if scoreLedger == nil {
@@ -202,7 +206,8 @@ func newEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount in
 		peertaskqueue.OnPeerAddedHook(e.onPeerAdded),
 		peertaskqueue.OnPeerRemovedHook(e.onPeerRemoved),
 		peertaskqueue.TaskMerger(newTaskMerger()),
-		peertaskqueue.IgnoreFreezing(true))
+		peertaskqueue.IgnoreFreezing(true),
+		peertaskqueue.MaxOutstandingWorkPerPeer(maxOutstandingBytesPerPeer))
 	return e
 }
 
