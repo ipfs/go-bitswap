@@ -20,12 +20,14 @@ require (
 	github.com/ipfs/go-peertaskqueue v0.2.0
 	github.com/jbenet/goprocess v0.1.4
 	github.com/libp2p/go-buffer-pool v0.0.2
+	github.com/libp2p/go-composable-routing v0.0.0-20210707192527-d860781b009b
 	github.com/libp2p/go-libp2p v0.14.3
-	github.com/libp2p/go-libp2p-core v0.8.5
+	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
 	github.com/libp2p/go-libp2p-loggables v0.1.0
 	github.com/libp2p/go-libp2p-netutil v0.1.0
 	github.com/libp2p/go-libp2p-testing v0.4.0
 	github.com/libp2p/go-msgio v0.0.6
+	github.com/libp2p/go-routing-language v0.0.0-20210707171242-dcd2af38e501
 	github.com/multiformats/go-multiaddr v0.3.3
 	github.com/multiformats/go-multistream v0.2.2
 	go.uber.org/zap v1.16.0
