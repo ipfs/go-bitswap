@@ -94,10 +94,13 @@ func newTestEngine(ctx context.Context, idStr string) engineSet {
 	return newTestEngineWithSampling(ctx, idStr, shortTerm, nil, clock.New())
 }
 
+var testEngineTaskWorkerCount = 4
+var testMaxOutstandingBytesPerPeer = 1 << 20
+
 func newTestEngineWithSampling(ctx context.Context, idStr string, peerSampleInterval time.Duration, sampleCh chan struct{}, clock clock.Clock) engineSet {
 	fpt := &fakePeerTagger{}
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
-	e := newEngine(bs, 4, fpt, "localhost", 0, NewTestScoreLedger(peerSampleInterval, sampleCh, clock))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, fpt, "localhost", 0, NewTestScoreLedger(peerSampleInterval, sampleCh, clock))
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	return engineSet{
 		Peer: peer.ID(idStr),
@@ -184,7 +187,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := newEngine(blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -512,7 +515,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 	for i, testCase := range testCases {
 		t.Logf("Test case %d:", i)
@@ -668,7 +671,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 		testCases = onlyTestCases
 	}
 
-	e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 
 	var next envChan
@@ -853,7 +856,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 	ctx := context.Background()
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+		e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 		e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 		for _, testcase := range testcases {
 			set := testcase[0]
@@ -878,7 +881,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 	partner := libp2ptest.RandPeerIDFatal(t)
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
-	e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 
 	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
@@ -922,7 +925,7 @@ func TestSendDontHave(t *testing.T) {
 	partner := libp2ptest.RandPeerIDFatal(t)
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
-	e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 
 	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
@@ -986,7 +989,7 @@ func TestWantlistForPeer(t *testing.T) {
 	partner := libp2ptest.RandPeerIDFatal(t)
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
-	e := newEngine(bs, 4, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
+	e := newEngine(bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()))
 	e.StartWorkers(context.Background(), process.WithTeardown(func() error { return nil }))
 
 	blks := testutil.GenerateBlocksOfSize(4, 8*1024)
