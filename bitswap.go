@@ -49,6 +49,13 @@ const (
 
 	// Number of concurrent workers in decision engine that process requests to the blockstore
 	defaulEngineBlockstoreWorkerCount = 128
+
+	// how many worker threads to start for decision engine task worker
+	defaultEngineTaskWorkerCount = 8
+	// the total number of simultaneous threads sending outgoing messages
+	defaultTaskWorkerCount = 8
+	// the total amount of bytes that a peer should have outstanding, it is utilized by the decision engine
+	defaultEngineMaxOutstandingBytesPerPeer = 1 << 20
 )
 
 var (
@@ -227,27 +234,30 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sm = bssm.New(ctx, sessionFactory, sim, sessionPeerManagerFactory, bpm, pm, notif, network.Self())
 
 	bs = &Bitswap{
-		blockstore:                 bstore,
-		network:                    network,
-		process:                    px,
-		newBlocks:                  make(chan cid.Cid, HasBlockBufferSize),
-		provideKeys:                make(chan cid.Cid, provideKeysBufferSize),
-		pm:                         pm,
-		pqm:                        pqm,
-		sm:                         sm,
-		sim:                        sim,
-		notif:                      notif,
-		counters:                   new(counters),
-		dupMetric:                  dupHist,
-		allMetric:                  allHist,
-		sentHistogram:              sentHistogram,
-		sendTimeHistogram:          sendTimeHistogram,
-		provideEnabled:             true,
-		provSearchDelay:            defaultProvSearchDelay,
-		rebroadcastDelay:           delay.Fixed(time.Minute),
-		engineBstoreWorkerCount:    defaulEngineBlockstoreWorkerCount,
-		engineSetSendDontHaves:     true,
-		simulateDontHavesOnTimeout: true,
+		blockstore:                       bstore,
+		network:                          network,
+		process:                          px,
+		newBlocks:                        make(chan cid.Cid, HasBlockBufferSize),
+		provideKeys:                      make(chan cid.Cid, provideKeysBufferSize),
+		pm:                               pm,
+		pqm:                              pqm,
+		sm:                               sm,
+		sim:                              sim,
+		notif:                            notif,
+		counters:                         new(counters),
+		dupMetric:                        dupHist,
+		allMetric:                        allHist,
+		sentHistogram:                    sentHistogram,
+		sendTimeHistogram:                sendTimeHistogram,
+		provideEnabled:                   true,
+		provSearchDelay:                  defaultProvSearchDelay,
+		rebroadcastDelay:                 delay.Fixed(time.Minute),
+		engineBstoreWorkerCount:          defaulEngineBlockstoreWorkerCount,
+		engineTaskWorkerCount:            defaultEngineTaskWorkerCount,
+		taskWorkerCount:                  defaultTaskWorkerCount,
+		engineMaxOutstandingBytesPerPeer: defaultEngineMaxOutstandingBytesPerPeer,
+		engineSetSendDontHaves:           true,
+		simulateDontHavesOnTimeout:       true,
 	}
 
 	// apply functional options before starting and running bitswap
