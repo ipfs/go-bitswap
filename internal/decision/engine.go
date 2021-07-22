@@ -73,9 +73,6 @@ const (
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
 	// bytes up to which we will replace a want-have with a want-block
 	maxBlockSizeReplaceHasWithBlock = 1024
-
-	// Number of concurrent workers that pull tasks off the request queue
-	taskWorkerCount = 100
 )
 
 // Envelope contains a message for a Peer.
@@ -127,10 +124,6 @@ type Engine struct {
 	// outbox.
 	peerRequestQueue *peertaskqueue.PeerTaskQueue
 
-	// maxOutstandingBytesPerPeer hints to the peer task queue not to give a peer more tasks if it has some maximum
-	// work already outstanding
-	maxOutstandingBytesPerPeer int
-
 	// FIXME it's a bit odd for the client and the worker to both share memory
 	// (both modify the peerRequestQueue) and also to communicate over the
 	// workSignal channel. consider sending requests over the channel and
@@ -173,7 +166,9 @@ type Engine struct {
 	self peer.ID
 }
 
-// NewEngine creates a new block sending engine for the given block store
+// NewEngine creates a new block sending engine for the given block store.
+// maxOutstandingBytesPerPeer hints to the peer task queue not to give a peer more tasks if it has some maximum
+// work already outstanding.
 func NewEngine(bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
 	return newEngine(bs, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
 }
