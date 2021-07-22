@@ -94,7 +94,7 @@ func newTestEngine(ctx context.Context, idStr string) engineSet {
 	return newTestEngineWithSampling(ctx, idStr, shortTerm, nil, clock.New())
 }
 
-var testEngineTaskWorkerCount = 40
+var testEngineTaskWorkerCount = 10
 var testMaxOutstandingBytesPerPeer = 1 << 20
 
 func newTestEngineWithSampling(ctx context.Context, idStr string, peerSampleInterval time.Duration, sampleCh chan struct{}, clock clock.Clock) engineSet {
