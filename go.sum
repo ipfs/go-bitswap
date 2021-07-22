@@ -308,6 +308,8 @@ github.com/ipfs/go-metrics-interface v0.0.1 h1:j+cpbjYvu4R8zbleSs36gvB7jR+wsL2fG
 github.com/ipfs/go-metrics-interface v0.0.1/go.mod h1:6s6euYU4zowdslK0GKHmqaIZ3j/b/tL7HTWtJ4VPgWY=
 github.com/ipfs/go-peertaskqueue v0.2.1-0.20210720195451-24f8245710f5 h1:dJE4EB1lVZ/BAhvZLYMsusz7Y+SOctCWpPJU92hslnI=
 github.com/ipfs/go-peertaskqueue v0.2.1-0.20210720195451-24f8245710f5/go.mod h1:KL9F49hXJMoXCad8e5anivjN+kWdr+CyGcyh4K6doLc=
+github.com/ipfs/go-peertaskqueue v0.3.0 h1:zTy2dEPlVEyyGWjbTUxb3hc+atMoiqw89ZJwvXue130=
+github.com/ipfs/go-peertaskqueue v0.3.0/go.mod h1:KL9F49hXJMoXCad8e5anivjN+kWdr+CyGcyh4K6doLc=
 github.com/jackpal/gateway v1.0.5/go.mod h1:lTpwd4ACLXmpyiCTRtfiNyVnUmqT9RivzCDQetPfnjA=
 github.com/jackpal/go-nat-pmp v1.0.1/go.mod h1:QPH045xvCAeXUZOxsnwmrtiCoxIr9eob+4orBN1SBKc=
 github.com/jackpal/go-nat-pmp v1.0.2 h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
