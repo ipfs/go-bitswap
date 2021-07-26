@@ -266,7 +266,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	// Set up decision engine
-	bs.engine = decision.NewEngine(bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, bs.engineMaxOutstandingBytesPerPeer, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
+	bs.engine = decision.NewEngine(ctx, bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, bs.engineMaxOutstandingBytesPerPeer, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
 	bs.engine.SetSendDontHaves(bs.engineSetSendDontHaves)
 
 	bs.pqm.Startup()
