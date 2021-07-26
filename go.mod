@@ -24,7 +24,7 @@ require (
 	github.com/libp2p/go-libp2p-core v0.8.5
 	github.com/libp2p/go-libp2p-loggables v0.1.0
 	github.com/libp2p/go-libp2p-netutil v0.1.0
-	github.com/libp2p/go-libp2p-testing v0.4.0
+	github.com/libp2p/go-libp2p-testing v0.4.2
 	github.com/libp2p/go-msgio v0.0.6
 	github.com/multiformats/go-multiaddr v0.3.3
 	github.com/multiformats/go-multistream v0.2.2
