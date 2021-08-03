@@ -191,7 +191,7 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, eng
 	e := &Engine{
 		ledgerMap:                       make(map[peer.ID]*ledger),
 		scoreLedger:                     scoreLedger,
-		bsm:                             newBlockstoreManager(bs, bstoreWorkerCount),
+		bsm:                             newBlockstoreManager(ctx, bs, bstoreWorkerCount),
 		peerTagger:                      peerTagger,
 		outbox:                          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:                      make(chan struct{}, 1),
