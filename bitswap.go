@@ -189,6 +189,14 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	sendTimeHistogram := metrics.NewCtx(ctx, "send_times", "Histogram of how long it takes to send messages"+
 		" in this bitswap").Histogram(timeMetricsBuckets)
 
+	pendingEngineGauge := metrics.NewCtx(ctx, "pending_tasks", "Total number of pending tasks").Gauge()
+
+	activeEngineGauge := metrics.NewCtx(ctx, "active_tasks", "Total number of active tasks").Gauge()
+
+	pendingBlocksGauge := metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge()
+
+	activeBlocksGauge := metrics.NewCtx(ctx, "active_block_tasks", "Total number of active blockstore tasks").Gauge()
+
 	px := process.WithTeardown(func() error {
 		return nil
 	})
@@ -266,7 +274,20 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 	}
 
 	// Set up decision engine
-	bs.engine = decision.NewEngine(ctx, bstore, bs.engineBstoreWorkerCount, bs.engineTaskWorkerCount, bs.engineMaxOutstandingBytesPerPeer, network.ConnectionManager(), network.Self(), bs.engineScoreLedger)
+	bs.engine = decision.NewEngine(
+		ctx,
+		bstore,
+		bs.engineBstoreWorkerCount,
+		bs.engineTaskWorkerCount,
+		bs.engineMaxOutstandingBytesPerPeer,
+		network.ConnectionManager(),
+		network.Self(),
+		bs.engineScoreLedger,
+		pendingEngineGauge,
+		activeEngineGauge,
+		pendingBlocksGauge,
+		activeBlocksGauge,
+	)
 	bs.engine.SetSendDontHaves(bs.engineSetSendDontHaves)
 
 	bs.pqm.Startup()

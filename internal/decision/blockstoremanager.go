@@ -24,14 +24,20 @@ type blockstoreManager struct {
 
 // newBlockstoreManager creates a new blockstoreManager with the given context
 // and number of workers
-func newBlockstoreManager(ctx context.Context, bs bstore.Blockstore, workerCount int) *blockstoreManager {
+func newBlockstoreManager(
+	ctx context.Context,
+	bs bstore.Blockstore,
+	workerCount int,
+	pendingGauge metrics.Gauge,
+	activeGauge metrics.Gauge,
+) *blockstoreManager {
 	return &blockstoreManager{
 		bs:           bs,
 		workerCount:  workerCount,
 		jobs:         make(chan func()),
 		px:           process.WithTeardown(func() error { return nil }),
-		pendingGauge: metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge(),
-		activeGauge:  metrics.NewCtx(ctx, "active_block_tasks", "Total number of active blockstore tasks").Gauge(),
+		pendingGauge: pendingGauge,
+		activeGauge:  activeGauge,
 	}
 }
 

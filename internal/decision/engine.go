@@ -171,18 +171,59 @@ type Engine struct {
 
 	// metrics gauge for total pending tasks across all workers
 	activeGauge metrics.Gauge
+
+	// used to ensure metrics are reported each fixed number of operation
+	metricUpdateCounter int
 }
 
 // NewEngine creates a new block sending engine for the given block store.
 // maxOutstandingBytesPerPeer hints to the peer task queue not to give a peer more tasks if it has some maximum
 // work already outstanding.
-func NewEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer int, peerTagger PeerTagger, self peer.ID, scoreLedger ScoreLedger) *Engine {
-	return newEngine(ctx, bs, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer, peerTagger, self, maxBlockSizeReplaceHasWithBlock, scoreLedger)
+func NewEngine(
+	ctx context.Context,
+	bs bstore.Blockstore,
+	bstoreWorkerCount,
+	engineTaskWorkerCount, maxOutstandingBytesPerPeer int,
+	peerTagger PeerTagger,
+	self peer.ID,
+	scoreLedger ScoreLedger,
+	pendingEngineGauge metrics.Gauge,
+	activeEngineGauge metrics.Gauge,
+	pendingBlocksGauge metrics.Gauge,
+	activeBlocksGauge metrics.Gauge,
+) *Engine {
+	return newEngine(
+		ctx,
+		bs,
+		bstoreWorkerCount,
+		engineTaskWorkerCount,
+		maxOutstandingBytesPerPeer,
+		peerTagger,
+		self,
+		maxBlockSizeReplaceHasWithBlock,
+		scoreLedger,
+		pendingEngineGauge,
+		activeEngineGauge,
+		pendingBlocksGauge,
+		activeBlocksGauge,
+	)
 }
 
 // This constructor is used by the tests
-func newEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, engineTaskWorkerCount, maxOutstandingBytesPerPeer int, peerTagger PeerTagger, self peer.ID,
-	maxReplaceSize int, scoreLedger ScoreLedger) *Engine {
+func newEngine(
+	ctx context.Context,
+	bs bstore.Blockstore,
+	bstoreWorkerCount,
+	engineTaskWorkerCount, maxOutstandingBytesPerPeer int,
+	peerTagger PeerTagger,
+	self peer.ID,
+	maxReplaceSize int,
+	scoreLedger ScoreLedger,
+	pendingEngineGauge metrics.Gauge,
+	activeEngineGauge metrics.Gauge,
+	pendingBlocksGauge metrics.Gauge,
+	activeBlocksGauge metrics.Gauge,
+) *Engine {
 
 	if scoreLedger == nil {
 		scoreLedger = NewDefaultScoreLedger()
@@ -191,7 +232,7 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, eng
 	e := &Engine{
 		ledgerMap:                       make(map[peer.ID]*ledger),
 		scoreLedger:                     scoreLedger,
-		bsm:                             newBlockstoreManager(ctx, bs, bstoreWorkerCount),
+		bsm:                             newBlockstoreManager(ctx, bs, bstoreWorkerCount, pendingBlocksGauge, activeBlocksGauge),
 		peerTagger:                      peerTagger,
 		outbox:                          make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:                      make(chan struct{}, 1),
@@ -201,8 +242,8 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, eng
 		sendDontHaves:                   true,
 		self:                            self,
 		peerLedger:                      newPeerLedger(),
-		pendingGauge:                    metrics.NewCtx(ctx, "pending_tasks", "Total number of pending tasks").Gauge(),
-		activeGauge:                     metrics.NewCtx(ctx, "active_tasks", "Total number of active tasks").Gauge(),
+		pendingGauge:                    pendingEngineGauge,
+		activeGauge:                     activeEngineGauge,
 	}
 	e.tagQueued = fmt.Sprintf(tagFormat, "queued", uuid.New().String())
 	e.tagUseful = fmt.Sprintf(tagFormat, "useful", uuid.New().String())
@@ -216,9 +257,16 @@ func newEngine(ctx context.Context, bs bstore.Blockstore, bstoreWorkerCount, eng
 }
 
 func (e *Engine) updateMetrics() {
-	stats := e.peerRequestQueue.Stats()
-	e.activeGauge.Set(float64(stats.NumActive))
-	e.pendingGauge.Set(float64(stats.NumPending))
+	if e.metricUpdateCounter%100 == 0 {
+		stats := e.peerRequestQueue.Stats()
+		e.activeGauge.Set(float64(stats.NumActive))
+		e.pendingGauge.Set(float64(stats.NumPending))
+	}
+	e.metricUpdateCounter++
+}
+
+func (e *Engine) NumOutstandingJobs() int {
+	return len(e.bsm.jobs)
 }
 
 // SetSendDontHaves indicates what to do when the engine receives a want-block
@@ -229,10 +277,6 @@ func (e *Engine) updateMetrics() {
 // those older versions for testing.
 func (e *Engine) SetSendDontHaves(send bool) {
 	e.sendDontHaves = send
-}
-
-func (e *Engine) NumOutstandingJobs() int {
-	return len(e.bsm.jobs)
 }
 
 // Starts the score ledger. Before start the function checks and,
