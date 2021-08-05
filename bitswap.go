@@ -48,14 +48,13 @@ const (
 	defaultProvSearchDelay = time.Second
 
 	// Number of concurrent workers in decision engine that process requests to the blockstore
-	defaulEngineBlockstoreWorkerCount = 128
-
-	// how many worker threads to start for decision engine task worker
-	defaultEngineTaskWorkerCount = 8
+	DefaultBitswapEngineBlockstoreWorkerCount = 128
 	// the total number of simultaneous threads sending outgoing messages
-	defaultTaskWorkerCount = 8
+	DefaultBitswapTaskWorkerCount = 8
+	// how many worker threads to start for decision engine task worker
+	DefaultBitswapEngineTaskWorkerCount = 8
 	// the total amount of bytes that a peer should have outstanding, it is utilized by the decision engine
-	defaultEngineMaxOutstandingBytesPerPeer = 1 << 20
+	DefaultBitswapMaxOutstandingBytesPerPeer = 1 << 20
 )
 
 var (
@@ -260,10 +259,10 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		provideEnabled:                   true,
 		provSearchDelay:                  defaultProvSearchDelay,
 		rebroadcastDelay:                 delay.Fixed(time.Minute),
-		engineBstoreWorkerCount:          defaulEngineBlockstoreWorkerCount,
-		engineTaskWorkerCount:            defaultEngineTaskWorkerCount,
-		taskWorkerCount:                  defaultTaskWorkerCount,
-		engineMaxOutstandingBytesPerPeer: defaultEngineMaxOutstandingBytesPerPeer,
+		engineBstoreWorkerCount:          DefaultBitswapEngineBlockstoreWorkerCount,
+		engineTaskWorkerCount:            DefaultBitswapEngineTaskWorkerCount,
+		taskWorkerCount:                  DefaultBitswapTaskWorkerCount,
+		engineMaxOutstandingBytesPerPeer: DefaultBitswapMaxOutstandingBytesPerPeer,
 		engineSetSendDontHaves:           true,
 		simulateDontHavesOnTimeout:       true,
 	}
