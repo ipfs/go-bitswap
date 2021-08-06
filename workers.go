@@ -6,6 +6,7 @@ import (
 	"time"
 
 	engine "github.com/ipfs/go-bitswap/internal/decision"
+	"github.com/ipfs/go-bitswap/internal/defaults"
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	cid "github.com/ipfs/go-cid"
 	process "github.com/jbenet/goprocess"
@@ -162,7 +163,7 @@ func (bs *Bitswap) provideWorker(px process.Process) {
 		log.Debugw("Bitswap.ProvideWorker.Start", "ID", wid, "cid", k)
 		defer log.Debugw("Bitswap.ProvideWorker.End", "ID", wid, "cid", k)
 
-		ctx, cancel := context.WithTimeout(ctx, provideTimeout) // timeout ctx
+		ctx, cancel := context.WithTimeout(ctx, defaults.ProvideTimeout) // timeout ctx
 		defer cancel()
 
 		if err := bs.network.Provide(ctx, k); err != nil {

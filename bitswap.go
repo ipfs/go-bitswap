@@ -15,6 +15,7 @@ import (
 	deciface "github.com/ipfs/go-bitswap/decision"
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	"github.com/ipfs/go-bitswap/internal/decision"
+	"github.com/ipfs/go-bitswap/internal/defaults"
 	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
 	bsmq "github.com/ipfs/go-bitswap/internal/messagequeue"
 	"github.com/ipfs/go-bitswap/internal/notifications"
@@ -41,21 +42,6 @@ var log = logging.Logger("bitswap")
 var sflog = log.Desugar()
 
 var _ exchange.SessionExchange = (*Bitswap)(nil)
-
-const (
-	// these requests take at _least_ two minutes at the moment.
-	provideTimeout         = time.Minute * 3
-	defaultProvSearchDelay = time.Second
-
-	// Number of concurrent workers in decision engine that process requests to the blockstore
-	DefaultBitswapEngineBlockstoreWorkerCount = 128
-	// the total number of simultaneous threads sending outgoing messages
-	DefaultBitswapTaskWorkerCount = 8
-	// how many worker threads to start for decision engine task worker
-	DefaultBitswapEngineTaskWorkerCount = 8
-	// the total amount of bytes that a peer should have outstanding, it is utilized by the decision engine
-	DefaultBitswapMaxOutstandingBytesPerPeer = 1 << 20
-)
 
 var (
 	// HasBlockBufferSize is the buffer size of the channel for new blocks
@@ -257,12 +243,12 @@ func New(parent context.Context, network bsnet.BitSwapNetwork,
 		sentHistogram:                    sentHistogram,
 		sendTimeHistogram:                sendTimeHistogram,
 		provideEnabled:                   true,
-		provSearchDelay:                  defaultProvSearchDelay,
+		provSearchDelay:                  defaults.ProvSearchDelay,
 		rebroadcastDelay:                 delay.Fixed(time.Minute),
-		engineBstoreWorkerCount:          DefaultBitswapEngineBlockstoreWorkerCount,
-		engineTaskWorkerCount:            DefaultBitswapEngineTaskWorkerCount,
-		taskWorkerCount:                  DefaultBitswapTaskWorkerCount,
-		engineMaxOutstandingBytesPerPeer: DefaultBitswapMaxOutstandingBytesPerPeer,
+		engineBstoreWorkerCount:          defaults.BitswapEngineBlockstoreWorkerCount,
+		engineTaskWorkerCount:            defaults.BitswapEngineTaskWorkerCount,
+		taskWorkerCount:                  defaults.BitswapTaskWorkerCount,
+		engineMaxOutstandingBytesPerPeer: defaults.BitswapMaxOutstandingBytesPerPeer,
 		engineSetSendDontHaves:           true,
 		simulateDontHavesOnTimeout:       true,
 	}

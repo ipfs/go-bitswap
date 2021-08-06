@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
+	"github.com/ipfs/go-bitswap/internal/defaults"
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -103,13 +104,10 @@ func newTestEngine(ctx context.Context, idStr string) engineSet {
 	return newTestEngineWithSampling(ctx, idStr, shortTerm, nil, clock.New())
 }
 
-var testEngineTaskWorkerCount = 10
-var testMaxOutstandingBytesPerPeer = 1 << 20
-
 func newTestEngineWithSampling(ctx context.Context, idStr string, peerSampleInterval time.Duration, sampleCh chan struct{}, clock clock.Clock) engineSet {
 	fpt := &fakePeerTagger{}
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, fpt, "localhost", 0, NewTestScoreLedger(peerSampleInterval, sampleCh, clock),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, NewTestScoreLedger(peerSampleInterval, sampleCh, clock),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	return engineSet{
@@ -198,7 +196,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
 	ctx := context.Background()
-	e := newEngine(ctx, blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	var wg sync.WaitGroup
@@ -528,7 +526,7 @@ func TestPartnerWantHaveWantBlockNonActive(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 	for i, testCase := range testCases {
@@ -686,7 +684,7 @@ func TestPartnerWantHaveWantBlockActive(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 
@@ -872,7 +870,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 	ctx := context.Background()
 	for i := 0; i < numRounds; i++ {
 		expected := make([][]string, 0, len(testcases))
-		e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+		e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 			testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 		e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 		for _, testcase := range testcases {
@@ -899,7 +897,7 @@ func TestSendReceivedBlocksToPeersThatWantThem(t *testing.T) {
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
 	ctx := context.Background()
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 
@@ -945,7 +943,7 @@ func TestSendDontHave(t *testing.T) {
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
 	ctx := context.Background()
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 
@@ -1011,7 +1009,7 @@ func TestWantlistForPeer(t *testing.T) {
 	otherPeer := libp2ptest.RandPeerIDFatal(t)
 
 	ctx := context.Background()
-	e := newEngine(ctx, bs, 4, testEngineTaskWorkerCount, testMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
+	e := newEngine(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, &fakePeerTagger{}, "localhost", 0, NewTestScoreLedger(shortTerm, nil, clock.New()),
 		testPendingEngineGauge, testActiveEngineGauge, testPendingBlocksGauge, testActiveBlocksGauge)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 
