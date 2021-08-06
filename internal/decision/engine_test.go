@@ -15,6 +15,8 @@ import (
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
+	bstore "github.com/ipfs/go-ipfs-blockstore"
+	"github.com/ipfs/go-metrics-interface"
 
 	blocks "github.com/ipfs/go-block-format"
 	ds "github.com/ipfs/go-datastore"
@@ -181,6 +183,37 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 		}
 	}
 	return false
+}
+
+func newEngineForTesting(
+	ctx context.Context,
+	bs bstore.Blockstore,
+	bstoreWorkerCount,
+	engineTaskWorkerCount, maxOutstandingBytesPerPeer int,
+	peerTagger PeerTagger,
+	self peer.ID,
+	maxReplaceSize int,
+	scoreLedger ScoreLedger,
+) *Engine {
+	testPendingEngineGauge := metrics.NewCtx(ctx, "pending_tasks", "Total number of pending tasks").Gauge()
+	testActiveEngineGauge := metrics.NewCtx(ctx, "active_tasks", "Total number of active tasks").Gauge()
+	testPendingBlocksGauge := metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge()
+	testActiveBlocksGauge := metrics.NewCtx(ctx, "active_block_tasks", "Total number of active blockstore tasks").Gauge()
+	return newEngine(
+		ctx,
+		bs,
+		bstoreWorkerCount,
+		engineTaskWorkerCount,
+		maxOutstandingBytesPerPeer,
+		peerTagger,
+		self,
+		maxReplaceSize,
+		scoreLedger,
+		testPendingEngineGauge,
+		testActiveEngineGauge,
+		testPendingBlocksGauge,
+		testActiveBlocksGauge,
+	)
 }
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {

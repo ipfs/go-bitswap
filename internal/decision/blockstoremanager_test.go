@@ -9,6 +9,8 @@ import (
 
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
+	bstore "github.com/ipfs/go-ipfs-blockstore"
+	"github.com/ipfs/go-metrics-interface"
 
 	blocks "github.com/ipfs/go-block-format"
 	ds "github.com/ipfs/go-datastore"
@@ -18,6 +20,16 @@ import (
 	delay "github.com/ipfs/go-ipfs-delay"
 	process "github.com/jbenet/goprocess"
 )
+
+func newBlockstoreManagerForTesting(
+	ctx context.Context,
+	bs bstore.Blockstore,
+	workerCount int,
+) *blockstoreManager {
+	testPendingBlocksGauge := metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge()
+	testActiveBlocksGauge := metrics.NewCtx(ctx, "active_block_tasks", "Total number of active blockstore tasks").Gauge()
+	return newBlockstoreManager(ctx, bs, workerCount, testPendingBlocksGauge, testActiveBlocksGauge)
+}
 
 func TestBlockstoreManagerNotFoundKey(t *testing.T) {
 	ctx := context.Background()
