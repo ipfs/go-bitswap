@@ -173,6 +173,7 @@ type Engine struct {
 	activeGauge metrics.Gauge
 
 	// used to ensure metrics are reported each fixed number of operation
+	metricsLock         sync.Mutex
 	metricUpdateCounter int
 }
 
@@ -287,12 +288,16 @@ func newEngine(
 }
 
 func (e *Engine) updateMetrics() {
-	if e.metricUpdateCounter%100 == 0 {
+	e.metricsLock.Lock()
+	c := e.metricUpdateCounter
+	e.metricUpdateCounter++
+	e.metricsLock.Unlock()
+
+	if c%100 == 0 {
 		stats := e.peerRequestQueue.Stats()
 		e.activeGauge.Set(float64(stats.NumActive))
 		e.pendingGauge.Set(float64(stats.NumPending))
 	}
-	e.metricUpdateCounter++
 }
 
 // SetSendDontHaves indicates what to do when the engine receives a want-block
