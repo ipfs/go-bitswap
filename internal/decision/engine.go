@@ -265,10 +265,6 @@ func (e *Engine) updateMetrics() {
 	e.metricUpdateCounter++
 }
 
-func (e *Engine) NumOutstandingJobs() int {
-	return len(e.bsm.jobs)
-}
-
 // SetSendDontHaves indicates what to do when the engine receives a want-block
 // for a block that is not in the blockstore. Either
 // - Send a DONT_HAVE message
