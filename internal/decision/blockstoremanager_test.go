@@ -9,7 +9,6 @@ import (
 
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	cid "github.com/ipfs/go-cid"
-	bstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-metrics-interface"
 
 	blocks "github.com/ipfs/go-block-format"
@@ -23,7 +22,7 @@ import (
 
 func newBlockstoreManagerForTesting(
 	ctx context.Context,
-	bs bstore.Blockstore,
+	bs blockstore.Blockstore,
 	workerCount int,
 ) *blockstoreManager {
 	testPendingBlocksGauge := metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge()

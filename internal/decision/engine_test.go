@@ -15,7 +15,6 @@ import (
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	message "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
-	bstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-metrics-interface"
 
 	blocks "github.com/ipfs/go-block-format"
@@ -187,7 +186,7 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func newEngineForTesting(
 	ctx context.Context,
-	bs bstore.Blockstore,
+	bs blockstore.Blockstore,
 	bstoreWorkerCount,
 	engineTaskWorkerCount, maxOutstandingBytesPerPeer int,
 	peerTagger PeerTagger,
