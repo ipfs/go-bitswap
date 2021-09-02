@@ -305,7 +305,7 @@ func TestSessionFindMorePeers(t *testing.T) {
 			}
 		}
 	case <-ctx.Done():
-		t.Skip("Never rebroadcast want list")
+		t.Skip("flaky test: Never rebroadcast want list")
 	}
 
 	// The session should eventually try to find more peers
