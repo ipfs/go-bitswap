@@ -1,16 +1,15 @@
 package sessioninterestmanager
 
 import (
-	"sync"
-
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/sasha-s/go-deadlock"
 
 	cid "github.com/ipfs/go-cid"
 )
 
 // SessionInterestManager records the CIDs that each session is interested in.
 type SessionInterestManager struct {
-	lk    sync.RWMutex
+	lk    deadlock.RWMutex
 	wants map[cid.Cid]map[uint64]bool
 }
 

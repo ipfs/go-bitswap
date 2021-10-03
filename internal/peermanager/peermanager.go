@@ -2,10 +2,10 @@ package peermanager
 
 import (
 	"context"
-	"sync"
 
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-metrics-interface"
+	"github.com/sasha-s/go-deadlock"
 
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
@@ -34,7 +34,7 @@ type PeerQueueFactory func(ctx context.Context, p peer.ID) PeerQueue
 // PeerManager manages a pool of peers and sends messages to peers in the pool.
 type PeerManager struct {
 	// sync access to peerQueues and peerWantManager
-	pqLk sync.RWMutex
+	pqLk deadlock.RWMutex
 	// peerQueues -- interact through internal utility functions get/set/remove/iterate
 	peerQueues map[peer.ID]PeerQueue
 	pwm        *peerWantManager
@@ -42,7 +42,7 @@ type PeerManager struct {
 	createPeerQueue PeerQueueFactory
 	ctx             context.Context
 
-	psLk         sync.RWMutex
+	psLk         deadlock.RWMutex
 	sessions     map[uint64]Session
 	peerSessions map[peer.ID]map[uint64]struct{}
 

@@ -2,9 +2,9 @@ package sessionpeermanager
 
 import (
 	"fmt"
-	"sync"
 
 	logging "github.com/ipfs/go-log"
+	"github.com/sasha-s/go-deadlock"
 
 	peer "github.com/libp2p/go-libp2p-core/peer"
 )
@@ -32,7 +32,7 @@ type SessionPeerManager struct {
 	tag    string
 
 	id              uint64
-	plk             sync.RWMutex
+	plk             deadlock.RWMutex
 	peers           map[peer.ID]struct{}
 	peersDiscovered bool
 }

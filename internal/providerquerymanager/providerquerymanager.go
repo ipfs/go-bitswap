@@ -3,12 +3,12 @@ package providerquerymanager
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/sasha-s/go-deadlock"
 )
 
 var log = logging.Logger("bitswap")
@@ -77,7 +77,7 @@ type ProviderQueryManager struct {
 	incomingFindProviderRequests chan *findProviderRequest
 
 	findProviderTimeout time.Duration
-	timeoutMutex        sync.RWMutex
+	timeoutMutex        deadlock.RWMutex
 
 	// do not touch outside the run loop
 	inProgressRequestStatuses map[cid.Cid]*inProgressRequestStatus
@@ -232,7 +232,7 @@ func (pqm *ProviderQueryManager) findProviderWorker() {
 			findProviderCtx, cancel := context.WithTimeout(fpr.ctx, pqm.findProviderTimeout)
 			pqm.timeoutMutex.RUnlock()
 			providers := pqm.network.FindProvidersAsync(findProviderCtx, k, maxProviders)
-			wg := &sync.WaitGroup{}
+			wg := &deadlock.WaitGroup{}
 			for p := range providers {
 				wg.Add(1)
 				go func(p peer.ID) {

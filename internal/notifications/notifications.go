@@ -2,11 +2,11 @@ package notifications
 
 import (
 	"context"
-	"sync"
 
 	pubsub "github.com/cskr/pubsub"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
+	"github.com/sasha-s/go-deadlock"
 )
 
 const bufferSize = 16
@@ -29,7 +29,7 @@ func New() PubSub {
 }
 
 type impl struct {
-	lk      sync.RWMutex
+	lk      deadlock.RWMutex
 	wrapped pubsub.PubSub
 
 	closed chan struct{}

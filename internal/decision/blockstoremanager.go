@@ -3,13 +3,13 @@ package decision
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-metrics-interface"
 	process "github.com/jbenet/goprocess"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // blockstoreManager maintains a pool of workers that make requests to the blockstore.
@@ -83,7 +83,7 @@ func (bsm *blockstoreManager) getBlockSizes(ctx context.Context, ks []cid.Cid) (
 		return res, nil
 	}
 
-	var lk sync.Mutex
+	var lk deadlock.Mutex
 	return res, bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
 		size, err := bsm.bs.GetSize(c)
 		if err != nil {
@@ -105,7 +105,7 @@ func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) (map[
 		return res, nil
 	}
 
-	var lk sync.Mutex
+	var lk deadlock.Mutex
 	return res, bsm.jobPerKey(ctx, ks, func(c cid.Cid) {
 		blk, err := bsm.bs.Get(c)
 		if err != nil {
@@ -123,7 +123,7 @@ func (bsm *blockstoreManager) getBlocks(ctx context.Context, ks []cid.Cid) (map[
 
 func (bsm *blockstoreManager) jobPerKey(ctx context.Context, ks []cid.Cid, jobFn func(c cid.Cid)) error {
 	var err error
-	wg := sync.WaitGroup{}
+	wg := deadlock.WaitGroup{}
 	for _, k := range ks {
 		c := k
 		wg.Add(1)

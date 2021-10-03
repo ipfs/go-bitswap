@@ -1,9 +1,8 @@
 package network
 
 import (
-	"sync"
-
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/sasha-s/go-deadlock"
 )
 
 type ConnectionListener interface {
@@ -13,7 +12,7 @@ type ConnectionListener interface {
 
 type connectEventManager struct {
 	connListener ConnectionListener
-	lk           sync.RWMutex
+	lk           deadlock.RWMutex
 	conns        map[peer.ID]*connState
 }
 

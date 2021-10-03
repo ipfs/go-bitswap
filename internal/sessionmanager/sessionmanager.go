@@ -2,11 +2,11 @@ package sessionmanager
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
+	"github.com/sasha-s/go-deadlock"
 
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
@@ -53,11 +53,11 @@ type SessionManager struct {
 	notif                  notifications.PubSub
 
 	// Sessions
-	sessLk   sync.RWMutex
+	sessLk   deadlock.RWMutex
 	sessions map[uint64]Session
 
 	// Session Index
-	sessIDLk sync.Mutex
+	sessIDLk deadlock.Mutex
 	sessID   uint64
 
 	self peer.ID

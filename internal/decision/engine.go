@@ -4,10 +4,10 @@ package decision
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sasha-s/go-deadlock"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	pb "github.com/ipfs/go-bitswap/message/pb"
@@ -142,7 +142,7 @@ type Engine struct {
 
 	tagQueued, tagUseful string
 
-	lock sync.RWMutex // protects the fields immediately below
+	lock deadlock.RWMutex // protects the fields immediately below
 
 	// ledgerMap lists block-related Ledgers by their Partner key.
 	ledgerMap map[peer.ID]*ledger
@@ -155,7 +155,7 @@ type Engine struct {
 
 	ticker *time.Ticker
 
-	taskWorkerLock  sync.Mutex
+	taskWorkerLock  deadlock.Mutex
 	taskWorkerCount int
 
 	// maxBlockSizeReplaceHasWithBlock is the maximum size of the block in
@@ -173,7 +173,7 @@ type Engine struct {
 	activeGauge metrics.Gauge
 
 	// used to ensure metrics are reported each fixed number of operation
-	metricsLock         sync.Mutex
+	metricsLock         deadlock.Mutex
 	metricUpdateCounter int
 }
 

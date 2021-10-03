@@ -1,11 +1,11 @@
 package decision
 
 import (
-	"sync"
 	"time"
 
 	"github.com/benbjohnson/clock"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/sasha-s/go-deadlock"
 )
 
 const (
@@ -55,7 +55,7 @@ type scoreledger struct {
 	exchangeCount uint64
 
 	// the record lock
-	lock sync.RWMutex
+	lock deadlock.RWMutex
 
 	clock clock.Clock
 }
@@ -110,7 +110,7 @@ type DefaultScoreLedger struct {
 	// is closed on Close
 	closing chan struct{}
 	// protects the fields immediatly below
-	lock sync.RWMutex
+	lock deadlock.RWMutex
 	// ledgerMap lists score ledgers by their partner key.
 	ledgerMap map[peer.ID]*scoreledger
 	// how frequently the engine should sample peer usefulness

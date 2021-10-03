@@ -2,12 +2,12 @@ package messagequeue
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/benbjohnson/clock"
 	cid "github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+	"github.com/sasha-s/go-deadlock"
 )
 
 const (
@@ -73,7 +73,7 @@ type dontHaveTimeoutMgr struct {
 	maxExpectedWantProcessTime time.Duration
 
 	// All variables below here must be protected by the lock
-	lk sync.RWMutex
+	lk deadlock.RWMutex
 	// has the timeout manager started
 	started bool
 	// wants that are active (waiting for a response or timeout)

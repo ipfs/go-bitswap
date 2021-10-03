@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bsnet "github.com/ipfs/go-bitswap/network"
+	"github.com/sasha-s/go-deadlock"
 
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
@@ -59,7 +59,7 @@ func RateLimitedVirtualNetwork(rs mockrouting.Server, d delay.D, rateLimitGenera
 }
 
 type network struct {
-	mu                 sync.Mutex
+	mu                 deadlock.Mutex
 	latencies          map[peer.ID]map[peer.ID]time.Duration
 	rateLimiters       map[peer.ID]map[peer.ID]*mocknet.RateLimiter
 	clients            map[peer.ID]*receiverQueue
@@ -83,7 +83,7 @@ type receiverQueue struct {
 	receiver *networkClient
 	queue    []*message
 	active   bool
-	lk       sync.Mutex
+	lk       deadlock.Mutex
 }
 
 func (n *network) Adapter(p tnet.Identity, opts ...bsnet.NetOpt) bsnet.BitSwapNetwork {

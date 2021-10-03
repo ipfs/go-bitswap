@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	"sync"
 	"time"
 
 	delay "github.com/ipfs/go-ipfs-delay"
+	"github.com/sasha-s/go-deadlock"
 
 	deciface "github.com/ipfs/go-bitswap/decision"
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
@@ -57,6 +57,12 @@ var (
 
 	timeMetricsBuckets = []float64{1, 10, 30, 60, 90, 120, 600}
 )
+
+func init() {
+	deadlock.Opts.OnPotentialDeadlock = func() {}
+	deadlock.Opts.DeadlockTimeout = 1 * time.Minute
+	deadlock.Opts.MaxMapSize = 1024 * 640
+}
 
 // Option defines the functional option type that can be used to configure
 // bitswap instances
@@ -325,7 +331,7 @@ type Bitswap struct {
 	process process.Process
 
 	// Counters for various statistics
-	counterLk sync.Mutex
+	counterLk deadlock.Mutex
 	counters  *counters
 
 	// Metrics interface metrics
@@ -585,7 +591,7 @@ func (bs *Bitswap) updateReceiveCounters(blocks []blocks.Block) {
 func (bs *Bitswap) blockstoreHas(blks []blocks.Block) []bool {
 	res := make([]bool, len(blks))
 
-	wg := sync.WaitGroup{}
+	wg := deadlock.WaitGroup{}
 	for i, block := range blks {
 		wg.Add(1)
 		go func(i int, b blocks.Block) {

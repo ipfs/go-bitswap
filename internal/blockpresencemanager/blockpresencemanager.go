@@ -1,16 +1,15 @@
 package blockpresencemanager
 
 import (
-	"sync"
-
 	cid "github.com/ipfs/go-cid"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // BlockPresenceManager keeps track of which peers have indicated that they
 // have or explicitly don't have a block
 type BlockPresenceManager struct {
-	sync.RWMutex
+	deadlock.RWMutex
 	presence map[cid.Cid]map[peer.ID]bool
 }
 

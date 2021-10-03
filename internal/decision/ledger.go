@@ -1,10 +1,9 @@
 package decision
 
 import (
-	"sync"
-
 	pb "github.com/ipfs/go-bitswap/message/pb"
 	wl "github.com/ipfs/go-bitswap/wantlist"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -25,7 +24,7 @@ type ledger struct {
 	// wantList is a (bounded, small) set of keys that Partner desires.
 	wantList *wl.Wantlist
 
-	lk sync.RWMutex
+	lk deadlock.RWMutex
 }
 
 func (l *ledger) Wants(k cid.Cid, priority int32, wantType pb.Message_Wantlist_WantType) {

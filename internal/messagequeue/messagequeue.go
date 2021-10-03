@@ -3,7 +3,6 @@ package messagequeue
 import (
 	"context"
 	"math"
-	"sync"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -15,6 +14,7 @@ import (
 	logging "github.com/ipfs/go-log"
 	peer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+	"github.com/sasha-s/go-deadlock"
 	"go.uber.org/zap"
 )
 
@@ -83,7 +83,7 @@ type MessageQueue struct {
 	responses chan []cid.Cid
 
 	// Take lock whenever any of these variables are modified
-	wllock    sync.Mutex
+	wllock    deadlock.Mutex
 	bcstWants recallWantlist
 	peerWants recallWantlist
 	cancels   *cid.Set
@@ -91,7 +91,7 @@ type MessageQueue struct {
 
 	// Dont touch any of these variables outside of run loop
 	sender                bsnet.MessageSender
-	rebroadcastIntervalLk sync.RWMutex
+	rebroadcastIntervalLk deadlock.RWMutex
 	rebroadcastInterval   time.Duration
 	rebroadcastTimer      *clock.Timer
 	// For performance reasons we just clear out the fields of the message
