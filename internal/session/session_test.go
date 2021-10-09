@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/internal/peermanager"
@@ -65,6 +66,7 @@ func newFakePeerTagger() *fakePeerTagger {
 type fakePeerTagger struct {
 	lk             sync.Mutex
 	protectedPeers map[peer.ID]map[string]struct{}
+	newProtections chan peer.ID
 }
 
 func (fpt *fakePeerTagger) TagPeer(p peer.ID, tag string, val int) {}
@@ -72,7 +74,6 @@ func (fpt *fakePeerTagger) UntagPeer(p peer.ID, tag string)        {}
 
 func (fpt *fakePeerTagger) Protect(p peer.ID, tag string) {
 	fpt.lk.Lock()
-	defer fpt.lk.Unlock()
 
 	tags, ok := fpt.protectedPeers[p]
 	if !ok {
@@ -80,6 +81,10 @@ func (fpt *fakePeerTagger) Protect(p peer.ID, tag string) {
 		fpt.protectedPeers[p] = tags
 	}
 	tags[tag] = struct{}{}
+	fpt.lk.Unlock()
+	if fpt.newProtections != nil {
+		fpt.newProtections <- p
+	}
 }
 
 func (fpt *fakePeerTagger) Unprotect(p peer.ID, tag string) bool {
@@ -150,7 +155,13 @@ func (pm *fakePeerManager) SendCancels(ctx context.Context, cancels []cid.Cid) {
 func TestSessionGetBlocks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	fpm := newFakePeerManager()
-	fspm := newFakeSessionPeerManager()
+	pt := newFakePeerTagger()
+	pt.newProtections = make(chan peer.ID, 1)
+	peersAdded := make(chan peer.ID, 1)
+	onPeerAdded := func(p peer.ID) {
+		peersAdded <- p
+	}
+	fspm := bsspm.NewWithCallBack(1, pt, onPeerAdded)
 	fpf := newFakeProviderFinder()
 	sim := bssim.New()
 	bpm := bsbpm.New()
@@ -158,7 +169,8 @@ func TestSessionGetBlocks(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
-	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	clock := clock.NewMock()
+	session := newWithClock(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "", clock)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
 	var cids []cid.Cid
@@ -191,9 +203,12 @@ func TestSessionGetBlocks(t *testing.T) {
 	for i, p := range peers {
 		blk := blks[testutil.IndexOf(blks, receivedWantReq.cids[i])]
 		session.ReceiveFrom(p, []cid.Cid{}, []cid.Cid{blk.Cid()}, []cid.Cid{})
+		select {
+		case <-peersAdded:
+		case <-ctx.Done():
+			t.Fatal("did not protect peer")
+		}
 	}
-
-	time.Sleep(10 * time.Millisecond)
 
 	// Verify new peers were recorded
 	if !testutil.MatchPeersIgnoreOrder(fspm.Peers(), peers) {
@@ -209,8 +224,6 @@ func TestSessionGetBlocks(t *testing.T) {
 	// Simulate receiving DONT_HAVE for a CID
 	session.ReceiveFrom(peers[0], []cid.Cid{}, []cid.Cid{}, []cid.Cid{blks[0].Cid()})
 
-	time.Sleep(10 * time.Millisecond)
-
 	// Verify session still wants received blocks
 	_, unwanted = sim.SplitWantedUnwanted(blks)
 	if len(unwanted) > 0 {
@@ -220,7 +233,11 @@ func TestSessionGetBlocks(t *testing.T) {
 	// Simulate receiving block for a CID
 	session.ReceiveFrom(peers[1], []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{})
 
-	time.Sleep(10 * time.Millisecond)
+	select {
+	case <-pt.newProtections:
+	case <-ctx.Done():
+		t.Fatal("should have protected new peer but did not")
+	}
 
 	// Verify session no longer wants received block
 	wanted, unwanted := sim.SplitWantedUnwanted(blks)
@@ -234,7 +251,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	// Shut down session
 	cancel()
 
-	time.Sleep(10 * time.Millisecond)
+	clock.Add(10 * time.Millisecond)
 
 	// Verify session was removed
 	if !sm.removeSessionCalled() {
@@ -254,7 +271,8 @@ func TestSessionFindMorePeers(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
-	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	clock := clock.NewMock()
+	session := newWithClock(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "", clock)
 	session.SetBaseTickDelay(200 * time.Microsecond)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit * 2)
@@ -275,7 +293,7 @@ func TestSessionFindMorePeers(t *testing.T) {
 	}
 
 	// receive a block to trigger a tick reset
-	time.Sleep(20 * time.Millisecond) // need to make sure some latency registers
+	clock.Add(20 * time.Millisecond) // need to make sure some latency registers
 	// or there will be no tick set -- time precision on Windows in go is in the
 	// millisecond range
 	p := testutil.GeneratePeers(1)[0]
@@ -283,6 +301,8 @@ func TestSessionFindMorePeers(t *testing.T) {
 	blk := blks[0]
 	session.ReceiveFrom(p, []cid.Cid{blk.Cid()}, []cid.Cid{}, []cid.Cid{})
 
+	clock.Add(1 * time.Microsecond)
+	clock.Add(80 * time.Millisecond)
 	// The session should now time out waiting for a response and broadcast
 	// want-haves again
 	select {
@@ -290,6 +310,8 @@ func TestSessionFindMorePeers(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Did not make second want request ")
 	}
+
+	clock.Add(80 * time.Millisecond)
 
 	// The session should keep broadcasting periodically until it receives a response
 	select {
@@ -329,7 +351,8 @@ func TestSessionOnPeersExhausted(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
-	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	clock := clock.NewMock()
+	session := newWithClock(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "", clock)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(broadcastLiveWantsLimit + 5)
 	var cids []cid.Cid
@@ -374,14 +397,15 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
-	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, 10*time.Millisecond, delay.Fixed(100*time.Millisecond), "")
+	clock := clock.NewMock()
+	session := newWithClock(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, 10*time.Millisecond, delay.Fixed(100*time.Millisecond), "", clock)
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(4)
 	var cids []cid.Cid
 	for _, block := range blks {
 		cids = append(cids, block.Cid())
 	}
-	startTick := time.Now()
+	startTick := clock.Now()
 	_, err := session.GetBlocks(ctx, cids)
 	if err != nil {
 		t.Fatal("error getting blocks")
@@ -394,6 +418,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 		t.Fatal("Did not make first want request ")
 	}
 
+	clock.Add(10 * time.Millisecond)
 	// Verify a broadcast was made
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
@@ -413,7 +438,9 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("Did not find more peers")
 	}
-	firstTickLength := time.Since(startTick)
+	firstTickLength := clock.Since(startTick)
+
+	clock.Add(10 * time.Millisecond)
 
 	// Wait for another broadcast to occur
 	select {
@@ -426,7 +453,14 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	}
 
 	// Wait for another broadcast to occur
-	startTick = time.Now()
+	startTick = clock.Now()
+	clock.Add(10 * time.Millisecond)
+	select {
+	case <-fpm.wantReqs:
+		t.Fatal("Should increase tick length")
+	default:
+	}
+	clock.Add(10 * time.Millisecond)
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
 		if len(receivedWantReq.cids) < len(cids) {
@@ -437,13 +471,26 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	}
 
 	// Tick should take longer
-	consecutiveTickLength := time.Since(startTick)
+	consecutiveTickLength := clock.Since(startTick)
 	if firstTickLength > consecutiveTickLength {
 		t.Fatal("Should have increased tick length after first consecutive tick")
 	}
 
 	// Wait for another broadcast to occur
-	startTick = time.Now()
+	startTick = clock.Now()
+	clock.Add(10 * time.Millisecond)
+	select {
+	case <-fpm.wantReqs:
+		t.Fatal("Should increase tick length")
+	default:
+	}
+	clock.Add(10 * time.Millisecond)
+	select {
+	case <-fpm.wantReqs:
+		t.Fatal("Should increase tick length")
+	default:
+	}
+	clock.Add(10 * time.Millisecond)
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
 		if len(receivedWantReq.cids) < len(cids) {
@@ -454,7 +501,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	}
 
 	// Tick should take longer
-	secondConsecutiveTickLength := time.Since(startTick)
+	secondConsecutiveTickLength := clock.Since(startTick)
 	if consecutiveTickLength > secondConsecutiveTickLength {
 		t.Fatal("Should have increased tick length after first consecutive tick")
 	}
@@ -466,6 +513,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	default:
 	}
 
+	clock.Add(40 * time.Millisecond)
 	// Wait for rebroadcast to occur
 	select {
 	case k := <-fpf.findMorePeersRequested:
@@ -487,10 +535,11 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
+	clock := clock.NewMock()
 
 	// Create a new session with its own context
 	sessctx, sesscancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	session := New(sessctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	session := newWithClock(sessctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "", clock)
 
 	timerCtx, timerCancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer timerCancel()
@@ -519,7 +568,7 @@ func TestSessionCtxCancelClosesGetBlocksChannel(t *testing.T) {
 		t.Fatal("expected channel to be closed before timeout")
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	clock.Add(10 * time.Millisecond)
 
 	// Expect RemoveSession to be called
 	if !sm.removeSessionCalled() {
@@ -537,16 +586,17 @@ func TestSessionOnShutdownCalled(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
+	clock := clock.NewMock()
 
 	// Create a new session with its own context
 	sessctx, sesscancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer sesscancel()
-	session := New(sessctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "")
+	session := newWithClock(sessctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, time.Second, delay.Fixed(time.Minute), "", clock)
 
 	// Shutdown the session
 	session.Shutdown()
 
-	time.Sleep(10 * time.Millisecond)
+	clock.Add(10 * time.Millisecond)
 
 	// Expect RemoveSession to be called
 	if !sm.removeSessionCalled() {

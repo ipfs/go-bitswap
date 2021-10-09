@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	bsbpm "github.com/ipfs/go-bitswap/internal/blockpresencemanager"
 	bsgetter "github.com/ipfs/go-bitswap/internal/getter"
 	notifications "github.com/ipfs/go-bitswap/internal/notifications"
@@ -119,8 +120,8 @@ type Session struct {
 	tickDelayReqs chan time.Duration
 
 	// do not touch outside run loop
-	idleTick            *time.Timer
-	periodicSearchTimer *time.Timer
+	idleTick            *clock.Timer
+	periodicSearchTimer *clock.Timer
 	baseTickDelay       time.Duration
 	consecutiveTicks    int
 	initialSearchDelay  time.Duration
@@ -129,8 +130,8 @@ type Session struct {
 	notif notifications.PubSub
 	uuid  logging.Loggable
 	id    uint64
-
-	self peer.ID
+	clock clock.Clock
+	self  peer.ID
 }
 
 // New creates a new bitswap session whose lifetime is bounded by the
@@ -148,6 +149,25 @@ func New(
 	initialSearchDelay time.Duration,
 	periodicSearchDelay delay.D,
 	self peer.ID) *Session {
+	return newWithClock(ctx, sm, id, sprm, providerFinder, sim, pm, bpm, notif, initialSearchDelay, periodicSearchDelay, self, clock.New())
+}
+
+// New creates a new bitswap session whose lifetime is bounded by the
+// given context.
+func newWithClock(
+	ctx context.Context,
+	sm SessionManager,
+	id uint64,
+	sprm SessionPeerManager,
+	providerFinder ProviderFinder,
+	sim *bssim.SessionInterestManager,
+	pm PeerManager,
+	bpm *bsbpm.BlockPresenceManager,
+	notif notifications.PubSub,
+	initialSearchDelay time.Duration,
+	periodicSearchDelay delay.D,
+	self peer.ID,
+	clock clock.Clock) *Session {
 
 	ctx, cancel := context.WithCancel(ctx)
 	s := &Session{
@@ -168,6 +188,7 @@ func New(
 		id:                  id,
 		initialSearchDelay:  initialSearchDelay,
 		periodicSearchDelay: periodicSearchDelay,
+		clock:               clock,
 		self:                self,
 	}
 	s.sws = newSessionWantSender(id, pm, sprm, sm, bpm, s.onWantsSent, s.onPeersExhausted)
@@ -296,8 +317,8 @@ func (s *Session) nonBlockingEnqueue(o op) {
 func (s *Session) run(ctx context.Context) {
 	go s.sws.Run()
 
-	s.idleTick = time.NewTimer(s.initialSearchDelay)
-	s.periodicSearchTimer = time.NewTimer(s.periodicSearchDelay.NextWaitTime())
+	s.idleTick = s.clock.Timer(s.initialSearchDelay)
+	s.periodicSearchTimer = s.clock.Timer(s.periodicSearchDelay.NextWaitTime())
 	for {
 		select {
 		case oper := <-s.incoming:

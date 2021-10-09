@@ -35,6 +35,7 @@ type SessionPeerManager struct {
 	plk             sync.RWMutex
 	peers           map[peer.ID]struct{}
 	peersDiscovered bool
+	onPeerAdded     func(peer.ID)
 }
 
 // New creates a new SessionPeerManager
@@ -47,14 +48,25 @@ func New(id uint64, tagger PeerTagger) *SessionPeerManager {
 	}
 }
 
+// New creates a new SessionPeerManager
+func NewWithCallBack(id uint64, tagger PeerTagger, onPeerAdded func(peer.ID)) *SessionPeerManager {
+	return &SessionPeerManager{
+		id:          id,
+		tag:         fmt.Sprint("bs-ses-", id),
+		tagger:      tagger,
+		peers:       make(map[peer.ID]struct{}),
+		onPeerAdded: onPeerAdded,
+	}
+}
+
 // AddPeer adds the peer to the SessionPeerManager.
 // Returns true if the peer is a new peer, false if it already existed.
 func (spm *SessionPeerManager) AddPeer(p peer.ID) bool {
 	spm.plk.Lock()
-	defer spm.plk.Unlock()
 
 	// Check if the peer is a new peer
 	if _, ok := spm.peers[p]; ok {
+		spm.plk.Unlock()
 		return false
 	}
 
@@ -66,6 +78,10 @@ func (spm *SessionPeerManager) AddPeer(p peer.ID) bool {
 	spm.tagger.TagPeer(p, spm.tag, sessionPeerTagValue)
 
 	log.Debugw("Bitswap: Added peer to session", "session", spm.id, "peer", p, "peerCount", len(spm.peers))
+	spm.plk.Unlock()
+	if spm.onPeerAdded != nil {
+		spm.onPeerAdded(p)
+	}
 	return true
 }
 
