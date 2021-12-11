@@ -55,7 +55,7 @@ var (
 	// the 1<<18+15 is to observe old file chunks that are 1<<18 + 14 in size
 	metricsBuckets = []float64{1 << 6, 1 << 10, 1 << 14, 1 << 18, 1<<18 + 15, 1 << 22}
 
-	timeMetricsBuckets = []float64{1, 10, 30, 60, 90, 120, 600}
+	timeMetricsBuckets = []float64{0.001, 0.01, 0.05, 0.1, 0.2, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 15, 30, 60, 90, 120, 600}
 )
 
 // Option defines the functional option type that can be used to configure
