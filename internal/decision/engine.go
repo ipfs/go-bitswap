@@ -180,6 +180,8 @@ type Engine struct {
 	metricUpdateCounter int
 
 	taskComparator TaskComparator
+
+	peerBlockRequestFilter PeerBlockRequestFilter
 }
 
 // TaskInfo represents the details of a request from a peer.
@@ -201,11 +203,21 @@ type TaskInfo struct {
 // It should return true if task 'ta' has higher priority than task 'tb'
 type TaskComparator func(ta, tb *TaskInfo) bool
 
+// PeerBlockRequestFilter is used to accept / deny requests for a CID coming from a PeerID
+// It should return true if the request should be fullfilled.
+type PeerBlockRequestFilter func(p peer.ID, c cid.Cid) bool
+
 type Option func(*Engine)
 
 func WithTaskComparator(comparator TaskComparator) Option {
 	return func(e *Engine) {
 		e.taskComparator = comparator
+	}
+}
+
+func WithPeerBlockRequestFilter(pbrf PeerBlockRequestFilter) Option {
+	return func(e *Engine) {
+		e.peerBlockRequestFilter = pbrf
 	}
 }
 
@@ -647,8 +659,14 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		// Add each want-have / want-block to the ledger
 		l.Wants(c, entry.Priority, entry.WantType)
 
-		// If the block was not found
-		if !found {
+		// Check if the peer is allowed to retrieve this block
+		passFilter := true
+		if e.peerBlockRequestFilter != nil {
+			passFilter = e.peerBlockRequestFilter(p, c)
+		}
+
+		// If the block was not found or the peer doesn't pass the policy
+		if !found || !passFilter {
 			log.Debugw("Bitswap engine: block not found", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
 
 			// Only add the task to the queue if the requester wants a DONT_HAVE

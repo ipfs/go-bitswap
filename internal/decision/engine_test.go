@@ -1112,6 +1112,91 @@ func TestTaskComparator(t *testing.T) {
 	}
 }
 
+func TestPeerBlockFilter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Generate a few keys
+	keys := []string{"a", "b", "c"}
+	cids := make(map[cid.Cid]int)
+	blks := make([]blocks.Block, 0, len(keys))
+	for i, letter := range keys {
+		block := blocks.NewBlock([]byte(letter))
+		blks = append(blks, block)
+		cids[block.Cid()] = i
+	}
+
+	// Generate a few peers
+	peerIDs := make([]peer.ID, len(keys))
+	for _, i := range cids {
+		peerID := libp2ptest.RandPeerIDFatal(t)
+		peerIDs[i] = peerID
+	}
+
+	// Setup the peer
+	fpt := &fakePeerTagger{}
+	sl := NewTestScoreLedger(shortTerm, nil, clock.New())
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	if err := bs.PutMany(ctx, blks); err != nil {
+		t.Fatal(err)
+	}
+
+	// use a single task worker so that the order of outgoing messages is deterministic
+	engineTaskWorkerCount := 1
+	e := newEngineForTesting(ctx, bs, 4, engineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
+		WithPeerBlockRequestFilter(func(p peer.ID, c cid.Cid) bool {
+			// peer 0 has access to everything
+			if p == peerIDs[0] {
+				return true
+			}
+			// peer 1 has access to key b and c
+			if p == peerIDs[1] {
+				return blks[1].Cid().Equals(c) || blks[2].Cid().Equals(c)
+			}
+			// peer 2 and other have access to key c
+			return blks[2].Cid().Equals(c)
+		}),
+	)
+	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
+
+	// Create wants requests
+	for _, peerID := range peerIDs {
+		partnerWantBlocks(e, keys, peerID)
+	}
+
+	// check that outgoing messages are sent with the correct content
+	checkPeer := func(peerIndex int, expectedBlocks []blocks.Block) {
+		next := <-e.Outbox()
+		envelope := <-next
+
+		peerID := peerIDs[peerIndex]
+		responseBlocks := envelope.Message.Blocks()
+
+		if peerID != envelope.Peer {
+			t.Errorf("(Peer%v) expected message for peer ID %#v but instead got message for peer ID %#v", peerIndex, peerID, envelope.Peer)
+		}
+
+		if len(responseBlocks) != len(expectedBlocks) {
+			t.Errorf("(Peer%v) expected %v block in response but instead got %v", peerIndex, len(expectedBlocks), len(responseBlocks))
+		}
+
+		responseBlockSet := make(map[cid.Cid]bool)
+		for _, b := range responseBlocks {
+			responseBlockSet[b.Cid()] = true
+		}
+
+		for _, b := range expectedBlocks {
+			if !responseBlockSet[b.Cid()] {
+				t.Errorf("(Peer%v) expected block with CID %v", peerIndex, b.Cid())
+			}
+		}
+	}
+
+	checkPeer(0, blks[0:3])
+	checkPeer(1, blks[1:3])
+	checkPeer(2, blks[2:3])
+}
+
 func TestTaggingPeers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
