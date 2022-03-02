@@ -610,8 +610,11 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		}
 	}()
 
-	// Get block sizes
+	// Dispatch entries
 	wants, cancels := e.splitWantsCancels(entries)
+	wants, denials := e.splitWantsDenials(p, wants)
+
+	// Get block sizes
 	wantKs := cid.NewSet()
 	for _, entry := range wants {
 		wantKs.Add(entry.Cid)
@@ -651,6 +654,33 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		}
 	}
 
+	// Deny access to blocks
+	for _, entry := range denials {
+		c := entry.Cid
+		log.Debugw("Bitswap engine: block denied access", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
+
+		// Only add the task to the queue if the requester wants a DONT_HAVE
+		if e.sendDontHaves && entry.SendDontHave {
+			newWorkExists = true
+			isWantBlock := false
+			if entry.WantType == pb.Message_Wantlist_Block {
+				isWantBlock = true
+			}
+
+			activeEntries = append(activeEntries, peertask.Task{
+				Topic:    c,
+				Priority: int(entry.Priority),
+				Work:     bsmsg.BlockPresenceSize(c),
+				Data: &taskData{
+					BlockSize:    0,
+					HaveBlock:    false,
+					IsWantBlock:  isWantBlock,
+					SendDontHave: entry.SendDontHave,
+				},
+			})
+		}
+	}
+
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
@@ -659,14 +689,8 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		// Add each want-have / want-block to the ledger
 		l.Wants(c, entry.Priority, entry.WantType)
 
-		// Check if the peer is allowed to retrieve this block
-		passFilter := true
-		if e.peerBlockRequestFilter != nil {
-			passFilter = e.peerBlockRequestFilter(p, c)
-		}
-
-		// If the block was not found or the peer doesn't pass the policy
-		if !found || !passFilter {
+		// If the block was not found
+		if !found {
 			log.Debugw("Bitswap engine: block not found", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
 
 			// Only add the task to the queue if the requester wants a DONT_HAVE
@@ -738,6 +762,26 @@ func (e *Engine) splitWantsCancels(es []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Ent
 		}
 	}
 	return wants, cancels
+}
+
+// Split the want-have / want-block entries from the block that will be denied access
+func (e *Engine) splitWantsDenials(p peer.ID, allWants []bsmsg.Entry) ([]bsmsg.Entry, []bsmsg.Entry) {
+	if e.peerBlockRequestFilter == nil {
+		return allWants, nil
+	}
+
+	wants := make([]bsmsg.Entry, 0, len(allWants))
+	denied := make([]bsmsg.Entry, 0, len(allWants))
+
+	for _, et := range allWants {
+		if e.peerBlockRequestFilter(p, et.Cid) {
+			wants = append(wants, et)
+		} else {
+			denied = append(denied, et)
+		}
+	}
+
+	return wants, denied
 }
 
 // ReceiveFrom is called when new blocks are received and added to the block
