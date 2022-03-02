@@ -654,13 +654,12 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		}
 	}
 
-	// Deny access to blocks
-	for _, entry := range denials {
-		c := entry.Cid
-		log.Debugw("Bitswap engine: block denied access", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
-
+	// Cancel a block operation
+	sendDontHave := func(entry bsmsg.Entry) {
 		// Only add the task to the queue if the requester wants a DONT_HAVE
 		if e.sendDontHaves && entry.SendDontHave {
+			c := entry.Cid
+
 			newWorkExists = true
 			isWantBlock := false
 			if entry.WantType == pb.Message_Wantlist_Block {
@@ -681,6 +680,12 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		}
 	}
 
+	// Deny access to blocks
+	for _, entry := range denials {
+		log.Debugw("Bitswap engine: block denied access", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
+		sendDontHave(entry)
+	}
+
 	// For each want-have / want-block
 	for _, entry := range wants {
 		c := entry.Cid
@@ -692,27 +697,7 @@ func (e *Engine) MessageReceived(ctx context.Context, p peer.ID, m bsmsg.BitSwap
 		// If the block was not found
 		if !found {
 			log.Debugw("Bitswap engine: block not found", "local", e.self, "from", p, "cid", entry.Cid, "sendDontHave", entry.SendDontHave)
-
-			// Only add the task to the queue if the requester wants a DONT_HAVE
-			if e.sendDontHaves && entry.SendDontHave {
-				newWorkExists = true
-				isWantBlock := false
-				if entry.WantType == pb.Message_Wantlist_Block {
-					isWantBlock = true
-				}
-
-				activeEntries = append(activeEntries, peertask.Task{
-					Topic:    c,
-					Priority: int(entry.Priority),
-					Work:     bsmsg.BlockPresenceSize(c),
-					Data: &taskData{
-						BlockSize:    0,
-						HaveBlock:    false,
-						IsWantBlock:  isWantBlock,
-						SendDontHave: entry.SendDontHave,
-					},
-				})
-			}
+			sendDontHave(entry)
 		} else {
 			// The block was found, add it to the queue
 			newWorkExists = true
