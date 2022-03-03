@@ -1118,22 +1118,19 @@ func TestPeerBlockFilter(t *testing.T) {
 
 	// Generate a few keys
 	keys := []string{"a", "b", "c"}
-	cids := make(map[cid.Cid]int)
 	blks := make([]blocks.Block, 0, len(keys))
-	for i, letter := range keys {
+	for _, letter := range keys {
 		block := blocks.NewBlock([]byte(letter))
 		blks = append(blks, block)
-		cids[block.Cid()] = i
 	}
 
-	// Generate a few peers
-	peerIDs := make([]peer.ID, len(keys))
-	for _, i := range cids {
-		peerID := libp2ptest.RandPeerIDFatal(t)
-		peerIDs[i] = peerID
-	}
+	// Generate a few partner peers
+	peerIDs := make([]peer.ID, 3)
+	peerIDs[0] = libp2ptest.RandPeerIDFatal(t)
+	peerIDs[1] = libp2ptest.RandPeerIDFatal(t)
+	peerIDs[2] = libp2ptest.RandPeerIDFatal(t)
 
-	// Setup the peer
+	// Setup the main peer
 	fpt := &fakePeerTagger{}
 	sl := NewTestScoreLedger(shortTerm, nil, clock.New())
 	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
