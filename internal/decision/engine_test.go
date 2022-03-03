@@ -1117,7 +1117,7 @@ func TestPeerBlockFilter(t *testing.T) {
 	defer cancel()
 
 	// Generate a few keys
-	keys := []string{"a", "b", "c"}
+	keys := []string{"a", "b", "c", "d"}
 	blks := make([]blocks.Block, 0, len(keys))
 	for _, letter := range keys {
 		block := blocks.NewBlock([]byte(letter))
@@ -1146,52 +1146,137 @@ func TestPeerBlockFilter(t *testing.T) {
 			if p == peerIDs[0] {
 				return true
 			}
-			// peer 1 has access to key b and c
+			// peer 1 can only access key c and d
 			if p == peerIDs[1] {
-				return blks[1].Cid().Equals(c) || blks[2].Cid().Equals(c)
+				return blks[2].Cid().Equals(c) || blks[3].Cid().Equals(c)
 			}
-			// peer 2 and other have access to key c
-			return blks[2].Cid().Equals(c)
+			// peer 2 and other can only access key d
+			return blks[3].Cid().Equals(c)
 		}),
 	)
 	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
 
-	// Create wants requests
-	for _, peerID := range peerIDs {
-		partnerWantBlocks(e, keys, peerID)
+	// Setup the test
+	type testCaseEntry struct {
+		peerIndex    int
+		wantBlks     string
+		wantHaves    string
+		sendDontHave bool
 	}
 
-	// check that outgoing messages are sent with the correct content
-	checkPeer := func(peerIndex int, expectedBlocks []blocks.Block) {
+	type testCaseExp struct {
+		blks      string
+		haves     string
+		dontHaves string
+	}
+
+	type testCase struct {
+		only bool
+		wl   testCaseEntry
+		exp  testCaseExp
+	}
+
+	testCases := []testCase{
+		// Peer 0 has access to everything: want-block `a` succeeds.
+		{
+			wl: testCaseEntry{
+				peerIndex:    0,
+				wantBlks:     "a",
+				sendDontHave: true,
+			},
+			exp: testCaseExp{
+				blks: "a",
+			},
+		},
+		// Peer 0 has access to everything: want-have `b` succeeds.
+		{
+			wl: testCaseEntry{
+				peerIndex:    0,
+				wantHaves:    "b1",
+				sendDontHave: true,
+			},
+			exp: testCaseExp{
+				haves:     "b",
+				dontHaves: "1",
+			},
+		},
+		// Peer 1 has access to [c, d]: want-have `a` result in dont-have.
+		{
+			wl: testCaseEntry{
+				peerIndex:    1,
+				wantHaves:    "ac",
+				sendDontHave: true,
+			},
+			exp: testCaseExp{
+				haves:     "c",
+				dontHaves: "a",
+			},
+		},
+		// Peer 1 has access to [c, d]: want-block `b` result in dont-have.
+		{
+			wl: testCaseEntry{
+				peerIndex:    1,
+				wantBlks:     "bd",
+				sendDontHave: true,
+			},
+			exp: testCaseExp{
+				blks:      "d",
+				dontHaves: "b",
+			},
+		},
+		// Peer 2 has access to [d]: want-have `a` and want-block `b` result in dont-have.
+		{
+			wl: testCaseEntry{
+				peerIndex:    2,
+				wantHaves:    "a",
+				wantBlks:     "bcd1",
+				sendDontHave: true,
+			},
+			exp: testCaseExp{
+				haves:     "",
+				blks:      "d",
+				dontHaves: "abc1",
+			},
+		},
+	}
+
+	var onlyTestCases []testCase
+	for _, testCase := range testCases {
+		if testCase.only {
+			onlyTestCases = append(onlyTestCases, testCase)
+		}
+	}
+	if len(onlyTestCases) > 0 {
+		testCases = onlyTestCases
+	}
+
+	for i, testCase := range testCases {
+		// Create wants requests
+		wl := testCase.wl
+
+		t.Logf("test case %v: Peer%v / want-blocks '%s' / want-haves '%s' / sendDontHave %t",
+			i, wl.peerIndex, wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+
+		wantBlks := strings.Split(wl.wantBlks, "")
+		wantHaves := strings.Split(wl.wantHaves, "")
+
+		partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, peerIDs[wl.peerIndex])
+
+		// Check result
+		exp := testCase.exp
+
 		next := <-e.Outbox()
 		envelope := <-next
 
-		peerID := peerIDs[peerIndex]
-		responseBlocks := envelope.Message.Blocks()
+		expBlks := strings.Split(exp.blks, "")
+		expHaves := strings.Split(exp.haves, "")
+		expDontHaves := strings.Split(exp.dontHaves, "")
 
-		if peerID != envelope.Peer {
-			t.Errorf("(Peer%v) expected message for peer ID %#v but instead got message for peer ID %#v", peerIndex, peerID, envelope.Peer)
-		}
-
-		if len(responseBlocks) != len(expectedBlocks) {
-			t.Errorf("(Peer%v) expected %v block in response but instead got %v", peerIndex, len(expectedBlocks), len(responseBlocks))
-		}
-
-		responseBlockSet := make(map[cid.Cid]bool)
-		for _, b := range responseBlocks {
-			responseBlockSet[b.Cid()] = true
-		}
-
-		for _, b := range expectedBlocks {
-			if !responseBlockSet[b.Cid()] {
-				t.Errorf("(Peer%v) expected block with CID %v", peerIndex, b.Cid())
-			}
+		err := checkOutput(t, e, envelope, expBlks, expHaves, expDontHaves)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
-
-	checkPeer(0, blks[0:3])
-	checkPeer(1, blks[1:3])
-	checkPeer(2, blks[2:3])
 }
 
 func TestTaggingPeers(t *testing.T) {
