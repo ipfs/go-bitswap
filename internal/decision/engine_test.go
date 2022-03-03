@@ -1138,9 +1138,7 @@ func TestPeerBlockFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// use a single task worker so that the order of outgoing messages is deterministic
-	engineTaskWorkerCount := 1
-	e := newEngineForTesting(ctx, bs, 4, engineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
+	e := newEngineForTesting(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
 		WithPeerBlockRequestFilter(func(p peer.ID, c cid.Cid) bool {
 			// peer 0 has access to everything
 			if p == peerIDs[0] {
@@ -1297,9 +1295,7 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 
 	filterAllowList := make(map[cid.Cid]bool)
 
-	// use a single task worker so that the order of outgoing messages is deterministic
-	engineTaskWorkerCount := 1
-	e := newEngineForTesting(ctx, bs, 4, engineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
+	e := newEngineForTesting(ctx, bs, 4, defaults.BitswapEngineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
 		WithPeerBlockRequestFilter(func(p peer.ID, c cid.Cid) bool {
 			return filterAllowList[c]
 		}),
