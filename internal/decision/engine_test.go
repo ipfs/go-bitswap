@@ -1279,6 +1279,182 @@ func TestPeerBlockFilter(t *testing.T) {
 	}
 }
 
+func TestPeerBlockFilterMutability(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Generate a few keys
+	keys := []string{"a", "b", "c", "d"}
+	blks := make([]blocks.Block, 0, len(keys))
+	for _, letter := range keys {
+		block := blocks.NewBlock([]byte(letter))
+		blks = append(blks, block)
+	}
+
+	partnerID := libp2ptest.RandPeerIDFatal(t)
+
+	// Setup the main peer
+	fpt := &fakePeerTagger{}
+	sl := NewTestScoreLedger(shortTerm, nil, clock.New())
+	bs := blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))
+	if err := bs.PutMany(ctx, blks); err != nil {
+		t.Fatal(err)
+	}
+
+	filterAllowList := make(map[cid.Cid]bool)
+
+	// use a single task worker so that the order of outgoing messages is deterministic
+	engineTaskWorkerCount := 1
+	e := newEngineForTesting(ctx, bs, 4, engineTaskWorkerCount, defaults.BitswapMaxOutstandingBytesPerPeer, fpt, "localhost", 0, sl,
+		WithPeerBlockRequestFilter(func(p peer.ID, c cid.Cid) bool {
+			return filterAllowList[c]
+		}),
+	)
+	e.StartWorkers(ctx, process.WithTeardown(func() error { return nil }))
+
+	// Setup the test
+	type testCaseEntry struct {
+		allowList    string
+		wantBlks     string
+		wantHaves    string
+		sendDontHave bool
+	}
+
+	type testCaseExp struct {
+		blks      string
+		haves     string
+		dontHaves string
+	}
+
+	type testCase struct {
+		only bool
+		wls  []testCaseEntry
+		exps []testCaseExp
+	}
+
+	testCases := []testCase{
+		{
+			wls: []testCaseEntry{
+				{
+					// Peer has no accesses & request a want-block
+					allowList:    "",
+					wantBlks:     "a",
+					sendDontHave: true,
+				},
+				{
+					// Then Peer is allowed access to a
+					allowList:    "a",
+					wantBlks:     "a",
+					sendDontHave: true,
+				},
+			},
+			exps: []testCaseExp{
+				{
+					dontHaves: "a",
+				},
+				{
+					blks: "a",
+				},
+			},
+		},
+		{
+			wls: []testCaseEntry{
+				{
+					// Peer has access to bc
+					allowList:    "bc",
+					wantHaves:    "bc",
+					sendDontHave: true,
+				},
+				{
+					// Then Peer loses access to b
+					allowList:    "c",
+					wantBlks:     "bc", // Note: We request a block here to force a response from the node
+					sendDontHave: true,
+				},
+			},
+			exps: []testCaseExp{
+				{
+					haves: "bc",
+				},
+				{
+					blks:      "c",
+					dontHaves: "b",
+				},
+			},
+		},
+		{
+			wls: []testCaseEntry{
+				{
+					// Peer has no accesses & request a want-have
+					allowList: "",
+					wantHaves: "d",
+				},
+				{
+					// Then Peer gains access to d
+					allowList: "d",
+					wantHaves: "d",
+				},
+			},
+			exps: []testCaseExp{
+				{
+					dontHaves: "d",
+				},
+				{
+					haves: "d",
+				},
+			},
+		},
+	}
+
+	var onlyTestCases []testCase
+	for _, testCase := range testCases {
+		if testCase.only {
+			onlyTestCases = append(onlyTestCases, testCase)
+		}
+	}
+	if len(onlyTestCases) > 0 {
+		testCases = onlyTestCases
+	}
+
+	for i, testCase := range testCases {
+		for j := range testCase.wls {
+			wl := testCase.wls[j]
+			exp := testCase.exps[j]
+
+			// Create wants requests
+			t.Logf("test case %v, %v: allow-list '%s' / want-blocks '%s' / want-haves '%s' / sendDontHave %t",
+				i, j, wl.allowList, wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+
+			allowList := strings.Split(wl.allowList, "")
+			wantBlks := strings.Split(wl.wantBlks, "")
+			wantHaves := strings.Split(wl.wantHaves, "")
+
+			// Update the allow list
+			filterAllowList = make(map[cid.Cid]bool)
+			for _, letter := range allowList {
+				block := blocks.NewBlock([]byte(letter))
+				filterAllowList[block.Cid()] = true
+			}
+
+			// Send the request
+			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partnerID)
+
+			// Check result
+			next := <-e.Outbox()
+			envelope := <-next
+
+			expBlks := strings.Split(exp.blks, "")
+			expHaves := strings.Split(exp.haves, "")
+			expDontHaves := strings.Split(exp.dontHaves, "")
+
+			err := checkOutput(t, e, envelope, expBlks, expHaves, expDontHaves)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func TestTaggingPeers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
