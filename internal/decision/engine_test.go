@@ -1158,10 +1158,9 @@ func TestPeerBlockFilter(t *testing.T) {
 
 	// Setup the test
 	type testCaseEntry struct {
-		peerIndex    int
-		wantBlks     string
-		wantHaves    string
-		sendDontHave bool
+		peerIndex int
+		wantBlks  string
+		wantHaves string
 	}
 
 	type testCaseExp struct {
@@ -1180,9 +1179,8 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Peer 0 has access to everything: want-block `a` succeeds.
 		{
 			wl: testCaseEntry{
-				peerIndex:    0,
-				wantBlks:     "a",
-				sendDontHave: true,
+				peerIndex: 0,
+				wantBlks:  "a",
 			},
 			exp: testCaseExp{
 				blks: "a",
@@ -1191,9 +1189,8 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Peer 0 has access to everything: want-have `b` succeeds.
 		{
 			wl: testCaseEntry{
-				peerIndex:    0,
-				wantHaves:    "b1",
-				sendDontHave: true,
+				peerIndex: 0,
+				wantHaves: "b1",
 			},
 			exp: testCaseExp{
 				haves:     "b",
@@ -1203,9 +1200,8 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Peer 1 has access to [c, d]: want-have `a` result in dont-have.
 		{
 			wl: testCaseEntry{
-				peerIndex:    1,
-				wantHaves:    "ac",
-				sendDontHave: true,
+				peerIndex: 1,
+				wantHaves: "ac",
 			},
 			exp: testCaseExp{
 				haves:     "c",
@@ -1215,9 +1211,8 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Peer 1 has access to [c, d]: want-block `b` result in dont-have.
 		{
 			wl: testCaseEntry{
-				peerIndex:    1,
-				wantBlks:     "bd",
-				sendDontHave: true,
+				peerIndex: 1,
+				wantBlks:  "bd",
 			},
 			exp: testCaseExp{
 				blks:      "d",
@@ -1227,10 +1222,9 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Peer 2 has access to [d]: want-have `a` and want-block `b` result in dont-have.
 		{
 			wl: testCaseEntry{
-				peerIndex:    2,
-				wantHaves:    "a",
-				wantBlks:     "bcd1",
-				sendDontHave: true,
+				peerIndex: 2,
+				wantHaves: "a",
+				wantBlks:  "bcd1",
 			},
 			exp: testCaseExp{
 				haves:     "",
@@ -1254,13 +1248,13 @@ func TestPeerBlockFilter(t *testing.T) {
 		// Create wants requests
 		wl := testCase.wl
 
-		t.Logf("test case %v: Peer%v / want-blocks '%s' / want-haves '%s' / sendDontHave %t",
-			i, wl.peerIndex, wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+		t.Logf("test case %v: Peer%v / want-blocks '%s' / want-haves '%s'",
+			i, wl.peerIndex, wl.wantBlks, wl.wantHaves)
 
 		wantBlks := strings.Split(wl.wantBlks, "")
 		wantHaves := strings.Split(wl.wantHaves, "")
 
-		partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, peerIDs[wl.peerIndex])
+		partnerWantBlocksHaves(e, wantBlks, wantHaves, true, peerIDs[wl.peerIndex])
 
 		// Check result
 		exp := testCase.exp
@@ -1314,10 +1308,9 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 
 	// Setup the test
 	type testCaseEntry struct {
-		allowList    string
-		wantBlks     string
-		wantHaves    string
-		sendDontHave bool
+		allowList string
+		wantBlks  string
+		wantHaves string
 	}
 
 	type testCaseExp struct {
@@ -1337,15 +1330,13 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 			wls: []testCaseEntry{
 				{
 					// Peer has no accesses & request a want-block
-					allowList:    "",
-					wantBlks:     "a",
-					sendDontHave: true,
+					allowList: "",
+					wantBlks:  "a",
 				},
 				{
 					// Then Peer is allowed access to a
-					allowList:    "a",
-					wantBlks:     "a",
-					sendDontHave: true,
+					allowList: "a",
+					wantBlks:  "a",
 				},
 			},
 			exps: []testCaseExp{
@@ -1361,15 +1352,13 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 			wls: []testCaseEntry{
 				{
 					// Peer has access to bc
-					allowList:    "bc",
-					wantHaves:    "bc",
-					sendDontHave: true,
+					allowList: "bc",
+					wantHaves: "bc",
 				},
 				{
 					// Then Peer loses access to b
-					allowList:    "c",
-					wantBlks:     "bc", // Note: We request a block here to force a response from the node
-					sendDontHave: true,
+					allowList: "c",
+					wantBlks:  "bc", // Note: We request a block here to force a response from the node
 				},
 			},
 			exps: []testCaseExp{
@@ -1422,8 +1411,8 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 			exp := testCase.exps[j]
 
 			// Create wants requests
-			t.Logf("test case %v, %v: allow-list '%s' / want-blocks '%s' / want-haves '%s' / sendDontHave %t",
-				i, j, wl.allowList, wl.wantBlks, wl.wantHaves, wl.sendDontHave)
+			t.Logf("test case %v, %v: allow-list '%s' / want-blocks '%s' / want-haves '%s'",
+				i, j, wl.allowList, wl.wantBlks, wl.wantHaves)
 
 			allowList := strings.Split(wl.allowList, "")
 			wantBlks := strings.Split(wl.wantBlks, "")
@@ -1437,7 +1426,7 @@ func TestPeerBlockFilterMutability(t *testing.T) {
 			}
 
 			// Send the request
-			partnerWantBlocksHaves(e, wantBlks, wantHaves, wl.sendDontHave, partnerID)
+			partnerWantBlocksHaves(e, wantBlks, wantHaves, true, partnerID)
 
 			// Check result
 			next := <-e.Outbox()
