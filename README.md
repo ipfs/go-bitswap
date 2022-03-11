@@ -62,7 +62,7 @@ import (
   bsnet "github.com/ipfs/go-graphsync/network"
   blockstore "github.com/ipfs/go-ipfs-blockstore"
   "github.com/libp2p/go-libp2p-core/routing"
-	"github.com/libp2p/go-libp2p-core/host"
+  "github.com/libp2p/go-libp2p-core/host"
 )
 
 var ctx context.Context
@@ -70,7 +70,7 @@ var host host.Host
 var router routing.ContentRouting
 var bstore blockstore.Blockstore
 
-network := bsnet.NewFromIpfsHost(host, router)
+network := bsnet.NewFromLibp2pHost(host, router)
 exchange := bitswap.New(ctx, network, bstore)
 ```
 
