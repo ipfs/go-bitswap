@@ -31,7 +31,6 @@ func newConnectEventManager(connListener ConnectionListener) *connectEventManage
 
 func (c *connectEventManager) Connected(p peer.ID) {
 	c.lk.Lock()
-	defer c.lk.Unlock()
 
 	state, ok := c.conns[p]
 	if !ok {
@@ -41,13 +40,15 @@ func (c *connectEventManager) Connected(p peer.ID) {
 	state.refs++
 
 	if state.refs == 1 && state.responsive {
+		c.lk.Unlock()
 		c.connListener.PeerConnected(p)
+		return
 	}
+	c.lk.Unlock()
 }
 
 func (c *connectEventManager) Disconnected(p peer.ID) {
 	c.lk.Lock()
-	defer c.lk.Unlock()
 
 	state, ok := c.conns[p]
 	if !ok {
@@ -57,11 +58,14 @@ func (c *connectEventManager) Disconnected(p peer.ID) {
 	state.refs--
 
 	if state.refs == 0 {
-		if state.responsive {
-			c.connListener.PeerDisconnected(p)
-		}
 		delete(c.conns, p)
+		if state.responsive {
+			c.lk.Unlock()
+			c.connListener.PeerDisconnected(p)
+			return
+		}
 	}
+	c.lk.Unlock()
 }
 
 func (c *connectEventManager) MarkUnresponsive(p peer.ID) {

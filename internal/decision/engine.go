@@ -914,12 +914,13 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) {
 // sending blocks.
 func (e *Engine) PeerConnected(p peer.ID) {
 	e.lock.Lock()
-	defer e.lock.Unlock()
 
 	_, ok := e.ledgerMap[p]
 	if !ok {
 		e.ledgerMap[p] = newLedger(p)
 	}
+
+	e.lock.Unlock()
 
 	e.scoreLedger.PeerConnected(p)
 }
@@ -927,7 +928,6 @@ func (e *Engine) PeerConnected(p peer.ID) {
 // PeerDisconnected is called when a peer disconnects.
 func (e *Engine) PeerDisconnected(p peer.ID) {
 	e.lock.Lock()
-	defer e.lock.Unlock()
 
 	ledger, ok := e.ledgerMap[p]
 	if ok {
@@ -940,6 +940,8 @@ func (e *Engine) PeerDisconnected(p peer.ID) {
 		}
 	}
 	delete(e.ledgerMap, p)
+
+	e.lock.Unlock()
 
 	e.scoreLedger.PeerDisconnected(p)
 }
