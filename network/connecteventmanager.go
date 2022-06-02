@@ -146,9 +146,9 @@ func (c *connectEventManager) Connected(p peer.ID) {
 	c.lk.Lock()
 	defer c.lk.Unlock()
 
-	// disconnected -> responsive
+	// !responsive -> responsive
 
-	if c.getState(p) != stateDisconnected {
+	if c.getState(p) == stateResponsive {
 		return
 	}
 	c.setState(p, stateResponsive)

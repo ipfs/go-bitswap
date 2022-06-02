@@ -117,24 +117,18 @@ func TestConnectEventManagerMarkUnresponsive(t *testing.T) {
 	})
 	require.Equal(t, expectedEvents, connListener.events)
 
-	// Don't expect the peer to be come connected.
+	// We have a new connection, mark them responsive.
 	cem.Connected(p)
 	wait(t, cem)
-	require.Equal(t, expectedEvents, connListener.events)
-
-	// No duplicate event.
-	cem.MarkUnresponsive(p)
-	wait(t, cem)
-	require.Equal(t, expectedEvents, connListener.events)
-
-	// Becomes responsive.
-	cem.OnMessage(p)
-	wait(t, cem)
-
 	expectedEvents = append(expectedEvents, mockConnEvent{
 		peer:      p,
 		connected: true,
 	})
+	require.Equal(t, expectedEvents, connListener.events)
+
+	// No duplicate event.
+	cem.OnMessage(p)
+	wait(t, cem)
 	require.Equal(t, expectedEvents, connListener.events)
 }
 
