@@ -38,7 +38,8 @@ func newReceiver() *receiver {
 	return &receiver{
 		peers:           make(map[peer.ID]struct{}),
 		messageReceived: make(chan struct{}),
-		connectionEvent: make(chan bool, 1),
+		// Avoid blocking. 100 is good enough for tests.
+		connectionEvent: make(chan bool, 100),
 	}
 }
 
@@ -285,7 +286,7 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	routing2 := mr.ClientWithDatastore(context.TODO(), p2, ds.NewMapDatastore())
 	bsnet2 := bsnet.NewFromIpfsHost(eh2, routing2)
 	bsnet2.Start(r2)
-	t.Cleanup(bsnet1.Stop)
+	t.Cleanup(bsnet2.Stop)
 	if r2.listener != nil {
 		eh2.Network().Notify(r2.listener)
 	}

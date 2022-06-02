@@ -80,27 +80,32 @@ func (c *connectEventManager) setState(p peer.ID, newState state) {
 	}
 }
 
+// Waits for a change to be enqueued, or for the event manager to be stopped. Returns false if the
+// connect event manager has been stopped.
+func (c *connectEventManager) waitChange() bool {
+	for !c.stop && len(c.changeQueue) == 0 {
+		c.cond.Wait()
+	}
+	return !c.stop
+}
+
 func (c *connectEventManager) worker() {
 	c.lk.Lock()
 	defer c.lk.Unlock()
 	defer close(c.done)
 
-	for {
-		for !c.stop && len(c.changeQueue) == 0 {
-			c.cond.Wait()
-		}
-
-		if c.stop {
-			return
-		}
-
+	for c.waitChange() {
 		pid := c.changeQueue[0]
-		c.changeQueue[0] = peer.ID("")
+		c.changeQueue[0] = peer.ID("") // free the peer ID (slicing won't do that)
 		c.changeQueue = c.changeQueue[1:]
 
 		state, ok := c.peers[pid]
-		// If we've disconnected and forgotten, continue. We shouldn't reach this?
+		// If we've disconnected and forgotten, continue.
 		if !ok {
+			// This shouldn't be possible because _this_ thread is responsible for
+			// removing peers from this map, and we shouldn't get duplicate entries in
+			// the change queue.
+			log.Error("a change was enqueued for a peer we're not tracking")
 			continue
 		}
 

@@ -61,6 +61,10 @@ func TestConnectEventManagerConnectDisconnect(t *testing.T) {
 		connected: true,
 	})
 
+	// Flush the event queue.
+	wait(t, cem)
+	require.Equal(t, expectedEvents, connListener.events)
+
 	// Block up the event loop.
 	connListener.Lock()
 	cem.Connected(peers[1])
@@ -91,6 +95,7 @@ func TestConnectEventManagerMarkUnresponsive(t *testing.T) {
 	// Don't mark as connected when we receive a message (could have been delayed).
 	cem.OnMessage(p)
 	wait(t, cem)
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// Handle connected event.
 	cem.Connected(p)
@@ -100,6 +105,7 @@ func TestConnectEventManagerMarkUnresponsive(t *testing.T) {
 		peer:      p,
 		connected: true,
 	})
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// Becomes unresponsive.
 	cem.MarkUnresponsive(p)
@@ -109,14 +115,17 @@ func TestConnectEventManagerMarkUnresponsive(t *testing.T) {
 		peer:      p,
 		connected: false,
 	})
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// Don't expect the peer to be come connected.
 	cem.Connected(p)
 	wait(t, cem)
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// No duplicate event.
 	cem.MarkUnresponsive(p)
 	wait(t, cem)
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// Becomes responsive.
 	cem.OnMessage(p)
@@ -126,8 +135,6 @@ func TestConnectEventManagerMarkUnresponsive(t *testing.T) {
 		peer:      p,
 		connected: true,
 	})
-
-	wait(t, cem)
 	require.Equal(t, expectedEvents, connListener.events)
 }
 
@@ -148,6 +155,7 @@ func TestConnectEventManagerDisconnectAfterMarkUnresponsive(t *testing.T) {
 		peer:      p,
 		connected: true,
 	})
+	require.Equal(t, expectedEvents, connListener.events)
 
 	// Becomes unresponsive.
 	cem.MarkUnresponsive(p)
@@ -157,6 +165,7 @@ func TestConnectEventManagerDisconnectAfterMarkUnresponsive(t *testing.T) {
 		peer:      p,
 		connected: false,
 	})
+	require.Equal(t, expectedEvents, connListener.events)
 
 	cem.Disconnected(p)
 	wait(t, cem)

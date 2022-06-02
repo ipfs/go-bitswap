@@ -60,7 +60,7 @@ func TestSendMessageAsyncButWaitForResponse(t *testing.T) {
 			t.Fatal("Message not received from the responder")
 		}
 	}))
-	t.Cleanup(responder.Stop)
+	t.Cleanup(waiter.Stop)
 
 	messageSentAsync := bsmsg.New(true)
 	messageSentAsync.AddBlock(blocks.NewBlock([]byte("data")))
