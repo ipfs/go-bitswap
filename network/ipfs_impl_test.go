@@ -31,7 +31,6 @@ type receiver struct {
 	connectionEvent chan bool
 	lastMessage     bsmsg.BitSwapMessage
 	lastSender      peer.ID
-	listener        network.Notifiee
 }
 
 func newReceiver() *receiver {
@@ -157,7 +156,8 @@ func TestMessageSendAndReceive(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
+	defer mn.Close()
 	mr := mockrouting.NewServer()
 	streamNet, err := tn.StreamNet(ctx, mn, mr)
 	if err != nil {
@@ -260,7 +260,8 @@ func TestMessageSendAndReceive(t *testing.T) {
 
 func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *receiver, p2 tnet.Identity, r2 *receiver) (*ErrHost, bsnet.BitSwapNetwork, *ErrHost, bsnet.BitSwapNetwork, bsmsg.BitSwapMessage) {
 	// create network
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
 	mr := mockrouting.NewServer()
 
 	// Host 1
@@ -273,9 +274,6 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	bsnet1 := bsnet.NewFromIpfsHost(eh1, routing1)
 	bsnet1.Start(r1)
 	t.Cleanup(bsnet1.Stop)
-	if r1.listener != nil {
-		eh1.Network().Notify(r1.listener)
-	}
 
 	// Host 2
 	h2, err := mn.AddPeer(p2.PrivateKey(), p2.Address())
@@ -287,9 +285,6 @@ func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *rec
 	bsnet2 := bsnet.NewFromIpfsHost(eh2, routing2)
 	bsnet2.Start(r2)
 	t.Cleanup(bsnet2.Stop)
-	if r2.listener != nil {
-		eh2.Network().Notify(r2.listener)
-	}
 
 	// Networking
 	err = mn.LinkAll()
@@ -439,7 +434,8 @@ func TestMessageSendNotSupportedResponse(t *testing.T) {
 
 func TestSupportsHave(t *testing.T) {
 	ctx := context.Background()
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
+	defer mn.Close()
 	mr := mockrouting.NewServer()
 	streamNet, err := tn.StreamNet(ctx, mn, mr)
 	if err != nil {
@@ -497,23 +493,6 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
-	var wg1, wg2 sync.WaitGroup
-	r1.listener = &network.NotifyBundle{
-		OpenedStreamF: func(n network.Network, s network.Stream) {
-			wg1.Add(1)
-		},
-		ClosedStreamF: func(n network.Network, s network.Stream) {
-			wg1.Done()
-		},
-	}
-	r2.listener = &network.NotifyBundle{
-		OpenedStreamF: func(n network.Network, s network.Stream) {
-			wg2.Add(1)
-		},
-		ClosedStreamF: func(n network.Network, s network.Stream) {
-			wg2.Done()
-		},
-	}
 	_, bsnet1, _, bsnet2, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
 
 	for n := 0; n < n1; n++ {
@@ -572,23 +551,6 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 			cancel()
 		}
 		ms.Close()
-	}
-
-	// Wait until all streams are closed and MessagesRecvd counters
-	// updated.
-	ctxto, cancelto := context.WithTimeout(ctx, 5*time.Second)
-	defer cancelto()
-	ctxwait, cancelwait := context.WithCancel(ctx)
-	defer cancelwait()
-	go func() {
-		wg1.Wait()
-		wg2.Wait()
-		cancelwait()
-	}()
-	select {
-	case <-ctxto.Done():
-		t.Fatal("network streams closing timed out")
-	case <-ctxwait.Done():
 	}
 
 	if bsnet1.Stats().MessagesSent != uint64(n1+n2) {
