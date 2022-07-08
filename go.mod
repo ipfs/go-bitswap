@@ -35,6 +35,8 @@ require (
 	go.uber.org/zap v1.16.0
 )
 
+replace github.com/ipfs/go-ipfs-exchange-interface => github.com/MichaelMure/go-ipfs-exchange-interface v0.0.2-0.20220713142804-1181846dc171
+
 require (
 	github.com/btcsuite/btcd v0.21.0-beta // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
