@@ -22,14 +22,19 @@ import (
 )
 
 var (
-	ProtocolBitswap protocol.ID = "/ipfs/bitswap/1.2.0"
-	log                         = logging.Logger("bitswap-server")
-	sflog                       = log.Desugar()
+	ProtocolBitswapNoVers  protocol.ID = "/ipfs/bitswap"
+	ProtocolBitswapOneZero protocol.ID = "/ipfs/bitswap/1.0.0"
+	ProtocolBitswapOneOne  protocol.ID = "/ipfs/bitswap/1.1.0"
+	ProtocolBitswap        protocol.ID = "/ipfs/bitswap/1.2.0"
+	log                                = logging.Logger("bitswap-server")
+	sflog                              = log.Desugar()
 )
 
 type server struct {
 	Host       host.Host
 	Blockstore blockstore.Blockstore
+
+	protocols []protocol.ID
 }
 
 type syncMessage struct {
@@ -37,13 +42,33 @@ type syncMessage struct {
 	sync.Mutex
 }
 
-func New(host host.Host, bstore blockstore.Blockstore) (*server, error) {
+func New(host host.Host, bstore blockstore.Blockstore, opts ...func(s *server)) (*server, error) {
 	s := &server{
 		Host:       host,
 		Blockstore: bstore,
+		protocols: []protocol.ID{
+			ProtocolBitswap,
+			ProtocolBitswapNoVers,
+			ProtocolBitswapOneOne,
+			ProtocolBitswapOneZero,
+		},
 	}
-	s.Host.SetStreamHandler(ProtocolBitswap, s.handleNewStream)
+
+	for _, o := range opts {
+		o(s)
+	}
+
+	for _, protocol := range s.protocols {
+		s.Host.SetStreamHandler(protocol, s.handleNewStream)
+	}
+
 	return s, nil
+}
+
+func WithProtocols(protocols []protocol.ID) func(s *server) {
+	return func(s *server) {
+		s.protocols = protocols
+	}
 }
 
 func (s *server) processWant(ctx context.Context, peer peer.ID, want message.Entry, resp *syncMessage) {
@@ -125,7 +150,7 @@ func (s *server) writeMsg(ctx context.Context, peer peer.ID, msg message.BitSwap
 
 	// it is required to open a new stream to send a response
 	// TODO: measure impact of not requiring a new stream, to see if we should update the protocol
-	respStream, err := s.Host.NewStream(respCtx, peer, ProtocolBitswap)
+	respStream, err := s.Host.NewStream(respCtx, peer, s.protocols...)
 	if err != nil {
 		return fmt.Errorf("opening stream for block response: %w", err)
 	}
@@ -135,7 +160,16 @@ func (s *server) writeMsg(ctx context.Context, peer peer.ID, msg message.BitSwap
 	if err != nil {
 		return fmt.Errorf("setting stream write deadline: %w", err)
 	}
-	err = msg.ToNetV1(respStream)
+
+	switch respStream.Protocol() {
+	case ProtocolBitswapOneOne, ProtocolBitswap:
+		err = msg.ToNetV1(respStream)
+	case ProtocolBitswapOneZero, ProtocolBitswapNoVers:
+		err = msg.ToNetV0(respStream)
+	default:
+		return fmt.Errorf("unsupported stream protocol %q", respStream.Protocol())
+	}
+
 	if err != nil {
 		return fmt.Errorf("sending response: %w", err)
 	}

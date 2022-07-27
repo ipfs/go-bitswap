@@ -2,15 +2,12 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ipfs/go-bitswap"
-	"github.com/ipfs/go-bitswap/message"
-	bitswap_message_pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-datastore"
@@ -93,18 +90,4 @@ func TestServer(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-}
-
-func TestThing(t *testing.T) {
-	m := message.New(false)
-
-	buf := make([]byte, 1024)
-	for i := 0; i < 100; i++ {
-		_, err := rand.Reader.Read(buf)
-		if err != nil {
-			panic(err)
-		}
-		blk := blocks.NewBlock(buf)
-		m.AddEntry(blk.Cid(), 1, bitswap_message_pb.Message_Wantlist_Block, true)
-	}
 }
