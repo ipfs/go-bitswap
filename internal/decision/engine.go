@@ -401,7 +401,7 @@ func (e *Engine) StartWorkers(ctx context.Context, px process.Process) {
 	defer e.taskWorkerLock.Unlock()
 
 	for i := 0; i < e.taskWorkerCount; i++ {
-		px.Go(func(px process.Process) {
+		px.Go(func(process.Process) {
 			e.taskWorker(ctx)
 		})
 	}

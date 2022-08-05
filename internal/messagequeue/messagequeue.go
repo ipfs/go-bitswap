@@ -230,7 +230,6 @@ const (
 	latenciesRecorded
 )
 
-// This constructor is used by the tests
 func newMessageQueue(
 	ctx context.Context,
 	p peer.ID,

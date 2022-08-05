@@ -77,8 +77,6 @@ type Receiver interface {
 		sender peer.ID,
 		incoming bsmsg.BitSwapMessage)
 
-	ReceiveError(error)
-
 	// Connected/Disconnected warns bitswap about peer connections.
 	PeerConnected(peer.ID)
 	PeerDisconnected(peer.ID)

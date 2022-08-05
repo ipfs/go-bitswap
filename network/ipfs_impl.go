@@ -403,6 +403,9 @@ func (bsnet *impl) Provide(ctx context.Context, k cid.Cid) error {
 func (bsnet *impl) handleNewStream(s network.Stream) {
 	defer s.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if bsnet.receiver == nil {
 		_ = s.Reset()
 		return
@@ -414,14 +417,12 @@ func (bsnet *impl) handleNewStream(s network.Stream) {
 		if err != nil {
 			if err != io.EOF {
 				_ = s.Reset()
-				bsnet.receiver.ReceiveError(err)
 				log.Debugf("bitswap net handleNewStream from %s error: %s", s.Conn().RemotePeer(), err)
 			}
 			return
 		}
 
 		p := s.Conn().RemotePeer()
-		ctx := context.Background()
 		log.Debugf("bitswap net handleNewStream from %s", s.Conn().RemotePeer())
 		bsnet.connectEvtMgr.OnMessage(s.Conn().RemotePeer())
 		atomic.AddUint64(&bsnet.stats.MessagesRecvd, 1)

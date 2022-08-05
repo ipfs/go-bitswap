@@ -23,7 +23,7 @@ type Stat struct {
 // Stat returns aggregated statistics about bitswap operations
 func (bs *Bitswap) Stat() (*Stat, error) {
 	st := new(Stat)
-	st.ProvideBufLen = len(bs.newBlocks)
+	st.ProvideBufLen = bs.provider.NewBlocksLen()
 	st.Wantlist = bs.GetWantlist()
 	bs.counterLk.Lock()
 	c := bs.counters
@@ -36,7 +36,7 @@ func (bs *Bitswap) Stat() (*Stat, error) {
 	st.MessagesReceived = c.messagesRecvd
 	bs.counterLk.Unlock()
 
-	peers := bs.engine.Peers()
+	peers := bs.server.Peers()
 	st.Peers = make([]string, 0, len(peers))
 
 	for _, p := range peers {
