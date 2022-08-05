@@ -16,6 +16,7 @@ import (
 	blocksutil "github.com/ipfs/go-ipfs-blocksutil"
 	delay "github.com/ipfs/go-ipfs-delay"
 	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/stretchr/testify/require"
 )
 
 type mockSessionMgr struct {
@@ -220,7 +221,7 @@ func TestSessionGetBlocks(t *testing.T) {
 	// Simulate receiving block for a CID
 	session.ReceiveFrom(peers[1], []cid.Cid{blks[0].Cid()}, []cid.Cid{}, []cid.Cid{})
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify session no longer wants received block
 	wanted, unwanted := sim.SplitWantedUnwanted(blks)
@@ -243,7 +244,7 @@ func TestSessionGetBlocks(t *testing.T) {
 }
 
 func TestSessionFindMorePeers(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	fpm := newFakePeerManager()
 	fspm := newFakeSessionPeerManager()
@@ -363,7 +364,7 @@ func TestSessionOnPeersExhausted(t *testing.T) {
 }
 
 func TestSessionFailingToGetFirstBlock(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	fpm := newFakePeerManager()
 	fspm := newFakeSessionPeerManager()
@@ -374,7 +375,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	defer notif.Shutdown()
 	id := testutil.GenerateSessionID()
 	sm := newMockSessionMgr()
-	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, 10*time.Millisecond, delay.Fixed(100*time.Millisecond), "")
+	session := New(ctx, sm, id, fspm, fpf, sim, fpm, bpm, notif, 100*time.Millisecond, delay.Fixed(1000*time.Millisecond), "")
 	blockGenerator := blocksutil.NewBlockGenerator()
 	blks := blockGenerator.Blocks(4)
 	var cids []cid.Cid
@@ -383,9 +384,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	}
 	startTick := time.Now()
 	_, err := session.GetBlocks(ctx, cids)
-	if err != nil {
-		t.Fatal("error getting blocks")
-	}
+	require.NoError(t, err)
 
 	// The session should initially broadcast want-haves
 	select {
@@ -397,9 +396,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	// Verify a broadcast was made
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
-		if len(receivedWantReq.cids) < len(cids) {
-			t.Fatal("did not rebroadcast whole live list")
-		}
+		require.GreaterOrEqual(t, len(cids), len(receivedWantReq.cids), "did not rebroadcast whole live list")
 	case <-ctx.Done():
 		t.Fatal("Never rebroadcast want list")
 	}
@@ -418,9 +415,7 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	// Wait for another broadcast to occur
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
-		if len(receivedWantReq.cids) < len(cids) {
-			t.Fatal("did not rebroadcast whole live list")
-		}
+		require.GreaterOrEqual(t, len(cids), len(receivedWantReq.cids), "did not rebroadcast whole live list")
 	case <-ctx.Done():
 		t.Fatal("Never rebroadcast want list")
 	}
@@ -429,35 +424,27 @@ func TestSessionFailingToGetFirstBlock(t *testing.T) {
 	startTick = time.Now()
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
-		if len(receivedWantReq.cids) < len(cids) {
-			t.Fatal("did not rebroadcast whole live list")
-		}
+		require.GreaterOrEqual(t, len(cids), len(receivedWantReq.cids), "did not rebroadcast whole live list")
 	case <-ctx.Done():
 		t.Fatal("Never rebroadcast want list")
 	}
 
 	// Tick should take longer
 	consecutiveTickLength := time.Since(startTick)
-	if firstTickLength > consecutiveTickLength {
-		t.Fatal("Should have increased tick length after first consecutive tick")
-	}
+	require.LessOrEqual(t, firstTickLength, consecutiveTickLength, "Should have increased tick length after first consecutive tick")
 
 	// Wait for another broadcast to occur
 	startTick = time.Now()
 	select {
 	case receivedWantReq := <-fpm.wantReqs:
-		if len(receivedWantReq.cids) < len(cids) {
-			t.Fatal("did not rebroadcast whole live list")
-		}
+		require.GreaterOrEqual(t, len(cids), len(receivedWantReq.cids), "did not rebroadcast whole live list")
 	case <-ctx.Done():
 		t.Fatal("Never rebroadcast want list")
 	}
 
 	// Tick should take longer
 	secondConsecutiveTickLength := time.Since(startTick)
-	if consecutiveTickLength > secondConsecutiveTickLength {
-		t.Fatal("Should have increased tick length after first consecutive tick")
-	}
+	require.LessOrEqual(t, consecutiveTickLength, secondConsecutiveTickLength, "Should have increased tick length after second consecutive tick")
 
 	// Should not have tried to find peers on consecutive ticks
 	select {
