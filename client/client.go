@@ -18,7 +18,7 @@ import (
 	bsmq "github.com/ipfs/go-bitswap/client/internal/messagequeue"
 	"github.com/ipfs/go-bitswap/client/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/client/internal/peermanager"
-	bspqm "github.com/ipfs/go-bitswap/client/internal/providerquerymanager"
+	"github.com/ipfs/go-bitswap/client/internal/providerqueryer"
 	bssession "github.com/ipfs/go-bitswap/client/internal/session"
 	bssim "github.com/ipfs/go-bitswap/client/internal/sessioninterestmanager"
 	bssm "github.com/ipfs/go-bitswap/client/internal/sessionmanager"
@@ -121,7 +121,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 	sim := bssim.New()
 	bpm := bsbpm.New()
 	pm := bspm.New(ctx, peerQueueFactory, network.Self())
-	pqm := bspqm.New(ctx, network)
+	queryer := providerqueryer.New(network)
 
 	sessionFactory := func(
 		sessctx context.Context,
@@ -135,7 +135,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 		provSearchDelay time.Duration,
 		rebroadcastDelay delay.D,
 		self peer.ID) bssm.Session {
-		return bssession.New(sessctx, sessmgr, id, spm, pqm, sim, pm, bpm, notif, provSearchDelay, rebroadcastDelay, self)
+		return bssession.New(sessctx, sessmgr, id, spm, queryer, sim, pm, bpm, notif, provSearchDelay, rebroadcastDelay, self)
 	}
 	sessionPeerManagerFactory := func(ctx context.Context, id uint64) bssession.SessionPeerManager {
 		return bsspm.New(id, network.ConnectionManager())
@@ -148,7 +148,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 		network:                    network,
 		process:                    px,
 		pm:                         pm,
-		pqm:                        pqm,
+		queryer:                    queryer,
 		sm:                         sm,
 		sim:                        sim,
 		notif:                      notif,
@@ -164,8 +164,6 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 	for _, option := range options {
 		option(bs)
 	}
-
-	bs.pqm.Startup()
 
 	// bind the context and process.
 	// do it over here to avoid closing before all setup is done.
@@ -185,7 +183,7 @@ type Client struct {
 	pm *bspm.PeerManager
 
 	// the provider query manager manages requests to find providers
-	pqm *bspqm.ProviderQueryManager
+	queryer *providerqueryer.ProviderQueryer
 
 	// network delivers messages on behalf of the session
 	network bsnet.BitSwapNetwork
