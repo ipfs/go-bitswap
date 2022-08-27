@@ -14,7 +14,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	delay "github.com/ipfs/go-ipfs-delay"
 	logging "github.com/ipfs/go-log"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 	loggables "github.com/libp2p/go-libp2p-loggables"
 	"go.uber.org/zap"
 )

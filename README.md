@@ -61,8 +61,8 @@ import (
   bitswap "github.com/ipfs/go-bitswap"
   bsnet "github.com/ipfs/go-bitswap/network"
   blockstore "github.com/ipfs/go-ipfs-blockstore"
-  "github.com/libp2p/go-libp2p-core/routing"
-  "github.com/libp2p/go-libp2p-core/host"
+  "github.com/libp2p/go-libp2p/core/routing"
+  "github.com/libp2p/go-libp2p/core/host"
 )
 
 var ctx context.Context

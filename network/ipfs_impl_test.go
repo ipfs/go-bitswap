@@ -16,11 +16,12 @@ import (
 	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	"github.com/multiformats/go-multistream"
 
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
+	"github.com/libp2p/go-libp2p/core/event"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 )
 
@@ -157,7 +158,7 @@ func TestMessageSendAndReceive(t *testing.T) {
 	ctx := context.Background()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
 	mr := mockrouting.NewServer()
 	streamNet, err := tn.StreamNet(ctx, mn, mr)
 	if err != nil {
@@ -260,7 +261,7 @@ func TestMessageSendAndReceive(t *testing.T) {
 
 func prepareNetwork(t *testing.T, ctx context.Context, p1 tnet.Identity, r1 *receiver, p2 tnet.Identity, r2 *receiver) (*ErrHost, bsnet.BitSwapNetwork, *ErrHost, bsnet.BitSwapNetwork, bsmsg.BitSwapMessage) {
 	// create network
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
 	mr := mockrouting.NewServer()
 
 	// Host 1
@@ -439,7 +440,7 @@ func TestMessageSendNotSupportedResponse(t *testing.T) {
 
 func TestSupportsHave(t *testing.T) {
 	ctx := context.Background()
-	mn := mocknet.New(ctx)
+	mn := mocknet.New()
 	mr := mockrouting.NewServer()
 	streamNet, err := tn.StreamNet(ctx, mn, mr)
 	if err != nil {
@@ -497,24 +498,30 @@ func testNetworkCounters(t *testing.T, n1 int, n2 int) {
 	p2 := tnet.RandIdentityOrFatal(t)
 	r2 := newReceiver()
 
+	h1, bsnet1, h2, bsnet2, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
+
+	waitForConnectDisconnet := func(h host.Host, wg *sync.WaitGroup) {
+		sub, err := h.EventBus().Subscribe(&event.EvtPeerConnectednessChanged{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			defer wg.Done()
+
+			for {
+				evt := (<-sub.Out()).(event.EvtPeerConnectednessChanged)
+				if evt.Connectedness == network.Connected {
+					wg.Add(1)
+				} else {
+					return
+				}
+			}
+		}()
+	}
+
 	var wg1, wg2 sync.WaitGroup
-	r1.listener = &network.NotifyBundle{
-		OpenedStreamF: func(n network.Network, s network.Stream) {
-			wg1.Add(1)
-		},
-		ClosedStreamF: func(n network.Network, s network.Stream) {
-			wg1.Done()
-		},
-	}
-	r2.listener = &network.NotifyBundle{
-		OpenedStreamF: func(n network.Network, s network.Stream) {
-			wg2.Add(1)
-		},
-		ClosedStreamF: func(n network.Network, s network.Stream) {
-			wg2.Done()
-		},
-	}
-	_, bsnet1, _, bsnet2, msg := prepareNetwork(t, ctx, p1, r1, p2, r2)
+	waitForConnectDisconnet(h1, &wg1)
+	waitForConnectDisconnet(h2, &wg2)
 
 	for n := 0; n < n1; n++ {
 		ctx, cancel := context.WithTimeout(ctx, time.Second)

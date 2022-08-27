@@ -15,7 +15,7 @@ import (
 
 	"github.com/ipfs/go-bitswap/internal/testutil"
 	blocks "github.com/ipfs/go-block-format"
-	protocol "github.com/libp2p/go-libp2p-core/protocol"
+	protocol "github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"

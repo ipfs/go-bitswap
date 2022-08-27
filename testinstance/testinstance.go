@@ -12,7 +12,7 @@ import (
 	ds_sync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	delay "github.com/ipfs/go-ipfs-delay"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 	p2ptestutil "github.com/libp2p/go-libp2p-netutil"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
 )
