@@ -19,6 +19,7 @@ import (
 	"github.com/ipfs/go-bitswap/client/internal/notifications"
 	bspm "github.com/ipfs/go-bitswap/client/internal/peermanager"
 	bspqm "github.com/ipfs/go-bitswap/client/internal/providerquerymanager"
+	bsrm "github.com/ipfs/go-bitswap/client/internal/reputationmanager"
 	bssession "github.com/ipfs/go-bitswap/client/internal/session"
 	bssim "github.com/ipfs/go-bitswap/client/internal/sessioninterestmanager"
 	bssm "github.com/ipfs/go-bitswap/client/internal/sessionmanager"
@@ -87,6 +88,16 @@ type BlockReceivedNotifier interface {
 	// send them more data in exchange.
 	ReceivedBlocks(peer.ID, []blocks.Block)
 }
+
+func WithReputationManager(params *ReputationManagerParams, thresholds *ReputationManagerThresholds, scoreKeeper ReputationManagerScoreKeeper) Option {
+	return func(c *Client) {
+		c.rm = bsrm.NewReputationManager(params, thresholds, scoreKeeper)
+	}
+}
+
+type ReputationManagerParams = bsrm.ReputationManagerParams
+type ReputationManagerThresholds = bsrm.ReputationManagerThresholds
+type ReputationManagerScoreKeeper = bsrm.ScoreKeeper
 
 // New initializes a Bitswap client that runs until client.Close is called.
 func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore.Blockstore, options ...Option) *Client {
@@ -165,6 +176,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 		option(bs)
 	}
 
+	go bs.rm.Start(ctx)
 	bs.pqm.Startup()
 
 	// bind the context and process.
@@ -183,6 +195,8 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 // Client instances implement the bitswap protocol.
 type Client struct {
 	pm *bspm.PeerManager
+
+	rm *bsrm.ReputationManager
 
 	// the provider query manager manages requests to find providers
 	pqm *bspqm.ProviderQueryManager
@@ -255,6 +269,7 @@ func (bs *Client) GetBlock(ctx context.Context, k cid.Cid) (blocks.Block, error)
 func (bs *Client) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	ctx, span := internal.StartSpan(ctx, "GetBlocks", trace.WithAttributes(attribute.Int("NumKeys", len(keys))))
 	defer span.End()
+	bs.rm.AddWants(keys)
 	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 	return session.GetBlocks(ctx, keys)
 }
@@ -302,6 +317,13 @@ func (bs *Client) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []bl
 		log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
 	}
 
+	if from != "" {
+		presences := make([]cid.Cid, 0, len(haves)+len(dontHaves))
+		presences = append(presences, haves...)
+		presences = append(presences, dontHaves...)
+		bs.rm.ReceivedFrom(from, blks, presences)
+	}
+
 	allKs := make([]cid.Cid, 0, len(blks))
 	for _, b := range blks {
 		allKs = append(allKs, b.Cid())
@@ -338,6 +360,10 @@ func (bs *Client) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []bl
 // ReceiveMessage is called by the network interface when a new message is
 // received.
 func (bs *Client) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg.BitSwapMessage) {
+	if !bs.rm.AcceptFrom(p) {
+		return
+	}
+
 	bs.counterLk.Lock()
 	bs.counters.messagesRecvd++
 	bs.counterLk.Unlock()
@@ -424,12 +450,14 @@ func (bs *Client) blockstoreHas(blks []blocks.Block) []bool {
 // when a peer initiates a new connection to bitswap.
 func (bs *Client) PeerConnected(p peer.ID) {
 	bs.pm.Connected(p)
+	bs.rm.PeerConnected(p)
 }
 
 // PeerDisconnected is called by the network interface when a peer
 // closes a connection
 func (bs *Client) PeerDisconnected(p peer.ID) {
 	bs.pm.Disconnected(p)
+	bs.rm.PeerDisconnected(p)
 }
 
 // ReceiveError is called by the network interface when an error happens

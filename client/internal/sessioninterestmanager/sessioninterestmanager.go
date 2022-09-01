@@ -46,7 +46,7 @@ func (sim *SessionInterestManager) RecordSessionInterest(ses uint64, ks []cid.Ci
 	}
 }
 
-// When the session shuts down it calls RemoveSessionInterest().
+// When the session shuts down it calls RemoveSession().
 // Returns the keys that no session is interested in any more.
 func (sim *SessionInterestManager) RemoveSession(ses uint64) []cid.Cid {
 	sim.lk.Lock()
