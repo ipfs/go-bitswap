@@ -176,7 +176,7 @@ func New(parent context.Context, network bsnet.BitSwapNetwork, bstore blockstore
 		option(bs)
 	}
 
-	go bs.rm.Start(ctx)
+	bs.rm.Start(ctx)
 	bs.pqm.Startup()
 
 	// bind the context and process.
@@ -269,7 +269,9 @@ func (bs *Client) GetBlock(ctx context.Context, k cid.Cid) (blocks.Block, error)
 func (bs *Client) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.Block, error) {
 	ctx, span := internal.StartSpan(ctx, "GetBlocks", trace.WithAttributes(attribute.Int("NumKeys", len(keys))))
 	defer span.End()
-	bs.rm.AddWants(keys)
+	if bs.rm != nil {
+		bs.rm.AddWants(keys)
+	}
 	session := bs.sm.NewSession(ctx, bs.provSearchDelay, bs.rebroadcastDelay)
 	return session.GetBlocks(ctx, keys)
 }
@@ -317,7 +319,7 @@ func (bs *Client) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []bl
 		log.Debugf("[recv] block not in wantlist; cid=%s, peer=%s", b.Cid(), from)
 	}
 
-	if from != "" {
+	if from != "" && bs.rm != nil {
 		presences := make([]cid.Cid, 0, len(haves)+len(dontHaves))
 		presences = append(presences, haves...)
 		presences = append(presences, dontHaves...)
@@ -360,7 +362,8 @@ func (bs *Client) receiveBlocksFrom(ctx context.Context, from peer.ID, blks []bl
 // ReceiveMessage is called by the network interface when a new message is
 // received.
 func (bs *Client) ReceiveMessage(ctx context.Context, p peer.ID, incoming bsmsg.BitSwapMessage) {
-	if !bs.rm.AcceptFrom(p) {
+	if bs.rm != nil && !bs.rm.AcceptFrom(p) {
+		log.Debugf("[recv] ignoring message from graylisted peer; peer=%s", p)
 		return
 	}
 
@@ -450,14 +453,18 @@ func (bs *Client) blockstoreHas(blks []blocks.Block) []bool {
 // when a peer initiates a new connection to bitswap.
 func (bs *Client) PeerConnected(p peer.ID) {
 	bs.pm.Connected(p)
-	bs.rm.PeerConnected(p)
+	if bs.rm != nil {
+		bs.rm.PeerConnected(p)
+	}
 }
 
 // PeerDisconnected is called by the network interface when a peer
 // closes a connection
 func (bs *Client) PeerDisconnected(p peer.ID) {
 	bs.pm.Disconnected(p)
-	bs.rm.PeerDisconnected(p)
+	if bs.rm != nil {
+		bs.rm.PeerDisconnected(p)
+	}
 }
 
 // ReceiveError is called by the network interface when an error happens

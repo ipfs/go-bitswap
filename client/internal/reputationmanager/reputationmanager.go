@@ -49,43 +49,23 @@ func NewReputationManager(params *ReputationManagerParams, thresholds *Reputatio
 }
 
 func (r *ReputationManager) AcceptFrom(pid peer.ID) bool {
-	if r == nil {
-		return true
-	}
-
 	return r.scoreKeeper.Score(pid) > r.thresholds.GrayListThreshold
 }
 
 func (r *ReputationManager) AddWants(cids []cid.Cid) {
-	if r == nil {
-		return
-	}
-
 	r.rwl.addWants(cids)
 }
 
 func (r *ReputationManager) ReceivedFrom(pid peer.ID, blks []blocks.Block, presences []cid.Cid) {
-	if r == nil {
-		return
-	}
-
 	wantedBlks, unwantedBlks, wantedPresences, unwantedPresences := r.rwl.splitRecentlyWanted(blks, presences)
 	r.scoreKeeper.Update(pid, wantedBlks, unwantedBlks, wantedPresences, unwantedPresences)
 }
 
 func (r *ReputationManager) PeerConnected(pid peer.ID) {
-	if r == nil {
-		return
-	}
-
 	r.scoreKeeper.PeerConnected(pid)
 }
 
 func (r *ReputationManager) PeerDisconnected(pid peer.ID) {
-	if r == nil {
-		return
-	}
-
 	r.scoreKeeper.PeerDisconnected(pid)
 }
 
