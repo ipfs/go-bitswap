@@ -1,13 +1,19 @@
-package bitswap
+package bitswap_test
 
 import (
 	"context"
+	"github.com/ipfs/go-bitswap"
 	"github.com/ipfs/go-bitswap/network"
+	testinstance "github.com/ipfs/go-bitswap/testinstance"
+	tn "github.com/ipfs/go-bitswap/testnet"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/delayed"
 	ds_sync "github.com/ipfs/go-datastore/sync"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	delay "github.com/ipfs/go-ipfs-delay"
+	mockrouting "github.com/ipfs/go-ipfs-routing/mock"
 	nilrouting "github.com/ipfs/go-ipfs-routing/none"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p"
@@ -21,32 +27,83 @@ import (
 	"time"
 )
 
-func TestTwoLibp2pPeers(t *testing.T) {
+func TestTwoMocknetPeers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	logging.SetLogLevel("bitswap-server", "debug")
 
+	opts := []bitswap.Option{
+		bitswap.TaskWorkerCount(1),
+		bitswap.EngineTaskWorkerCount(1),
+		bitswap.WithTargetMessageSize(32 << 20),
+		bitswap.MaxOutstandingBytesPerPeer(32 << 20),
+	}
 	t.Run("2 blocks", func(t *testing.T) {
-		testTwoLibp2pPeers(ctx, t, 2)
+		testTwoMocknetPeers(ctx, t, 2, opts...)
 	})
 	t.Run("4 blocks", func(t *testing.T) {
-		testTwoLibp2pPeers(ctx, t, 4)
+		testTwoMocknetPeers(ctx, t, 4, opts...)
 	})
 }
 
-func testTwoLibp2pPeers(ctx context.Context, t *testing.T, numBlocks int) {
+func TestTwoLibp2pPeers(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	logging.SetLogLevel("bitswap-server", "debug")
+
+	opts := []bitswap.Option{
+		bitswap.TaskWorkerCount(1),
+		bitswap.EngineTaskWorkerCount(1),
+		bitswap.WithTargetMessageSize(32 << 20),
+		bitswap.MaxOutstandingBytesPerPeer(32 << 20),
+	}
+	t.Run("2 blocks", func(t *testing.T) {
+		testTwoLibp2pPeers(ctx, t, 2, opts...)
+	})
+	t.Run("4 blocks", func(t *testing.T) {
+		testTwoLibp2pPeers(ctx, t, 4, opts...)
+	})
+}
+
+func TestTwoLibp2pPeersConcurrency(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	logging.SetLogLevel("engine", "debug")
+	logging.SetLogLevel("bitswap-server", "debug")
+	opts := []bitswap.Option{
+		bitswap.TaskWorkerCount(2),
+		bitswap.EngineTaskWorkerCount(2),
+		bitswap.MaxOutstandingBytesPerPeer(32 << 20),
+	}
+	testTwoLibp2pPeers(ctx, t, 4, opts...)
+}
+
+func testTwoMocknetPeers(ctx context.Context, t *testing.T, numBlocks int, opts ...bitswap.Option) {
+	net := tn.VirtualNetwork(mockrouting.NewServer(), delay.Fixed(0))
+	ig := testinstance.NewTestInstanceGenerator(net, nil, opts)
+	defer ig.Close()
+
+	instances := ig.Instances(2)
+	bsClient := &bsHostInfo{
+		bstore: instances[0].Blockstore(),
+		bs:     instances[0].Exchange,
+	}
+	bsServer := &bsHostInfo{
+		bstore: instances[1].Blockstore(),
+		bs:     instances[1].Exchange,
+	}
+	testTwoPeers(ctx, t, bsClient, bsServer, numBlocks)
+}
+
+func testTwoLibp2pPeers(ctx context.Context, t *testing.T, numBlocks int, opts ...bitswap.Option) {
 	clientHost, srvHost := setupLibp2pHosts(t)
 
-	opts := []Option{
-		TaskWorkerCount(1),
-		EngineTaskWorkerCount(1),
-		WithTargetMessageSize(32 << 20),
-		MaxOutstandingBytesPerPeer(32 << 20),
-	}
-	bsClient, err := setupBitswapHost(ctx, clientHost, opts)
+	bsClient, err := setupBitswapHost(ctx, clientHost, opts, delay.Fixed(0))
 	require.NoError(t, err)
-	bsServer, err := setupBitswapHost(ctx, srvHost, opts)
+	bsServer, err := setupBitswapHost(ctx, srvHost, opts, delay.Fixed(100*time.Millisecond))
 	require.NoError(t, err)
 
 	err = clientHost.Connect(ctx, peer.AddrInfo{
@@ -55,6 +112,10 @@ func testTwoLibp2pPeers(ctx context.Context, t *testing.T, numBlocks int) {
 	})
 	require.NoError(t, err)
 
+	testTwoPeers(ctx, t, bsClient, bsServer, numBlocks)
+}
+
+func testTwoPeers(ctx context.Context, t *testing.T, bsClient, bsServer *bsHostInfo, numBlocks int) {
 	blks := genBlocks(numBlocks, 1<<20)
 
 	t.Log("Put the blocks to the server")
@@ -82,18 +143,18 @@ func testTwoLibp2pPeers(ctx context.Context, t *testing.T, numBlocks int) {
 
 type bsHostInfo struct {
 	bstore blockstore.Blockstore
-	bs     *Bitswap
+	bs     *bitswap.Bitswap
 }
 
-func setupBitswapHost(ctx context.Context, clientHost host.Host, opts []Option) (*bsHostInfo, error) {
-	dstore := ds_sync.MutexWrap(ds.NewMapDatastore())
+func setupBitswapHost(ctx context.Context, clientHost host.Host, opts []bitswap.Option, bstoreDelay delay.D) (*bsHostInfo, error) {
+	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bstoreDelay))
 	bstore := blockstore.NewBlockstore(ds_sync.MutexWrap(dstore))
-	routing, err := nilrouting.ConstructNilRouting(nil, nil, nil, nil)
+	routing, err := nilrouting.ConstructNilRouting(ctx, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	bsn := network.NewFromIpfsHost(clientHost, routing)
-	bs := New(ctx, bsn, bstore, opts...)
+	bs := bitswap.New(ctx, bsn, bstore, opts...)
 	return &bsHostInfo{
 		bstore: bstore,
 		bs:     bs,
