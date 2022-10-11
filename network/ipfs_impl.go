@@ -360,16 +360,7 @@ func (bsnet *impl) Start(r ...Receiver) {
 		bsnet.host.SetStreamHandler(proto, bsnet.handleNewStream)
 	}
 
-	// add any peers with existing connections that support bitswap protocols
-	for _, conn := range bsnet.host.Network().Conns() {
-		peerID := conn.RemotePeer()
-		if bsnet.peerSupportsBitswap(peerID) {
-			log.Debugf("connecting to existing peer: %s", peerID)
-			bsnet.connectEvtMgr.Connected(peerID)
-		}
-	}
-
-	// subscribe to libp2p events that indicate a change in connection state
+	// first, subscribe to libp2p events that indicate a change in connection state
 	sub, err := bsnet.host.EventBus().Subscribe([]interface{}{
 		&event.EvtPeerProtocolsUpdated{},
 		&event.EvtPeerIdentificationCompleted{},
@@ -383,6 +374,16 @@ func (bsnet *impl) Start(r ...Receiver) {
 
 	go bsnet.peerUpdatedSubscription(ctx, sub)
 
+	// next, add any peers with existing connections that support bitswap protocols
+	for _, conn := range bsnet.host.Network().Conns() {
+		peerID := conn.RemotePeer()
+		if bsnet.peerSupportsBitswap(peerID) {
+			log.Debugf("connecting to existing peer: %s", peerID)
+			bsnet.connectEvtMgr.Connected(peerID)
+		}
+	}
+
+	// finally, listen for disconnects and start processing the events
 	bsnet.host.Network().Notify((*netNotifiee)(bsnet))
 	bsnet.connectEvtMgr.Start()
 }
