@@ -425,7 +425,7 @@ func (bsnet *impl) peerUpdatedSubscription(ctx context.Context, sub event.Subscr
 
 func (bsnet *impl) peerSupportsBitswap(peerID peer.ID) bool {
 	protocols, err := bsnet.host.Peerstore().SupportsProtocols(peerID, protocol.ConvertToStrings(bsnet.supportedProtocols)...)
-	return err != nil && len(protocols) > 0
+	return err == nil && len(protocols) > 0
 }
 
 func (bsnet *impl) hasBitswapProtocol(protos []protocol.ID) bool {
