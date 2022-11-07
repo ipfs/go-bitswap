@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"github.com/ipfs/go-bitswap/client/sessioniface"
 	"time"
 
 	"github.com/ipfs/go-bitswap/client/internal"
@@ -240,6 +241,30 @@ func (s *Session) GetBlocks(ctx context.Context, keys []cid.Cid) (<-chan blocks.
 	defer span.End()
 
 	return bsgetter.AsyncGetBlocks(ctx, s.ctx, keys, s.notif,
+		func(ctx context.Context, keys []cid.Cid) {
+			select {
+			case s.incoming <- op{op: opWant, keys: keys}:
+			case <-ctx.Done():
+			case <-s.ctx.Done():
+			}
+		},
+		func(keys []cid.Cid) {
+			select {
+			case s.incoming <- op{op: opCancel, keys: keys}:
+			case <-s.ctx.Done():
+			}
+		},
+	)
+}
+
+// GetBlocksCh fetches a set of blocks within the context of this session and
+// returns a channel that found blocks will be returned on. No order is
+// guaranteed on the returned blocks.
+func (s *Session) GetBlocksCh(ctx context.Context, keys <-chan sessioniface.AddRemoveCid) (<-chan blocks.Block, error) {
+	ctx, span := internal.StartSpan(ctx, "Session.GetBlocks")
+	defer span.End()
+
+	return bsgetter.AsyncGetBlocksCh(ctx, s.ctx, keys, s.notif,
 		func(ctx context.Context, keys []cid.Cid) {
 			select {
 			case s.incoming <- op{op: opWant, keys: keys}:

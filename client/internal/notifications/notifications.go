@@ -2,11 +2,10 @@ package notifications
 
 import (
 	"context"
-	"sync"
-
 	pubsub "github.com/cskr/pubsub"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
+	"sync"
 )
 
 const bufferSize = 16
@@ -90,6 +89,96 @@ func (ps *impl) Subscribe(ctx context.Context, keys ...cid.Cid) <-chan blocks.Bl
 	go func() {
 		defer func() {
 			close(blocksCh)
+
+			ps.lk.RLock()
+			defer ps.lk.RUnlock()
+			// Don't touch the pubsub instance if we're
+			// already closed.
+			select {
+			case <-ps.closed:
+				return
+			default:
+			}
+
+			ps.wrapped.Unsub(valuesCh)
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ps.closed:
+			case val, ok := <-valuesCh:
+				if !ok {
+					return
+				}
+				block, ok := val.(blocks.Block)
+				if !ok {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case blocksCh <- block: // continue
+				case <-ps.closed:
+				}
+			}
+		}
+	}()
+
+	return blocksCh
+}
+
+type AddRemoveCid interface {
+	IsAdd() bool
+	Key() cid.Cid
+}
+
+// SubscribeModifier returns a channel of blocks for the given |keys|. |blockChannel|
+// is closed if the |ctx| times out or is cancelled, or after receiving the blocks
+// corresponding to |keys|.
+func (ps *impl) SubscribeModifier(ctx context.Context, addRmKeysCh <-chan AddRemoveCid, initialKeys ...cid.Cid) <-chan blocks.Block {
+	blocksCh := make(chan blocks.Block)
+	valuesCh := make(chan interface{})
+
+	// prevent shutdown
+	ps.lk.RLock()
+	defer ps.lk.RUnlock()
+
+	select {
+	case <-ps.closed:
+		close(blocksCh)
+		return blocksCh
+	default:
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	// AddSubOnceEach listens for each key in the list, and closes the channel
+	// once all keys have been received
+	ps.wrapped.AddSubOnceEach(valuesCh, append([]string{"waitUntilEnd"}, toStrings(initialKeys)...)...)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ps.closed:
+			case chg, ok := <-addRmKeysCh:
+				if !ok {
+					return
+				}
+				if chg.IsAdd() {
+					ps.wrapped.AddSubOnceEach(valuesCh, chg.Key().KeyString())
+				} else {
+					ps.wrapped.Unsub(valuesCh, chg.Key().KeyString())
+				}
+			}
+		}
+	}()
+	go func() {
+		defer func() {
+			close(blocksCh)
+			cancel()
 
 			ps.lk.RLock()
 			defer ps.lk.RUnlock()

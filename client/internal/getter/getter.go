@@ -3,10 +3,12 @@ package getter
 import (
 	"context"
 	"errors"
-
+	"fmt"
 	"github.com/ipfs/go-bitswap/client/internal"
 	notifications "github.com/ipfs/go-bitswap/client/internal/notifications"
+	"github.com/ipfs/go-bitswap/client/sessioniface"
 	logging "github.com/ipfs/go-log"
+	"sync"
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -92,6 +94,111 @@ func AsyncGetBlocks(ctx context.Context, sessctx context.Context, keys []cid.Cid
 
 	out := make(chan blocks.Block)
 	go handleIncoming(ctx, sessctx, remaining, promise, out, cwants)
+	return out, nil
+}
+
+// AsyncGetBlocksCh take a set of block cids, a pubsub channel for incoming
+// blocks, a want function, and a close function, and returns a channel of
+// incoming blocks.
+func AsyncGetBlocksCh(ctx context.Context, sessctx context.Context, keys <-chan sessioniface.AddRemoveCid, notif notifications.PubSub,
+	want WantFunc, cwants func([]cid.Cid)) (<-chan blocks.Block, error) {
+	ctx, span := internal.StartSpan(ctx, "Getter.AsyncGetBlocks")
+	defer span.End()
+
+	type ia interface {
+		notifications.PubSub
+		SubscribeModifier(ctx context.Context, addRmKeysCh <-chan notifications.AddRemoveCid, initialKeys ...cid.Cid) <-chan blocks.Block
+	}
+	n, ok := notif.(ia)
+	if !ok {
+		return nil, fmt.Errorf("wrong notifier type")
+	}
+
+	keyCh := make(chan notifications.AddRemoveCid)
+	blockCh := n.SubscribeModifier(ctx, keyCh)
+	out := make(chan blocks.Block)
+
+	ctx, cancel := context.WithCancel(ctx)
+	remaining := cid.NewSet()
+	requested := cid.NewSet()
+	remLk := sync.Mutex{}
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sessctx.Done():
+				return
+			case k, ok := <-keys:
+				if !ok {
+					return
+				}
+				if k.IsAdd() {
+					remLk.Lock()
+					remaining.Add(k.Key())
+					requested.Add(k.Key())
+					remLk.Unlock()
+					select {
+					case <-ctx.Done():
+						return
+					case <-sessctx.Done():
+						return
+					case keyCh <- k:
+					}
+					log.Debugw("Bitswap.GetBlockRequest.Start", "cid", k)
+					want(ctx, []cid.Cid{k.Key()})
+				} else {
+					remLk.Lock()
+					remaining.Remove(k.Key())
+					remLk.Unlock()
+					cwants([]cid.Cid{k.Key()})
+					select {
+					case <-ctx.Done():
+						return
+					case <-sessctx.Done():
+						return
+					case keyCh <- k:
+					}
+				}
+			}
+		}
+	}()
+	go func() {
+		// Clean up before exiting this function, and call the cancel function on
+		// any remaining keys
+		defer func() {
+			cancel()
+			close(out)
+			// can't just defer this call on its own, arguments are resolved *when* the defer is created
+			remLk.Lock()
+			cwants(remaining.Keys())
+			remLk.Unlock()
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sessctx.Done():
+				return
+			case blk, ok := <-blockCh:
+				if !ok {
+					return
+				}
+				remLk.Lock()
+				remaining.Remove(blk.Cid())
+				remLk.Unlock()
+				select {
+				case out <- blk:
+				case <-ctx.Done():
+					return
+				case <-sessctx.Done():
+					return
+				}
+			}
+		}
+	}()
 	return out, nil
 }
 
