@@ -1040,6 +1040,22 @@ func TestWantlistForPeer(t *testing.T) {
 		t.Fatal("expected wantlist to be sorted")
 	}
 
+	if e.WantCountForPeer(partner) != 4 {
+		t.Fatal("expected wantlist count to be accurate")
+	}
+
+	if e.TotalWants() != 4 {
+		t.Fatal("expected total wants count to be accurate")
+	}
+
+	msg3 := message.New(false)
+	msg3.AddEntry(blks[0].Cid(), 2, pb.Message_Wantlist_Have, false)
+	msg3.AddEntry(blks[1].Cid(), 3, pb.Message_Wantlist_Have, false)
+	e.MessageReceived(context.Background(), otherPeer, msg3)
+
+	if e.TotalWants() != 6 {
+		t.Fatal("expected total wants count to be accurate across peers")
+	}
 }
 
 func TestTaskComparator(t *testing.T) {

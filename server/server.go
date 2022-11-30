@@ -71,6 +71,9 @@ type Server struct {
 	hasBlockBufferSize int
 	// whether or not to make provide announcements
 	provideEnabled bool
+
+	// a callback that can be triggered when new data finishes sending
+	onDataSentListener OnDataSentListener
 }
 
 func New(ctx context.Context, network bsnet.BitSwapNetwork, bstore blockstore.Blockstore, options ...Option) *Server {
@@ -220,6 +223,14 @@ func HasBlockBufferSize(count int) Option {
 	}
 }
 
+type OnDataSentListener func(p peer.ID, dataSentTotal uint64, blockSentTotal uint64)
+
+func WithOnDataSentListener(odsl OnDataSentListener) Option {
+	return func(bs *Server) {
+		bs.onDataSentListener = odsl
+	}
+}
+
 // WantlistForPeer returns the currently understood list of blocks requested by a
 // given peer.
 func (bs *Server) WantlistForPeer(p peer.ID) []cid.Cid {
@@ -355,6 +366,9 @@ func (bs *Server) sendBlocks(ctx context.Context, env *decision.Envelope) {
 	bs.counters.DataSent += uint64(dataSent)
 	bs.counterLk.Unlock()
 	bs.sentHistogram.Observe(float64(env.Message.Size()))
+	if bs.onDataSentListener != nil {
+		bs.onDataSentListener(env.Peer, uint64(dataSent), uint64(len(blocks)))
+	}
 	log.Debugw("sent message", "peer", env.Peer)
 }
 
@@ -363,6 +377,16 @@ type Stat struct {
 	ProvideBufLen int
 	BlocksSent    uint64
 	DataSent      uint64
+}
+
+// TotalWants returns the current total wants for requests in progress
+func (bs *Server) TotalWants() uint64 {
+	return bs.engine.TotalWants()
+}
+
+// TotalWants returns the current total wants for requests in progress
+func (bs *Server) WantCountForPeer(p peer.ID) uint64 {
+	return bs.engine.WantCountForPeer(p)
 }
 
 // Stat returns aggregated statistics about bitswap operations

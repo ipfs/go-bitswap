@@ -459,6 +459,38 @@ func (e *Engine) WantlistForPeer(p peer.ID) []wl.Entry {
 	return entries
 }
 
+// TotalWants returns the total number of current wants being served
+// across all peers
+func (e *Engine) TotalWants() uint64 {
+	// copying this list to avoid a nested RLock call
+	// maybe unneccesary but seems prudently cautious
+	e.lock.RLock()
+	ledgers := make([]*ledger, 0, len(e.ledgerMap))
+	for _, l := range e.ledgerMap {
+		ledgers = append(ledgers, l)
+	}
+	e.lock.RUnlock()
+
+	total := 0
+	for _, l := range ledgers {
+		l.lk.RLock()
+		total += l.wantList.Len()
+		l.lk.RUnlock()
+	}
+	return uint64(total)
+}
+
+// WantCountForPeer returns the number of requested
+func (e *Engine) WantCountForPeer(p peer.ID) uint64 {
+	partner := e.findOrCreate(p)
+
+	partner.lk.RLock()
+	count := partner.wantList.Len()
+	partner.lk.RUnlock()
+
+	return uint64(count)
+}
+
 // LedgerForPeer returns aggregated data communication with a given peer.
 func (e *Engine) LedgerForPeer(p peer.ID) *Receipt {
 	return e.scoreLedger.GetReceipt(p)
