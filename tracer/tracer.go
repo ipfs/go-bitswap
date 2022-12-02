@@ -1,13 +1,10 @@
 package tracer
 
 import (
-	bsmsg "github.com/ipfs/go-bitswap/message"
-	peer "github.com/libp2p/go-libp2p/core/peer"
+	libipfs "github.com/ipfs/go-libipfs/bitswap/tracer"
 )
 
 // Tracer provides methods to access all messages sent and received by Bitswap.
 // This interface can be used to implement various statistics (this is original intent).
-type Tracer interface {
-	MessageReceived(peer.ID, bsmsg.BitSwapMessage)
-	MessageSent(peer.ID, bsmsg.BitSwapMessage)
-}
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/tracer.Tracer instead
+type Tracer = libipfs.Tracer

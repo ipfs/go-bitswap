@@ -1,14 +1,20 @@
 package server
 
 import (
-	"github.com/ipfs/go-bitswap/server/internal/decision"
+	libipfs "github.com/ipfs/go-libipfs/bitswap/server"
 )
 
 type (
-	Receipt                = decision.Receipt
-	PeerBlockRequestFilter = decision.PeerBlockRequestFilter
-	TaskComparator         = decision.TaskComparator
-	TaskInfo               = decision.TaskInfo
-	ScoreLedger            = decision.ScoreLedger
-	ScorePeerFunc          = decision.ScorePeerFunc
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.Receipt instead
+	Receipt = libipfs.Receipt
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.PeerBlockRequestFilter instead
+	PeerBlockRequestFilter = libipfs.PeerBlockRequestFilter
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.TaskComparator instead
+	TaskComparator = libipfs.TaskComparator
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.TaskInfo instead
+	TaskInfo = libipfs.TaskInfo
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.ScoreLedger instead
+	ScoreLedger = libipfs.ScoreLedger
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/server.ScorePeerFunc instead
+	ScorePeerFunc = libipfs.ScorePeerFunc
 )

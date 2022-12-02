@@ -1,12 +1,14 @@
 package decision
 
-import "github.com/ipfs/go-bitswap/server"
+import (
+	libipfs "github.com/ipfs/go-libipfs/bitswap/decision"
+)
 
 type (
-	// DEPRECATED use server.Receipt instead
-	Receipt = server.Receipt
-	// DEPRECATED use server.ScoreLedger instead
-	ScoreLedger = server.ScoreLedger
-	// DEPRECATED use server.ScorePeerFunc instead
-	ScorePeerFunc = server.ScorePeerFunc
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/decision.Receipt instead
+	Receipt = libipfs.Receipt
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/decision.ScoreLedger instead
+	ScoreLedger = libipfs.ScoreLedger
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap/decision.ScorePeerFunc instead
+	ScorePeerFunc = libipfs.ScorePeerFunc
 )

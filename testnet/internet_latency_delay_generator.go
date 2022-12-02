@@ -4,10 +4,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/ipfs/go-ipfs-delay"
+	delay "github.com/ipfs/go-ipfs-delay"
+	libipfs "github.com/ipfs/go-libipfs/bitswap/testnet"
 )
-
-var sharedRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // InternetLatencyDelayGenerator generates three clusters of delays,
 // typical of the type of peers you would encounter on the interenet.
@@ -21,6 +20,7 @@ var sharedRNG = rand.New(rand.NewSource(time.Now().UnixNano()))
 // the normalized distribution.
 // This can be used to generate a number of scenarios typical of latency
 // distribution among peers on the internet.
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/testnet.InternetLatencyDelayGenerator instead
 func InternetLatencyDelayGenerator(
 	mediumDelay time.Duration,
 	largeDelay time.Duration,
@@ -28,36 +28,5 @@ func InternetLatencyDelayGenerator(
 	percentLarge float64,
 	std time.Duration,
 	rng *rand.Rand) delay.Generator {
-	if rng == nil {
-		rng = sharedRNG
-	}
-
-	return &internetLatencyDelayGenerator{
-		mediumDelay:   mediumDelay,
-		largeDelay:    largeDelay,
-		percentLarge:  percentLarge,
-		percentMedium: percentMedium,
-		std:           std,
-		rng:           rng,
-	}
-}
-
-type internetLatencyDelayGenerator struct {
-	mediumDelay   time.Duration
-	largeDelay    time.Duration
-	percentLarge  float64
-	percentMedium float64
-	std           time.Duration
-	rng           *rand.Rand
-}
-
-func (d *internetLatencyDelayGenerator) NextWaitTime(t time.Duration) time.Duration {
-	clusterDistribution := d.rng.Float64()
-	baseDelay := time.Duration(d.rng.NormFloat64()*float64(d.std)) + t
-	if clusterDistribution < d.percentLarge {
-		return baseDelay + d.largeDelay
-	} else if clusterDistribution < d.percentMedium+d.percentLarge {
-		return baseDelay + d.mediumDelay
-	}
-	return baseDelay
+	return libipfs.InternetLatencyDelayGenerator(mediumDelay, largeDelay, percentMedium, percentLarge, std, rng)
 }

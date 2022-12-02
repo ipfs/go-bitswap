@@ -1,17 +1,16 @@
 package bitswap
 
 import (
-	"github.com/ipfs/go-bitswap/server"
-	"github.com/ipfs/go-bitswap/tracer"
+	libipfs "github.com/ipfs/go-libipfs/bitswap"
 )
 
 type (
-	// DEPRECATED
-	PeerBlockRequestFilter = server.PeerBlockRequestFilter
-	// DEPRECATED
-	TaskComparator = server.TaskComparator
-	// DEPRECATED
-	TaskInfo = server.TaskInfo
-	// DEPRECATED
-	Tracer = tracer.Tracer
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap.PeerBlockRequestFilter instead
+	PeerBlockRequestFilter = libipfs.PeerBlockRequestFilter
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap.TaskComparator instead
+	TaskComparator = libipfs.TaskComparator
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap.TaskInfo instead
+	TaskInfo = libipfs.TaskInfo
+	// Deprecated: use github.com/ipfs/go-libipfs/bitswap.Tracer instead
+	Tracer = libipfs.Tracer
 )

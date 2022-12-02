@@ -2,41 +2,19 @@ package bitswap
 
 import (
 	"math/rand"
-)
 
-type fixedRateLimitGenerator struct {
-	rateLimit float64
-}
+	libipfs "github.com/ipfs/go-libipfs/bitswap/testnet"
+)
 
 // FixedRateLimitGenerator returns a rate limit generatoe that always generates
 // the specified rate limit in bytes/sec.
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/testnet.FixedRateLimitGenerator instead
 func FixedRateLimitGenerator(rateLimit float64) RateLimitGenerator {
-	return &fixedRateLimitGenerator{rateLimit}
-}
-
-func (rateLimitGenerator *fixedRateLimitGenerator) NextRateLimit() float64 {
-	return rateLimitGenerator.rateLimit
-}
-
-type variableRateLimitGenerator struct {
-	rateLimit float64
-	std       float64
-	rng       *rand.Rand
+	return libipfs.FixedRateLimitGenerator(rateLimit)
 }
 
 // VariableRateLimitGenerator makes rate limites that following a normal distribution.
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/testnet.VariableRateLimitGenerator instead
 func VariableRateLimitGenerator(rateLimit float64, std float64, rng *rand.Rand) RateLimitGenerator {
-	if rng == nil {
-		rng = sharedRNG
-	}
-
-	return &variableRateLimitGenerator{
-		std:       std,
-		rng:       rng,
-		rateLimit: rateLimit,
-	}
-}
-
-func (rateLimitGenerator *variableRateLimitGenerator) NextRateLimit() float64 {
-	return rateLimitGenerator.rng.NormFloat64()*rateLimitGenerator.std + rateLimitGenerator.rateLimit
+	return libipfs.VariableRateLimitGenerator(rateLimit, std, rng)
 }

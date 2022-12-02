@@ -1,22 +1,22 @@
 package network
 
-import "github.com/libp2p/go-libp2p/core/protocol"
+import (
+	libipfs "github.com/ipfs/go-libipfs/bitswap/network"
+	"github.com/libp2p/go-libp2p/core/protocol"
+)
 
-type NetOpt func(*Settings)
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/network.NetOpt instead
+type NetOpt = libipfs.NetOpt
 
-type Settings struct {
-	ProtocolPrefix     protocol.ID
-	SupportedProtocols []protocol.ID
-}
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/network.Settings instead
+type Settings = libipfs.Settings
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/network.Prefix instead
 func Prefix(prefix protocol.ID) NetOpt {
-	return func(settings *Settings) {
-		settings.ProtocolPrefix = prefix
-	}
+	return libipfs.Prefix(prefix)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/network.SupportedProtocols instead
 func SupportedProtocols(protos []protocol.ID) NetOpt {
-	return func(settings *Settings) {
-		settings.SupportedProtocols = protos
-	}
+	return libipfs.SupportedProtocols(protos)
 }
