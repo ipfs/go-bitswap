@@ -3,44 +3,46 @@ package metrics
 import (
 	"context"
 
+	libipfs "github.com/ipfs/go-libipfs/bitswap/metrics"
 	"github.com/ipfs/go-metrics-interface"
 )
 
-var (
-	// the 1<<18+15 is to observe old file chunks that are 1<<18 + 14 in size
-	metricsBuckets = []float64{1 << 6, 1 << 10, 1 << 14, 1 << 18, 1<<18 + 15, 1 << 22}
-
-	timeMetricsBuckets = []float64{1, 10, 30, 60, 90, 120, 600}
-)
-
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.DupHist instead
 func DupHist(ctx context.Context) metrics.Histogram {
-	return metrics.NewCtx(ctx, "recv_dup_blocks_bytes", "Summary of duplicate data blocks recived").Histogram(metricsBuckets)
+	return libipfs.DupHist(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.AllHist instead
 func AllHist(ctx context.Context) metrics.Histogram {
-	return metrics.NewCtx(ctx, "recv_all_blocks_bytes", "Summary of all data blocks recived").Histogram(metricsBuckets)
+	return libipfs.AllHist(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.SentHist instead
 func SentHist(ctx context.Context) metrics.Histogram {
-	return metrics.NewCtx(ctx, "sent_all_blocks_bytes", "Histogram of blocks sent by this bitswap").Histogram(metricsBuckets)
+	return libipfs.SentHist(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.SendTimeHist instead
 func SendTimeHist(ctx context.Context) metrics.Histogram {
-	return metrics.NewCtx(ctx, "send_times", "Histogram of how long it takes to send messages in this bitswap").Histogram(timeMetricsBuckets)
+	return libipfs.SendTimeHist(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.PendingEngineGauge instead
 func PendingEngineGauge(ctx context.Context) metrics.Gauge {
-	return metrics.NewCtx(ctx, "pending_tasks", "Total number of pending tasks").Gauge()
+	return libipfs.PendingEngineGauge(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.ActiveEngineGauge instead
 func ActiveEngineGauge(ctx context.Context) metrics.Gauge {
-	return metrics.NewCtx(ctx, "active_tasks", "Total number of active tasks").Gauge()
+	return libipfs.ActiveEngineGauge(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.PendingBlocksGauge instead
 func PendingBlocksGauge(ctx context.Context) metrics.Gauge {
-	return metrics.NewCtx(ctx, "pending_block_tasks", "Total number of pending blockstore tasks").Gauge()
+	return libipfs.PendingBlocksGauge(ctx)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap/metrics.ActiveBlocksGauge instead
 func ActiveBlocksGauge(ctx context.Context) metrics.Gauge {
-	return metrics.NewCtx(ctx, "active_block_tasks", "Total number of active blockstore tasks").Gauge()
+	return libipfs.ActiveBlocksGauge(ctx)
 }

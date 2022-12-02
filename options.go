@@ -3,77 +3,83 @@ package bitswap
 import (
 	"time"
 
-	"github.com/ipfs/go-bitswap/client"
 	"github.com/ipfs/go-bitswap/server"
 	"github.com/ipfs/go-bitswap/tracer"
 	delay "github.com/ipfs/go-ipfs-delay"
+	libipfs "github.com/ipfs/go-libipfs/bitswap"
 )
-
-type option func(*Bitswap)
 
 // Option is interface{} of server.Option or client.Option or func(*Bitswap)
 // wrapped in a struct to gain strong type checking.
-type Option struct {
-	v interface{}
-}
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.Option instead
+type Option = libipfs.Option
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.EngineBlockstoreWorkerCount instead
 func EngineBlockstoreWorkerCount(count int) Option {
-	return Option{server.EngineBlockstoreWorkerCount(count)}
+	return libipfs.EngineBlockstoreWorkerCount(count)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.EngineTaskWorkerCount instead
 func EngineTaskWorkerCount(count int) Option {
-	return Option{server.EngineTaskWorkerCount(count)}
+	return libipfs.EngineTaskWorkerCount(count)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.MaxOutstandingBytesPerPeer instead
 func MaxOutstandingBytesPerPeer(count int) Option {
-	return Option{server.MaxOutstandingBytesPerPeer(count)}
+	return libipfs.MaxOutstandingBytesPerPeer(count)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.TaskWorkerCount instead
 func TaskWorkerCount(count int) Option {
-	return Option{server.TaskWorkerCount(count)}
+	return libipfs.TaskWorkerCount(count)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.ProvideEnabled instead
 func ProvideEnabled(enabled bool) Option {
-	return Option{server.ProvideEnabled(enabled)}
+	return libipfs.ProvideEnabled(enabled)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.SetSendDontHaves instead
 func SetSendDontHaves(send bool) Option {
-	return Option{server.SetSendDontHaves(send)}
+	return libipfs.SetSendDontHaves(send)
 }
 
-func WithPeerBlockRequestFilter(pbrf server.PeerBlockRequestFilter) Option {
-	return Option{server.WithPeerBlockRequestFilter(pbrf)}
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.WithPeerBlockRequestFilter instead
+func WithPeerBlockRequestFilter(pbrf libipfs.PeerBlockRequestFilter) Option {
+	return libipfs.WithPeerBlockRequestFilter(pbrf)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.WithScoreLedger instead
 func WithScoreLedger(scoreLedger server.ScoreLedger) Option {
-	return Option{server.WithScoreLedger(scoreLedger)}
+	return libipfs.WithScoreLedger(scoreLedger)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.WithTargetMessageSize instead
 func WithTargetMessageSize(tms int) Option {
-	return Option{server.WithTargetMessageSize(tms)}
+	return libipfs.WithTargetMessageSize(tms)
 }
 
-func WithTaskComparator(comparator server.TaskComparator) Option {
-	return Option{server.WithTaskComparator(comparator)}
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.WithTaskComparator instead
+func WithTaskComparator(comparator libipfs.TaskComparator) Option {
+	return libipfs.WithTaskComparator(comparator)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.ProviderSearchDelay instead
 func ProviderSearchDelay(newProvSearchDelay time.Duration) Option {
-	return Option{client.ProviderSearchDelay(newProvSearchDelay)}
+	return libipfs.ProviderSearchDelay(newProvSearchDelay)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.RebroadcastDelay instead
 func RebroadcastDelay(newRebroadcastDelay delay.D) Option {
-	return Option{client.RebroadcastDelay(newRebroadcastDelay)}
+	return libipfs.RebroadcastDelay(newRebroadcastDelay)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.SetSimulateDontHavesOnTimeout instead
 func SetSimulateDontHavesOnTimeout(send bool) Option {
-	return Option{client.SetSimulateDontHavesOnTimeout(send)}
+	return libipfs.SetSimulateDontHavesOnTimeout(send)
 }
 
+// Deprecated: use github.com/ipfs/go-libipfs/bitswap.WithTracer instead
 func WithTracer(tap tracer.Tracer) Option {
-	// Only trace the server, both receive the same messages anyway
-	return Option{
-		option(func(bs *Bitswap) {
-			bs.tracer = tap
-		}),
-	}
+	return libipfs.WithTracer(tap)
 }
