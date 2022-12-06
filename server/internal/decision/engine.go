@@ -482,7 +482,10 @@ func (e *Engine) TotalWants() uint64 {
 
 // WantCountForPeer returns the number of requested
 func (e *Engine) WantCountForPeer(p peer.ID) uint64 {
-	partner := e.findOrCreate(p)
+	partner := e.find(p)
+	if partner == nil {
+		return 0
+	}
 
 	partner.lk.RLock()
 	count := partner.wantList.Len()
