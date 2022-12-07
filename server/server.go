@@ -73,7 +73,7 @@ type Server struct {
 	provideEnabled bool
 
 	// a callback that can be triggered when new data finishes sending
-	onDataSentListener OnDataSentListener
+	onMessageSentListener OnMessageSentListener
 }
 
 func New(ctx context.Context, network bsnet.BitSwapNetwork, bstore blockstore.Blockstore, options ...Option) *Server {
@@ -223,11 +223,11 @@ func HasBlockBufferSize(count int) Option {
 	}
 }
 
-type OnDataSentListener func(p peer.ID, dataSentTotal uint64, blockSentTotal uint64)
+type OnMessageSentListener func(p peer.ID, msg message.BitSwapMessage)
 
-func WithOnDataSentListener(odsl OnDataSentListener) Option {
+func WithOnMessageSentListener(omsl OnMessageSentListener) Option {
 	return func(bs *Server) {
-		bs.onDataSentListener = odsl
+		bs.onMessageSentListener = omsl
 	}
 }
 
@@ -366,8 +366,8 @@ func (bs *Server) sendBlocks(ctx context.Context, env *decision.Envelope) {
 	bs.counters.DataSent += uint64(dataSent)
 	bs.counterLk.Unlock()
 	bs.sentHistogram.Observe(float64(env.Message.Size()))
-	if bs.onDataSentListener != nil {
-		bs.onDataSentListener(env.Peer, uint64(dataSent), uint64(len(blocks)))
+	if bs.onMessageSentListener != nil {
+		bs.onMessageSentListener(env.Peer, env.Message)
 	}
 	log.Debugw("sent message", "peer", env.Peer)
 }
